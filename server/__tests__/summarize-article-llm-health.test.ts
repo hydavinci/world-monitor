@@ -1,8 +1,8 @@
 // @vitest-environment node
 
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { __testing__ as llmHealth, isModelUsable } from "../_shared/llm-health";
+import { __testing__ as llmHealth, getLlmHealthStatus, getLlmModelHealthStatus, isModelUsable, recordModelFailure } from "../_shared/llm-health";
 import { summarizeArticle } from "../worldmonitor/news/v1/summarize-article";
 
 const originalFetch = globalThis.fetch;
@@ -28,7 +28,7 @@ function request(provider: "openrouter" | "ollama", headline: string) {
   return {
     provider,
     headlines: [headline],
-    mode: "brief",
+    mode: "translate",
     geoContext: "",
     variant: "full",
     lang: "en",
@@ -53,13 +53,13 @@ afterEach(() => {
   restoreEnv();
 });
 
-describe("summarizeArticle model health fallback", () => {
-  test("a quarantined provider does not poison the provider-independent summary cache", async () => {
+describe("summarizeArticle public translation model health fallback", () => {
+  test("a quarantined provider does not poison the provider-independent translation cache", async () => {
     const redis = new Map<string, string>();
     const providerPosts: string[] = [];
     let redisSetCount = 0;
 
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       const method = init?.method || "GET";
 
@@ -69,7 +69,7 @@ describe("summarizeArticle model health fallback", () => {
       }
 
       if (url === "https://redis.test/" && method === "POST") {
-        const command = JSON.parse(String(init?.body || "[]")) as string[];
+        const command: string[] = JSON.parse(String(init?.body || "[]"));
         expect(command[0]).toBe("SET");
         redis.set(command[1], command[2]);
         redisSetCount += 1;
@@ -80,7 +80,7 @@ describe("summarizeArticle model health fallback", () => {
 
       if (url.includes("/chat/completions")) {
         providerPosts.push(url);
-        const body = JSON.parse(String(init?.body || "{}")) as { model?: string };
+        const body: { model?: string } = JSON.parse(String(init?.body || "{}"));
         if (url.includes("openrouter.ai")) {
           return new Response(JSON.stringify({
             error: { message: `${body.model} is not a valid model ID` },
@@ -92,8 +92,8 @@ describe("summarizeArticle model health fallback", () => {
         }), { status: 200 });
       }
 
-      return new Response(JSON.stringify({ result: "OK" }), { status: 200 });
-    }) as typeof fetch;
+      throw new Error(`Unexpected outbound request: ${method} ${url}`);
+    };
 
     for (const headline of ["First rejected model request", "Second rejected model request"]) {
       const rejected = await summarizeArticle(makeContext(), request("openrouter", headline));
@@ -111,6 +111,10 @@ describe("summarizeArticle model health fallback", () => {
     const setsBeforeQuarantineSkip = redisSetCount;
     const quarantined = await summarizeArticle(makeContext(), request("openrouter", sharedHeadline));
     expect(quarantined.status).toBe("SUMMARIZE_STATUS_ERROR");
+    expect(isModelUsable(
+      "https://openrouter.ai/api/v1/chat/completions",
+      "deepseek/deepseek-v4-flash",
+    )).toBe(false);
     expect(redisSetCount).toBe(
       setsBeforeQuarantineSkip,
       "skipping a quarantined provider must not write a negative cache sentinel",
@@ -123,15 +127,25 @@ describe("summarizeArticle model health fallback", () => {
       fallback: false,
       status: "SUMMARIZE_STATUS_SUCCESS",
     });
+    const cached = await summarizeArticle(makeContext(), request("openrouter", sharedHeadline));
+    expect(cached).toMatchObject({
+      summary: "Ollama provides a healthy fallback summary for this headline.",
+      provider: "cache",
+      tokens: 0,
+      fallback: false,
+      status: "SUMMARIZE_STATUS_CACHED",
+    });
+    expect(redisSetCount).toBe(3);
     expect(providerPosts.filter(url => url.includes("openrouter.ai"))).toHaveLength(2);
     expect(providerPosts.filter(url => url.startsWith("http://localhost:11434/"))).toHaveLength(3);
   });
 
-  test("an accepted but invalid summary resets the rejection streak", async () => {
+  test("an accepted but empty translation resets the rejection streak without caching a failure", async () => {
     const redis = new Map<string, string>();
     let providerPostCount = 0;
+    let redisSetCount = 0;
 
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       const method = init?.method || "GET";
 
@@ -140,36 +154,68 @@ describe("summarizeArticle model health fallback", () => {
         return new Response(JSON.stringify({ result: redis.get(key) ?? null }), { status: 200 });
       }
       if (url === "https://redis.test/" && method === "POST") {
-        const command = JSON.parse(String(init?.body || "[]")) as string[];
+        const command: string[] = JSON.parse(String(init?.body || "[]"));
         redis.set(command[1], command[2]);
+        redisSetCount += 1;
         return new Response(JSON.stringify({ result: "OK" }), { status: 200 });
       }
       if (method === "GET") return new Response("", { status: 200 });
       if (!url.includes("openrouter.ai")) {
-        return new Response(JSON.stringify({ result: "OK" }), { status: 200 });
+        throw new Error(`Unexpected outbound request: ${method} ${url}`);
       }
 
       providerPostCount += 1;
-      const body = JSON.parse(String(init?.body || "{}")) as { model?: string };
+      const body: { model?: string } = JSON.parse(String(init?.body || "{}"));
       if (providerPostCount === 2) {
         return new Response(JSON.stringify({
-          choices: [{ message: { content: "too short" } }],
+          choices: [{ message: { content: "" } }],
           usage: { total_tokens: 2 },
         }), { status: 200 });
       }
       return new Response(JSON.stringify({
         error: { message: `${body.model} is not a valid model ID` },
       }), { status: 400 });
-    }) as typeof fetch;
+    };
 
     for (const headline of ["first rejection", "accepted invalid output", "second rejection"]) {
-      await summarizeArticle(makeContext(), request("openrouter", headline));
+      const result = await summarizeArticle(makeContext(), request("openrouter", headline));
+      expect(result.status).toBe("SUMMARIZE_STATUS_ERROR");
     }
 
     expect(providerPostCount).toBe(3);
+    expect(redisSetCount).toBe(0);
     expect(isModelUsable(
       "https://openrouter.ai/api/v1/chat/completions",
       "deepseek/deepseek-v4-flash",
     )).toBe(true);
   });
+
+  test.each(["brief", "analysis", "", "unknown"])(
+    "retired mode %j denies before Redis, provider probes, completions, or model health changes",
+    async (mode) => {
+      const apiUrl = "https://openrouter.ai/api/v1/chat/completions";
+      const model = "deepseek/deepseek-v4-flash";
+      recordModelFailure(apiUrl, model, 400, `${model} is not a valid model ID`);
+      recordModelFailure(apiUrl, model, 400, `${model} is not a valid model ID`);
+      const healthBefore = getLlmModelHealthStatus();
+      const fetch = vi.fn(async () => {
+        throw new Error("retired mode must not perform outbound I/O");
+      });
+      globalThis.fetch = fetch;
+
+      for (const req of [
+        request("openrouter", "Retired summary must not be cached"),
+        request("ollama", "Retired summary must not be cached"),
+      ]) {
+        await expect(summarizeArticle(makeContext(), {
+          ...req,
+          mode,
+        })).rejects.toMatchObject({ statusCode: 403, code: "feature_removed" });
+      }
+
+      expect(fetch).not.toHaveBeenCalled();
+      expect(getLlmHealthStatus()).toEqual({});
+      expect(getLlmModelHealthStatus()).toEqual(healthBefore);
+    },
+  );
 });

@@ -1711,18 +1711,10 @@ export class App {
       engine.registerAdapter(economicAdapter);
       engine.registerAdapter(disasterAdapter);
       this.state.correlationEngine = engine;
-      this.connectCorrelationAssessments();
 
       await this.runCorrelationEngine();
     } catch (error) {
       console.warn('[CorrelationEngine] Initial lazy load/run failed:', error);
-    }
-  }
-
-  private connectCorrelationAssessments(): void {
-    const engine = this.state.correlationEngine;
-    if (!engine) return;
-    for (const {} of CORRELATION_DOMAINS) {
     }
   }
 

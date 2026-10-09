@@ -4,7 +4,6 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
-import { runInNewContext } from 'node:vm';
 import { parse } from 'yaml';
 
 const root = resolve(import.meta.dirname, '..');
@@ -120,20 +119,16 @@ test('src-tauri node suites are code, so unit and sidecar run on their own PRs',
   }
 });
 
-test('resilience-validation-smoke runs only for validation changes that skip unit', () => {
-  const job = workflow.jobs['resilience-validation-smoke'];
-  const runs = (outputs) => runInNewContext(job.if, { needs: { changes: { outputs } } }, { timeout: 1000 });
+test('methodology-only changes retain the always-on public documentation gate', () => {
   const validationDoc = 'docs/methodology/country-resilience-index/validation/benchmark.md';
   for (const event of ['pull_request', 'push']) {
     const docsOnly = classify([validationDoc], { event });
-    assert.equal(docsOnly.validation, 'true');
     assert.equal(docsOnly.code, 'false');
-    assert.equal(runs(docsOnly), true, `${event}: unit is skipped, so this job is the only run of the validation suite`);
+    assert.equal(workflow.jobs['docs-stats'].if, undefined, `${event}: public documentation checks are always required`);
     const withCode = classify([validationDoc, 'scripts/_bundle-runner.mjs'], { event });
-    assert.equal(withCode.validation, 'true');
     assert.equal(withCode.code, 'true');
-    assert.equal(runs(withCode), false, `${event}: unit already runs the same files inside test:data`);
   }
+  assert.equal(workflow.jobs['resilience-validation-smoke'], undefined);
 });
 
 test('required unit aggregate rejects failed, cancelled and unexpected skips', () => {

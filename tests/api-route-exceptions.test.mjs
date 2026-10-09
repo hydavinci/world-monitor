@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
+import { retiredRouteResponse } from '../api/_retired-routes.js';
 
 const repoRoot = resolve(import.meta.dirname, '..');
 const manifestPath = resolve(repoRoot, 'api/api-route-exceptions.json');
@@ -51,6 +52,24 @@ function assertRouteSpecificException(entry, { path, reasonTerms, sourceTerms })
 }
 
 describe('api-route-exceptions manifest', () => {
+  it('does not declare retired account or paid transports as active exceptions', () => {
+    for (const path of [
+      'api/mcp.ts', 'api/ask.ts', 'api/a2a.ts', 'api/oauth/authorize.js',
+      'api/create-checkout.ts', 'api/customer-portal.ts', 'api/user-prefs.ts',
+      'api/product-catalog.js', 'api/notification-channels.ts',
+    ]) {
+      assert.ok(!manifest.exceptions.some((entry) => entry.path === path), `${path} is a retired transport`);
+    }
+    for (const path of ['api/docs-mcp.ts', 'api/mcp/bounded-body.ts', 'api/mcp/body-limits.ts']) {
+      assert.ok(manifest.exceptions.some((entry) => entry.path === path), `${path} remains a public protocol or helper`);
+    }
+  });
+
+  it('denies the removed widget-agent API before routing', () => {
+    const response = retiredRouteResponse(new Request('https://example.com/api/widget-agent'), new Headers());
+    assert.equal(response?.status, 403);
+  });
+
   it('has a non-empty exceptions array', () => {
     assert.ok(Array.isArray(manifest.exceptions));
     assert.ok(manifest.exceptions.length > 0);

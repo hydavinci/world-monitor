@@ -1002,15 +1002,10 @@ export class EventHandlerManager implements AppModule {
     const kind = this.ctx.map?.isGlobeMode?.()
       ? 'globe'
       : (isDeckGLActive ? 'deck' : 'svg');
-    let filtered = this.filterMissionLayersForAvailableServices(
+    const filtered = this.filterMissionLayersForAvailableServices(
       filterMissionLayersForRenderer(layers, kind, this.getMissionDefaultLayers()),
     );
-    // #6045 — mission presets (e.g. Supply-Chain Risk) include resilienceScore.
-    // Free users must not persist or apply locked layers through this path.
-    if (true) {
-      filtered = sanitizePublicLayers(filtered);
-    }
-    return filtered;
+    return sanitizePublicLayers(filtered);
   }
 
   private filterMissionLayersForAvailableServices(layers: MapLayers): MapLayers {

@@ -3591,7 +3591,22 @@
     "fontMono": "Monospace",
     "fontSystem": "Font implicit",
     "panelFontScale": "Dimensiune text",
-    "followGlobalFontScale": "Utilizează setarea globală"
+    "followGlobalFontScale": "Utilizează setarea globală",
+    "alertNotifications": {
+      "title": "Alert notifications",
+      "desktop": "System desktop notifications",
+      "description": "Notify for high and critical breaking alerts while this page stays open. Existing alert filters still apply.",
+      "authorize": "Allow notifications",
+      "test": "Send test notification",
+      "default": "Browser permission has not been granted. Click Allow notifications to enable it.",
+      "granted": "Browser permission granted. If notifications do not appear, check browser notifications and your system's Do Not Disturb settings.",
+      "denied": "Notifications are blocked. Allow them in this site's browser permissions, then return here.",
+      "unsupported": "Desktop notifications are unavailable. Use a supporting desktop browser over HTTPS or localhost.",
+      "permissionFailed": "Could not request notification permission. Try again or check this site's browser permissions.",
+      "deliveryFailed": "Desktop notification delivery failed. Check browser permissions and system notification settings.",
+      "testTitle": "World Monitor notification test",
+      "testBody": "Desktop alert notifications are connected. Click to return to World Monitor."
+    }
   },
   "contextMenu": {
     "openCountryBrief": "Deschide prezentarea țării",
@@ -3691,7 +3706,8 @@
     "signIn": "Conectare",
     "createAccount": "Creare cont",
     "settings": "Setări",
-    "passkeyOffer": {}
+    "passkeyOffer": {},
+    "localUnavailable": "Unavailable in local anonymous mode."
   },
   "mcp": {
     "connectPanel": "Conectare MCP",

@@ -331,7 +331,7 @@ for (const v of queryParamContract.violations) {
 
 if (violations.length === 0) {
   console.log(
-    `✓ sebuf API contract clean: ${candidateFiles.length} api/ files checked, ${manifest.exceptions.length} manifest entries validated, ${queryParamContract.stats.queryFields} query params checked (${queryParamContract.stats.unimplementedFields} documented no-op).`,
+    `✓ sebuf API contract clean: ${candidateFiles.length} api/ files checked, ${manifest.exceptions.length} manifest entries validated, ${queryParamContract.stats.queryFields} query params checked (${queryParamContract.stats.unimplementedFields} documented no-op), ${queryParamContract.stats.retiredQueryFields} fields behind explicit retired RPC denial.`,
   );
   process.exit(0);
 }

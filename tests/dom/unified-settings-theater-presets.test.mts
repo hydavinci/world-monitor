@@ -8,37 +8,19 @@
  *                      toasts the applied count;
  *   (b) idempotent   — a second click toasts alreadyApplied and does NOT call
  *                      setSourcesEnabled again;
- *   (c) free-cap     — a setSourcesEnabled that no-ops (free source cap keeps
- *                      the disabled set unchanged) produces no applied toast
+ *   (c) local write — a setSourcesEnabled that leaves the disabled set
+ *                      unchanged produces no applied toast
  *                      and no grid re-render (size-delta guard);
  *   (d) unknown id   — a chip with an unrecognised data-preset-id is a silent
  *                      no-op.
  *
- * Harness mirrors unified-settings-account-handoff.test.mts: same module
- * mocks, same stub-config shape, same overlay activation flow.
+ * Harness mirrors the public source live-apply tests: local config callbacks
+ * and the real settings overlay.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { initTestI18n, tt } from './helpers/i18n.mts';
 import type { UnifiedSettingsConfig } from '@/components/UnifiedSettings';
-
-const session: AuthSession = {
-  user: { id: 'A', name: 'User A', email: 'a@example.com', role: 'pro' },
-  isPending: false,
-};
-
-const entitlementState: EntitlementState = {
-  planKey: 'pro',
-  features: {
-    tier: 1,
-    apiAccess: true,
-    apiRateLimit: 10_000,
-    maxDashboards: 10,
-    prioritySupport: true,
-    exportFormats: ['json'],
-  },
-  validUntil: Date.now() + 86_400_000,
-};
 
 const storageValues = new Map<string, string>();
 const storage: Storage = {
@@ -49,10 +31,6 @@ const storage: Storage = {
   removeItem: (key) => { storageValues.delete(key); },
   setItem: (key, value) => { storageValues.set(key, value); },
 };
-
-vi.mock('@/services/widget-store', () => ({
-  isProUser: () => true,
-}));
 
 vi.mock('@/services/preferences-content', () => ({
   renderPreferences: () => ({
@@ -73,10 +51,6 @@ vi.mock('@/config/panels', () => ({
   VARIANT_DEFAULTS: { full: [] },
   getEffectivePanelConfig: () => ({ name: '', enabled: false }),
   getVariantPanelCategories: () => [],
-  isPanelEntitled: () => true,
-  FREE_MAX_PANELS: 3,
-  countFreePanelCapUsage: () => 0,
-  isFreePanelCapCounted: () => false,
 }));
 
 vi.mock('@/config/variant', () => ({
@@ -88,7 +62,7 @@ const { getTheaterPreset } = await import('@/config/theater-presets');
 
 type SettingsInternals = {
   overlay: HTMLElement;
-  render(loadAccountData?: boolean): void;
+  render(): void;
 };
 
 // The 'ukraine-war' preset lists 11 sources; the stub catalog knows all of
@@ -166,7 +140,7 @@ beforeEach(() => {
   settings = new UnifiedSettings(config);
   internal = settings as unknown as SettingsInternals;
   internal.overlay.classList.add('active');
-  internal.render(false);
+  internal.render();
 });
 
 afterEach(() => {
@@ -254,7 +228,7 @@ describe('UnifiedSettings theater coverage presets', () => {
 
   it('(f) no presets row renders when zero presets resolve', () => {
     config.getAllSourceNames = () => [UNRELATED_SOURCE];
-    internal.render(false);
+    internal.render();
 
     const chips = internal.overlay.querySelectorAll('.unified-settings-preset-chip');
     expect(chips.length).toBe(0);

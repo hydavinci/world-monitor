@@ -3666,7 +3666,8 @@
     "signIn": "登录",
     "createAccount": "创建账户",
     "settings": "设置",
-    "passkeyOffer": {}
+    "passkeyOffer": {},
+    "localUnavailable": "本地免账号模式下不可用。"
   },
   "mcp": {
     "connectPanel": "连接 MCP",

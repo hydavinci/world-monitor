@@ -135,8 +135,17 @@ jobs:
       - name: Install pinned advisory tool
         if: steps.cargo-audit-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Install GLib regression prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libglib2.0-dev pkg-config
+      - name: Prove optimized GLib backport
+        env:
+          GLIB_BACKPORT_PROOF: ${{ runner.temp }}/glib-backport-proof.json
+        run: node .github/scripts/verify-glib-backport.mjs
       - name: Audit Cargo.lock
         env:
+          GLIB_BACKPORT_PROOF: ${{ runner.temp }}/glib-backport-proof.json
           AUDIT_STATUS_FILE: ${{ runner.temp }}/rust.txt
           AUDIT_FAIL_ON_OUTAGE: ${{ github.event_name == 'schedule' && '1' || '0' }}
         run: node .github/scripts/audit-rust-dependencies.mjs
@@ -145,7 +154,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: audit-status-rust
-          path: ${{ runner.temp }}/rust.txt
+          path: |
+            ${{ runner.temp }}/rust.txt
+            ${{ runner.temp }}/glib-backport-proof.json
           if-no-files-found: ignore
           retention-days: 1
 

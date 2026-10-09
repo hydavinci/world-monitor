@@ -33,6 +33,7 @@ permissions:
 
 jobs:
   admission:
+    if: github.repository == 'koala73/worldmonitor'
     name: cancel-safe admission
     runs-on: ubuntu-latest
     timeout-minutes: 3

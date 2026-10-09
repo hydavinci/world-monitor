@@ -3530,6 +3530,21 @@
     "dismiss": "忽略"
   },
   "preferences": {
+    "alertNotifications": {
+      "title": "報警通知",
+      "desktop": "系統桌面通知",
+      "description": "頁面保持開啟時，為高危和嚴重突發事件傳送通知，沿用現有報警篩選規則。",
+      "authorize": "允許通知",
+      "test": "傳送測試通知",
+      "default": "尚未獲得瀏覽器授權，請點選“允許通知”開啟。",
+      "granted": "瀏覽器已授權。如果通知沒有出現，請檢查瀏覽器通知設定和系統勿擾模式。",
+      "denied": "通知已被阻止，請在瀏覽器的網站權限中允許通知，然後返回這裡。",
+      "unsupported": "當前環境不支援桌面通知，請使用支援此功能的桌面瀏覽器，並透過 HTTPS 或 localhost 存取。",
+      "permissionFailed": "無法申請通知權限，請重試或檢查瀏覽器的網站權限。",
+      "deliveryFailed": "桌面通知傳送失敗，請檢查瀏覽器權限和系統通知設定。",
+      "testTitle": "World Monitor 通知測試",
+      "testBody": "桌面報警通知已接通，點選通知返回 World Monitor。"
+    },
     "display": "顯示",
     "intelligence": "智慧",
     "media": "媒體",
@@ -3651,7 +3666,8 @@
     "signIn": "登入",
     "createAccount": "建立帳戶",
     "settings": "設定",
-    "passkeyOffer": {}
+    "passkeyOffer": {},
+    "localUnavailable": "本地免賬號模式下不可用。"
   },
   "mcp": {
     "connectPanel": "連線 MCP",

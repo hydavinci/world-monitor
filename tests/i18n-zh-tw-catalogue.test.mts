@@ -35,7 +35,6 @@ const s2tw = OpenCC.Converter({ from: 'cn', to: 'tw' });
 
 const CATALOGUES = [
   { name: 'src', simplified: 'src/locales/zh.json', traditional: 'src/locales/zh-TW.json' },
-  { name: 'pro-test', simplified: 'pro-test/src/locales/zh.json', traditional: 'pro-test/src/locales/zh-TW.json' },
 ];
 
 /**
@@ -57,16 +56,13 @@ const CATALOGUES = [
  */
 const EXPECTED_TESTS = [
   'src: no value is left in Simplified',
-  'pro-test: no value is left in Simplified',
   'catches a Simplified value planted in the Traditional catalogue',
   'the generator table still holds every term enforced here',
   'every replacement is itself Traditional and settles the rule that produced it',
   'src: carries none of the rejected terms',
-  'pro-test: carries none of the rejected terms',
   'the generator table still holds every rule enforced here',
   'every per-entry source term has a decided allow-list',
   'src: every per-entry override is applied',
-  'pro-test: every per-entry override is applied',
   'keeps generated locales inside LOCALES',
   'runs --check in the unit job, with nothing in front of it',
   'the npm scripts invoke the same generator CI does',
@@ -167,7 +163,6 @@ const EXPECTED_KEY_RULES: KeyRule[] = [
     to: '請造訪',
   },
   { catalogue: 'src', path: 'popups.techEvent.days.inDays', from: '天后', to: '天後' },
-  { catalogue: 'pro-test', path: 'faq.q5', from: '這隻', to: '這只' },
 ];
 
 /**
@@ -185,7 +180,6 @@ const EXPECTED_KEY_RULES: KeyRule[] = [
 const KEY_OVERRIDE_ALLOWED_PATHS = new Map<string, readonly string[]>([
   ['請訪問', []],
   ['天后', []],
-  ['這隻', []],
 ]);
 
 /** Field by field, so reordering the Python table is not a failure. */

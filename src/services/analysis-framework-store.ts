@@ -147,14 +147,8 @@ export function renameImportedFramework(id: string, name: string): void {
   _activeCache.clear();
 }
 
-export function getActiveFrameworkForPanel(panelId: AnalysisPanelId): AnalysisFramework | null {return null;
-  if (_activeCache.has(panelId)) return _activeCache.get(panelId)!;
-  const selections = loadFromStorage<Record<string, string | null>>(PANEL_KEY, {});
-  const frameworkId = selections[panelId] ?? null;
-  if (!frameworkId) { _activeCache.set(panelId, null); return null; }
-  const result = loadFrameworkLibrary().find(f => f.id === frameworkId) ?? null;
-  _activeCache.set(panelId, result);
-  return result;
+export function getActiveFrameworkForPanel(_panelId: AnalysisPanelId): AnalysisFramework | null {
+  return null;
 }
 
 export function setActiveFrameworkForPanel(panelId: AnalysisPanelId, frameworkId: string | null): void {

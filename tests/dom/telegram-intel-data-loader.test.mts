@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AppContext } from '@/app/app-context';
 const state = vi.hoisted(() => ({
   desktop: false,
-  premium: false,
   fetch: vi.fn(),
 }));
 vi.mock('@/services/runtime', async () => ({
@@ -18,14 +17,10 @@ vi.mock('@/services/telegram-intel', async () => ({
   fetchTelegramFeed: state.fetch,
 }));
 import { DataLoaderManager } from '@/app/data-loader';
-import {
-  clearTelegramIntelCache,
-  getTelegramIntelGeneration,
-} from '@/services/telegram-intel';
+import { getTelegramIntelGeneration } from '@/services/telegram-intel';
 const feed = { source: 'telegram', enabled: true, items: [] };
 afterEach(() => {
   state.desktop = false;
-  state.premium = false;
   state.fetch.mockReset();
 });
 function create() {
@@ -44,7 +39,7 @@ function create() {
   };
 }
 describe('Telegram loader access', () => {
-  it('skips free desktop requests and allows intentional free web feed', async () => {
+  it('skips unsupported desktop requests and allows the anonymous public web feed', async () => {
     state.desktop = true;
     state.fetch.mockResolvedValue(feed);
     const { loader, panel } = create();

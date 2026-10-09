@@ -61,9 +61,9 @@ describe('Railway reconciliation protected manual recovery workflow', () => {
 
   it('rejects non-main dispatches before secrets and checks out exact main for both proof passes', () => {
     assert.deepEqual(workflow.jobs.reject_non_main.permissions, {});
-    assert.equal(workflow.jobs.reject_non_main.if, "github.ref != 'refs/heads/main'");
+    assert.equal(workflow.jobs.reject_non_main.if, "github.repository == 'koala73/worldmonitor' && github.ref != 'refs/heads/main'");
     assert.match(workflow.jobs.reject_non_main.steps[0].run, /exit 1/);
-    assert.equal(workflow.jobs.proof.if, "github.ref == 'refs/heads/main'");
+    assert.equal(workflow.jobs.proof.if, "github.repository == 'koala73/worldmonitor' && github.ref == 'refs/heads/main'");
     assert.equal(workflow.jobs.resolve.if, "github.ref == 'refs/heads/main'");
     assert.match(workflow.jobs['dispatch-retry'].if, /github\.ref == 'refs\/heads\/main'/);
     assert.match(workflow.jobs['bind-dispatched-run'].if, /github\.ref == 'refs\/heads\/main'/);

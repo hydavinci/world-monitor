@@ -71,10 +71,10 @@ describe('Railway deploy trigger watchdog workflow contract', () => {
   });
 
   it('fails non-main invocations before every secret-bearing job', () => {
-    assert.equal(workflow.jobs.reject_non_main.if, "github.ref != 'refs/heads/main'");
+    assert.equal(workflow.jobs.reject_non_main.if, "github.repository == 'koala73/worldmonitor' && github.ref != 'refs/heads/main'");
     assert.deepEqual(workflow.jobs.reject_non_main.permissions, {});
     assert.match(workflow.jobs.reject_non_main.steps[0].run, /exit 1/);
-    assert.equal(workflow.jobs.classify.if, "github.ref == 'refs/heads/main'");
+    assert.equal(workflow.jobs.classify.if, "github.repository == 'koala73/worldmonitor' && github.ref == 'refs/heads/main'");
     const secretJobs = Object.values(workflow.jobs).filter((job) => (
       job.steps?.some((step) => JSON.stringify(step.env ?? {}).includes('secrets.'))
     ));

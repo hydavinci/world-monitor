@@ -18,12 +18,14 @@ concurrency:
 jobs:
   submit-indexnow:
     if: >-
+      github.repository == 'koala73/worldmonitor' && (
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
       (
         github.event.deployment_status.state == 'success' &&
         github.event.deployment.environment == 'Production' &&
         github.event.deployment.creator.login == 'vercel[bot]'
+      )
       )
     runs-on: ubuntu-latest
     # Seven hosts are now submitted sequentially rather than two; each request

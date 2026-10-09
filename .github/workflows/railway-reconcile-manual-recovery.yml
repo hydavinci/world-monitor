@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   reject_non_main:
-    if: github.ref != 'refs/heads/main'
+    if: github.repository == 'koala73/worldmonitor' && github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions: {}
     steps:
@@ -51,7 +51,7 @@ jobs:
 
   proof:
     name: Read-only recovery proof
-    if: github.ref == 'refs/heads/main'
+    if: github.repository == 'koala73/worldmonitor' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment:

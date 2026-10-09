@@ -22,7 +22,7 @@ describe('Canada Roads layer discovery', () => {
   });
 
   it('names Manitoba in the fallback label and jurisdiction synonyms', () => {
-    expect(LAYER_REGISTRY.canadaRoads.fallbackLabel).toContain('Manitoba');
+    expect(LAYER_REGISTRY.canadaRoads?.fallbackLabel).toContain('Manitoba');
     expect(LAYER_SYNONYMS.manitoba).toContain('canadaRoads');
   });
 

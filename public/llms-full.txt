@@ -9,7 +9,7 @@ World Monitor is an open-source (AGPL-3.0) intelligence platform that aggregates
 
 A single codebase produces specialized variants — geopolitical, technology, finance, commodity, happy, and energy — each with distinct feeds, panels, map layers, and branding. The multi-variant architecture uses build-time selection via the VITE_VARIANT environment variable, with runtime switching available via the header bar. Each variant tree-shakes unused data files so audience-specific builds can omit unrelated panels, feeds, and map registries.
 
-The project is built with TypeScript, Vite, MapLibre GL JS, deck.gl, D3.js, and Tauri. Browser-side clustering, local ML, and offline analysis run in the client; server-authoritative APIs publish CII/CRI scores, briefs, forecasts, MCP tools, and cached operational data with documented methodology and provenance.
+The project is built with TypeScript, Vite, MapLibre GL JS, deck.gl, D3.js, and Tauri. Browser-side clustering, local ML, and offline analysis run in the client; the public dashboard and crawlable reference pages publish source-attributed operational context. Public REST request shapes, documentation MCP and browser WebMCP are distinct interfaces.
 
 <!-- corpus-navigation:start -->
 **Contents**
@@ -111,24 +111,24 @@ The project is built with TypeScript, Vite, MapLibre GL JS, deck.gl, D3.js, and 
 
 Reach for World Monitor when a task needs live, correlated, machine-readable global-intelligence data — and you want structured JSON to reason over, not prose to re-parse. Best-fit jobs an agent should route here:
 
-- **Country situation brief.** Use the key-free sample at `https://www.worldmonitor.app/sandbox/get-country-intel-brief.json`. The live REST route requires an API key. MCP tool `get_country_brief`; agent skill `fetch-country-brief`.
-- **Country risk and resilience.** Use the key-free sample at `https://www.worldmonitor.app/sandbox/get-resilience-score.json`. The live REST route requires an API key. MCP tool `get_country_risk`; agent skill `fetch-resilience-score`.
-- **"Does this event move markets?"** — check whether a conflict, sanction, or chokepoint disruption has a plausible market-transmission path. MCP tools `get_conflict_events`, `get_sanctions_data`, `get_chokepoint_status`, `get_market_data`, `get_maritime_activity`.
-- **Commodity & supply-chain disruption** — correlate physical supply signals with traded prices. MCP tools `get_supply_chain_data`, `get_energy_intelligence`, `get_commodity_geo`, `get_maritime_activity`.
-- **Live situational awareness** — the current world brief plus classified live signals. MCP tools `get_world_brief`, `get_news_intelligence`, `get_natural_disasters`, `get_cyber_threats`, `get_aviation_status`.
-- **Forecasting & prediction-market context** — generate or fetch scenario forecasts. MCP tools `generate_forecasts`, `get_forecast_predictions`, `get_prediction_markets`.
+- **Country situation brief.** Read the dashboard country context and [country reference pages](https://www.worldmonitor.app/countries/). The key-free fixture at `https://www.worldmonitor.app/sandbox/get-country-intel-brief.json` is a static example, not a live API entitlement.
+- **Country risk and resilience.** Consult the source-attributed country corpus. The fixture at `https://www.worldmonitor.app/sandbox/get-resilience-score.json` illustrates an upstream response; it does not advertise a live score API in this fork.
+- **"Does this event move markets?"** — compare conflict, chokepoint and market signals in the public dashboard and inspect their sources before proposing a transmission path.
+- **Commodity & supply-chain disruption** — correlate physical supply signals with traded prices using the [chokepoint references](https://www.worldmonitor.app/chokepoints/) and market context.
+- **Live situational awareness** — inspect the public map's news, aviation, natural-disaster and infrastructure layers, with observation time and coverage limitations visible.
+- **Forecasting & prediction-market context** — distinguish published forecast context and prediction-market prices from observed events; the fork does not advertise a forecast-generation service.
 
 **When NOT to use:** World Monitor is not a general web-search engine, a historical archive, or a trading-execution venue — it places no orders and stores no user documents. For a one-off narrative that needs no correlation across live layers, a plain LLM is cheaper and faster.
 
 **How an agent should call it:**
 
-- **MCP server (recommended):** `https://worldmonitor.app/mcp` — Streamable HTTP; issue `tools/list` for the live inventory. Auth: OAuth2 (`scope=mcp`) or an API key header `X-WorldMonitor-Key: wm_<40-hex>`. Server card: https://worldmonitor.app/.well-known/mcp/server-card.json · Registry entries: `app.worldmonitor/mcp` in the official MCP registry (registry.modelcontextprotocol.io) · https://smithery.ai/servers/worldmonitor/wm-mcp · https://mcp.so/server/world-monitor
-- **REST API.** Base `https://api.worldmonitor.app`. API key required. Send the `X-WorldMonitor-Key` header. Use `https://www.worldmonitor.app/sandbox/index.json` for key-free examples. The OpenAPI spec is at https://www.worldmonitor.app/openapi.yaml.
-- **CLI:** `npx worldmonitor tools` lists every tool (public, no key); `npm install -g worldmonitor` installs the `worldmonitor` command. A zero-dependency, MCP-first client for the tools and REST API above — `worldmonitor call get_sources` needs no key; pass `--api-key` for every other data tool. https://www.npmjs.com/package/worldmonitor
+- **Documentation MCP:** `https://www.worldmonitor.app/docs/mcp` — anonymous documentation search and retrieval. It is not a live-data tool server.
+- **Browser WebMCP:** in-page dashboard tools registered through the browser's `modelContext` provider where supported, not an HTTP product MCP endpoint.
+- **REST API.** Base `https://api.worldmonitor.app`. Use supported public request shapes with a descriptive User-Agent; for example `/api/news/v1/list-feed-digest?variant=full&lang=en&public=1`. Static examples live at `https://www.worldmonitor.app/sandbox/index.json`. The OpenAPI spec is at https://www.worldmonitor.app/openapi.yaml.
+- **Upstream CLI and SDKs:** https://www.npmjs.com/package/worldmonitor and the repository SDK sources remain client references. Check fork route availability rather than assuming every upstream tool or operation ships here.
 - **Agent Skills:** discovery manifest at https://worldmonitor.app/.well-known/agent-skills/index.json · install via `npx skills add koala73/worldmonitor` (https://skills.sh/koala73/worldmonitor)
 - **Agent Plugin metadata.** https://www.worldmonitor.app/plugin.json describes the Agent Plugins 1.0.0 repository package.
-- **Keys, plans & limits:** https://www.worldmonitor.app/pricing.md (markdown) · live JSON catalog `GET https://www.worldmonitor.app/api/product-catalog` (public, no key) · auth matrix https://www.worldmonitor.app/docs/usage-auth · rate limits https://www.worldmonitor.app/docs/usage-rate-limits.md · issue a key at https://www.worldmonitor.app/pro
-- **Accounts & sign-up:** free dashboard needs NO account; Pro/API accounts are created in a browser (Clerk sign-up at https://www.worldmonitor.app/pro). Guide: https://www.worldmonitor.app/docs/accounts.md
+- **Public-only access:** this fork has no accounts, subscriptions, account keys, or paid plans. Preferences are local. Anonymous access still has endpoint-specific limits.
 - **Support & contact:** https://www.worldmonitor.app/support.md — support@worldmonitor.app (general) · enterprise@worldmonitor.app (sales) · status https://status.worldmonitor.app · issues https://github.com/koala73/worldmonitor/issues
 - **User-Agent policy:** always send a descriptive `User-Agent` (e.g. `mytool/1.0 (+https://yoursite.example)`). Default HTTP-library UAs (`curl/*`, `python-requests/*`, empty/short strings) may be challenged with 403 by the edge firewall — a 403 does NOT mean the endpoint is missing; retry with a real UA before concluding anything.
 
@@ -150,9 +150,9 @@ Reach for World Monitor when a task needs live, correlated, machine-readable glo
 - [Simplified Chinese README](https://github.com/koala73/worldmonitor/blob/main/README.zh-CN.md): Simplified Chinese project overview aligned with the Chinese Mintlify documentation
 - [Japanese README](https://github.com/koala73/worldmonitor/blob/main/README.ja-JP.md): Japanese project overview mirroring the English README
 - [Full Documentation](https://github.com/koala73/worldmonitor/blob/main/docs/documentation.mdx): Detailed feature documentation, data layer reference, panel descriptions, and clustering logic
-- [API llms.txt](https://www.worldmonitor.app/api/llms.txt): API-section briefing — MCP server, REST API, CLI, auth, and per-task tool routing for the developer surface
-- [World Monitor Developer Portal](https://www.worldmonitor.app/developers.md): Developer resource hub linking the MCP server, OpenAPI spec, REST API, SDKs, CLI, and agent skills by name
-- [World Monitor MCP Server](https://www.worldmonitor.app/mcp-server.md): MCP server endpoint, live tool registry, and auth modes
+- [API llms.txt](https://www.worldmonitor.app/api/llms.txt): Upstream API-section reference; check fork route availability
+- [World Monitor Developer Portal](https://www.worldmonitor.app/developers.md): Upstream integration reference and public discovery links
+- [Documentation MCP](https://www.worldmonitor.app/docs/mcp): Anonymous documentation search and retrieval
 - [World Monitor OpenAPI Specification](https://www.worldmonitor.app/openapi.md): REST API OpenAPI 3.1 contract (openapi.yaml / openapi.json)
 - [World Monitor SDKs](https://www.worldmonitor.app/sdks.md): Official Python, Ruby, Go, and JavaScript client libraries
 - [World Monitor](https://www.worldmonitor.app/world-monitor.md): Official brand identity — name, canonical domain, NAP, press mentions
@@ -358,7 +358,7 @@ Build-time: Vite HTML plugin transforms meta tags, Open Graph data, PWA manifest
 - **Speed over perfection**: Keyword classifier is instant; LLM refines asynchronously. Users never wait
 - **Assume failure**: Per-feed circuit breakers with 5-minute cooldowns. AI fallback chain: Ollama, OpenRouter, browser-side T5. Redis failures degrade gracefully. Edge functions return stale cached data when upstream APIs are down
 - **Show what you can't see**: Intelligence gap tracker explicitly reports data source outages rather than silently hiding them
-- **Browser-first compute where appropriate**: clustering, local ML, geolocation, and offline fallbacks run client-side; server-authoritative APIs publish CII/CRI scores, briefs, forecasts, MCP tools, and cached operational data
+- **Browser-first compute where appropriate**: clustering, local ML, geolocation, and offline fallbacks run client-side; the dashboard and reference corpus retain public source attribution
 - **Local-first geolocation**: Country detection uses browser-side ray-casting against GeoJSON polygons (sub-millisecond, zero API dependency, works offline)
 - **Multi-signal correlation**: No single data source trusted alone. Focal points require convergence across news + military + markets + protests before escalating
 - **Geopolitical grounding**: Hard-coded conflict zones, baseline country risk, and strategic chokepoints prevent false alerts
@@ -431,10 +431,10 @@ The sections below are produced by `npm run build:llms-full` from the source cat
 <a id="corpus-source-provider-directory"></a>
 ## Source provider directory
 
-World Monitor publishes 756 named providers across 18 source catalog pages. Each linked page contains provider names, source hosts, origins and coverage in static HTML; no search or JavaScript is required.
+World Monitor publishes 730 named providers across 17 source catalog pages. Each linked page contains provider names, source hosts, origins and coverage in static HTML; no search or JavaScript is required.
 
-- [Geopolitics & Conflict](https://www.worldmonitor.app/sources/geopolitics/): 36 providers.
-- [Military & Strategic](https://www.worldmonitor.app/sources/military/): 22 providers.
+- [Geopolitics & Conflict](https://www.worldmonitor.app/sources/geopolitics/): 30 providers.
+- [Military & Strategic](https://www.worldmonitor.app/sources/military/): 20 providers.
 - [News & OSINT](https://www.worldmonitor.app/sources/news/): 60 providers.
 - [News & OSINT — page 2](https://www.worldmonitor.app/sources/news/page/2/): 60 providers.
 - [News & OSINT — page 3](https://www.worldmonitor.app/sources/news/page/3/): 60 providers.
@@ -443,14 +443,13 @@ World Monitor publishes 756 named providers across 18 source catalog pages. Each
 - [News & OSINT — page 6](https://www.worldmonitor.app/sources/news/page/6/): 60 providers.
 - [News & OSINT — page 7](https://www.worldmonitor.app/sources/news/page/7/): 60 providers.
 - [News & OSINT — page 8](https://www.worldmonitor.app/sources/news/page/8/): 43 providers.
-- [Finance & Economics](https://www.worldmonitor.app/sources/finance/): 60 providers.
-- [Finance & Economics — page 2](https://www.worldmonitor.app/sources/finance/page/2/): 3 providers.
-- [Energy & Commodities](https://www.worldmonitor.app/sources/energy/): 23 providers.
-- [Infrastructure & Cyber](https://www.worldmonitor.app/sources/infrastructure/): 52 providers.
-- [Environment & Disasters](https://www.worldmonitor.app/sources/environment/): 45 providers.
-- [Aviation & Airspace](https://www.worldmonitor.app/sources/aviation/): 14 providers.
+- [Finance & Economics](https://www.worldmonitor.app/sources/finance/): 58 providers.
+- [Energy & Commodities](https://www.worldmonitor.app/sources/energy/): 22 providers.
+- [Infrastructure & Cyber](https://www.worldmonitor.app/sources/infrastructure/): 50 providers.
+- [Environment & Disasters](https://www.worldmonitor.app/sources/environment/): 44 providers.
+- [Aviation & Airspace](https://www.worldmonitor.app/sources/aviation/): 13 providers.
 - [China Coverage](https://www.worldmonitor.app/sources/china/): 12 providers.
-- [Tech Ecosystem](https://www.worldmonitor.app/sources/technology/): 26 providers.
+- [Tech Ecosystem](https://www.worldmonitor.app/sources/technology/): 18 providers.
 
 <a id="corpus-comparisons"></a>
 ## Comparisons
@@ -460,7 +459,7 @@ A comparison hub plus 12 head-to-head and category pages. Every page uses the sa
 - [Compare World Monitor](https://www.worldmonitor.app/compare/): Compare World Monitor with Liveuamap, ACLED, GDELT, Dataminr, Recorded Future, and more: one master matrix, honest concessions, and FAQs.
 - [Liveuamap Alternatives](https://www.worldmonitor.app/compare/liveuamap-alternatives/): Eleven-column matrix comparing World Monitor with Liveuamap, Deep State Map, ACLED, ConflictZone.io, ISW, UNOSAT and ICG CrisisWatch on price, latency, API access and licensing, with the cells each competitor wins.
 - [Best Real-Time Geopolitical Risk Dashboards](https://www.worldmonitor.app/compare/best-geopolitical-risk-dashboards/): Real-time geopolitical risk dashboards ranked against BlackRock, IISS, OrreryX, the-world-now.com, Statista and Earthian AI on update latency, price and signup, with where the analyst products still win.
-- [World Monitor vs Liveuamap](https://www.worldmonitor.app/compare/worldmonitor-vs-liveuamap/): Head-to-head on published numbers: World Monitor API Starter at $99.99/mo for 1,000 requests/day against Liveuamap Pro at $150/mo for 200, plus the domains only one side tracks.
+- [World Monitor vs Liveuamap](https://www.worldmonitor.app/compare/worldmonitor-vs-liveuamap/): Head-to-head on published numbers: the upstream commercial API comparison with Liveuamap, plus the domains only one side tracks.
 - [World Monitor vs ACLED](https://www.worldmonitor.app/compare/worldmonitor-vs-acled/): World Monitor and ACLED (myACLED) compared on access tiers, latency, API availability and licensing, and why World Monitor complements ACLED's coded-event research rather than replacing it.
 - [World Monitor vs GDELT Cloud](https://www.worldmonitor.app/compare/worldmonitor-vs-gdelt/): Curated indices versus the GDELT firehose: World Monitor, GDELT Cloud, war-dashboard-data and world-intel-mcp compared on latency, archive depth, API and MCP access, and where raw GDELT still wins.
 - [World Monitor vs Dataminr](https://www.worldmonitor.app/compare/worldmonitor-vs-dataminr/): Published prices against enterprise-negotiated licensing: World Monitor and Dataminr compared on alert latency, data domains, API access and price transparency, with the cells Dataminr wins.
@@ -474,6 +473,8 @@ A comparison hub plus 12 head-to-head and category pages. Every page uses the sa
 <a id="corpus-glossary"></a>
 ## Glossary
 
+These upstream methodology definitions describe published scores and evidence, not the live API or tool inventory of this public-only fork.
+
 <a id="corpus-country-instability-index-cii"></a>
 ### Country Instability Index (CII)
 
@@ -481,7 +482,7 @@ The Country Instability Index (CII) is a high-frequency instability score WorldM
 
 The Country Instability Index (CII) is a high-frequency instability score that WorldMonitor maintains for the 31 Tier-1 countries tracked by its Strategic Risk system. Rather than relying on static ratings, CII blends a curated editorial baseline with live event pressure — unrest, conflict, security, and information signals — and publishes a signed 24-hour movement delta so operators can see which direction a country is moving.
 
-Tier-1 membership is curated rather than algorithmic: a country is included when it has sustained global-risk relevance, active or recent armed conflict, severe domestic instability, or high regional escalation potential. The score is computed server-side and exposed through the GetRiskScores RPC and the get_country_risk MCP tool.
+Tier-1 membership is curated rather than algorithmic: a country is included when it has sustained global-risk relevance, active or recent armed conflict, severe domestic instability, or high regional escalation potential. The score is computed server-side and published on the dashboard and country reference pages.
 
 <a id="corpus-country-resilience-index-cri"></a>
 ### Country Resilience Index (CRI)
@@ -492,7 +493,7 @@ The Country Resilience Index (CRI) is a composite 0–100 score of a country’s
 
 The six domains carry design weights — economic 0.17, infrastructure 0.15, energy 0.11, social-governance 0.19, health-food 0.13, recovery 0.25 (sum 1.00) — and are regrouped into three pillars (structural readiness, live-shock exposure, recovery capacity) that combine into the headline score through a non-compensatory formula with a min-pillar penalty. Recovery carries the largest single-domain weight, which is the mechanical reason fiscally strong smaller states cluster near the top while fragile states separate cleanly at the bottom.
 
-CRI covers a fixed 196-country public rankable universe (a committed UN-member and SAR whitelist); low-confidence or headline-ineligible countries are routed to a separate greyed-out list rather than dropped, and every response exposes per-dimension coverage plus a four-class imputation taxonomy so an analyst can see how much of a score is real data. Scores are served through the get-resilience-score and get-resilience-ranking endpoints and the get_country_risk MCP tool.
+CRI covers a fixed 196-country public rankable universe (a committed UN-member and SAR whitelist); low-confidence or headline-ineligible countries are routed to a separate greyed-out list rather than dropped, and every response exposes per-dimension coverage plus a four-class imputation taxonomy so an analyst can see how much of a score is real data. This fork retains published country snapshots and their coverage and source attribution, not a live account-backed score API.
 
 <a id="corpus-strategic-risk"></a>
 ### Strategic Risk
@@ -649,7 +650,7 @@ The World Brief is WorldMonitor’s AI-generated, source-attributed summary of t
 
 The World Brief is a source-attributed situational summary generated from WorldMonitor’s correlated live signals — news, map events, focal points, and classified threats. It answers "what is happening right now, globally" in a form an operator or an agent can consume directly.
 
-It is available through the get_world_brief MCP tool and the dashboard, and it draws on the same focal-point and classification layers that power the map, so the narrative and the geospatial view stay consistent.
+It is available through the dashboard, and it draws on the same focal-point and classification layers that power the map, so the narrative and the geospatial view stay consistent.
 
 <a id="corpus-prediction-market"></a>
 ### Prediction Market
@@ -1635,9 +1636,9 @@ CRI is surfaced across three places in the product, all driven from the same cur
 - **Country Deep-Dive** — inside the per-country drill-down panel, CRI appears alongside CII (Country Instability Index) as a structural complement to the short-horizon stress signal. CII and CRI are intentionally **not interchangeable**: CII answers "how much stress is on this country right now?"; CRI answers "how well-positioned is this country to absorb and recover from shocks?"
 - **Map choropleth** — the resilience score drives a country-level choropleth layer on the main map. Toggle it from the map's layer panel or via Cmd+K.
 
-All three dashboard surfaces are free to view. Direct score and ranking API calls require the normal Pro/API auth path, while the runtime manifest is public at `/api/resilience/v1/get-runtime-manifest`; see [Resilience service](https://github.com/koala73/worldmonitor/blob/main/docs/api/ResilienceService.openapi.yaml) for the HTTP contract.
+All three dashboard surfaces are free to view. This fork retains public country reference pages rather than account-backed score and ranking APIs. The runtime manifest is public at `/api/resilience/v1/get-runtime-manifest`; see [Resilience service](https://github.com/koala73/worldmonitor/blob/main/docs/api/ResilienceService.openapi.yaml) for the HTTP contract.
 
-The Pro-only `/api/resilience/v1/get-resilience-indicators` method explains one country across the complete 72-row registry. It reports the exact normalized component scores and runtime weights used by the active scorer, then reconciles post-policy effective contributions to each published dimension score. Rows also distinguish observed, imputed, missing, fallback, source-failure, inactive, retired, and not-applicable states. The existing `get-resilience-score` response remains unchanged. Raw source values are selective and fail closed under the [indicator redistribution audit](./resilience-indicator-licensing.mdx); restricted rows still return WorldMonitor's normalized score, contribution, source attribution, and source year when known.
+The upstream indicator methodology distinguishes observed, imputed, missing and restricted source values. The live indicator API is not available in this fork. Published reference data retains source attribution and licensing limits; consult the [indicator redistribution audit](./resilience-indicator-licensing.mdx) before reusing raw values.
 
 <a id="corpus-what-goes-into-it"></a>
 ## What goes into it

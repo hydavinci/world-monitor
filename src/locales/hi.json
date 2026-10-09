@@ -3645,7 +3645,22 @@
     "fontMono": "मोनोस्पेस",
     "fontSystem": "सिस्टम डिफ़ॉल्ट",
     "panelFontScale": "पाठ आकार",
-    "followGlobalFontScale": "वैश्विक सेटिंग का उपयोग करें"
+    "followGlobalFontScale": "वैश्विक सेटिंग का उपयोग करें",
+    "alertNotifications": {
+      "title": "Alert notifications",
+      "desktop": "System desktop notifications",
+      "description": "Notify for high and critical breaking alerts while this page stays open. Existing alert filters still apply.",
+      "authorize": "Allow notifications",
+      "test": "Send test notification",
+      "default": "Browser permission has not been granted. Click Allow notifications to enable it.",
+      "granted": "Browser permission granted. If notifications do not appear, check browser notifications and your system's Do Not Disturb settings.",
+      "denied": "Notifications are blocked. Allow them in this site's browser permissions, then return here.",
+      "unsupported": "Desktop notifications are unavailable. Use a supporting desktop browser over HTTPS or localhost.",
+      "permissionFailed": "Could not request notification permission. Try again or check this site's browser permissions.",
+      "deliveryFailed": "Desktop notification delivery failed. Check browser permissions and system notification settings.",
+      "testTitle": "World Monitor notification test",
+      "testBody": "Desktop alert notifications are connected. Click to return to World Monitor."
+    }
   },
   "premium": {
     "pro": "PRO",
@@ -3671,7 +3686,8 @@
     "signIn": "साइन इन करें",
     "createAccount": "खाता बनाएं",
     "settings": "सेटिंग्स",
-    "passkeyOffer": {}
+    "passkeyOffer": {},
+    "localUnavailable": "Unavailable in local anonymous mode."
   },
   "mcp": {
     "connectPanel": "MCP से जुड़ें",

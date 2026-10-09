@@ -3,6 +3,7 @@ import { addCountry, getFollowed, removeCountry } from '@/services/followed-coun
 import { loadTabsState } from '@/services/tab-store';
 import { importSettings } from '@/utils/settings-persistence';
 import { loadWidgets, saveWidget } from '@/services/widget-store';
+import { getWebMcpAccessContext } from '@/app/webmcp-access';
 
 vi.mock('@/services/runtime', () => ({ isDesktopRuntime: () => false }));
 
@@ -45,6 +46,17 @@ describe('public preference boundaries', () => {
 });
 
 describe('account-free local features', () => {
+  it('reports public access with export and uncapped local panels and tabs', () => {
+    expect(getWebMcpAccessContext({ enabledPanelUsed: 41, dashboardTabCount: 11 })).toEqual({
+      mode: 'public',
+      capabilities: { dataExport: true },
+      limits: {
+        enabledPanels: { used: 41, cap: null },
+        dashboardTabs: { used: 11, cap: null, canCreate: true },
+      },
+    });
+  });
+
   it('follows more countries than the former account cap using local storage only', async () => {
     for (const code of ['US', 'FR', 'DE', 'NG', 'IR', 'GB', 'BR', 'JP', 'AU', 'CA', 'RU', 'UA', 'CN', 'ZA', 'SA', 'IN', 'MX', 'ES', 'IT', 'PL', 'NL']) {
       expect(await addCountry(code)).toEqual({ ok: true });

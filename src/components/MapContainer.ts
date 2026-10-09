@@ -1706,7 +1706,7 @@ export class MapContainer {
 
   /**
    * Activate a scenario across all active renderers.
-   * PRO-gated — free users trigger `trackGateHit('scenario-engine')` only.
+   * Scenario execution is unavailable in the public-only fork.
    *
    * @param scenarioId  Template ID from scenario-templates.ts
    * @param result      Computed result from the scenario worker
@@ -1717,16 +1717,7 @@ export class MapContainer {
     this.globeMap?.setScenarioState(state);
   }
 
-  public activateScenario(scenarioId: string, result: ScenarioResult): void {{
-      return;
-    }
-    const state: ScenarioVisualState = {
-      scenarioId,
-      disruptedChokepointIds: result.template?.disruptionPct === 0 ? [] : result.affectedChokepointIds,
-      affectedIso2s: result.topImpactCountries.filter(c => c.totalImpact > 0).map(c => c.iso2),
-    };
-    this.cachedScenarioState = state;
-    this.applyScenarioState(state);
+  public activateScenario(_scenarioId: string, _result: ScenarioResult): void {
   }
 
   /**

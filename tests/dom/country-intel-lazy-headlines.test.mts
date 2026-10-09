@@ -107,8 +107,6 @@ const EMPTY_SIGNALS: CountryBriefSignals = {
   gpsJammingHexes: 0,
   isTier1: false,
   thermalEscalations: 0,
-  sanctionsDesignations: 0,
-  sanctionsNewDesignations: 0,
 };
 
 function newsItem(title: string): NewsItem {

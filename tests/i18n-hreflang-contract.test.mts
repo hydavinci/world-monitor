@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSupportedLanguages } from '../scripts/docs-stats.mjs';
-import { guardProBuiltOutput, shouldSkipProBuiltOutput } from './_lib/pro-built-output.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path: string) => readFileSync(join(ROOT, path), 'utf8');
@@ -27,17 +26,11 @@ interface StaticResponse {
 }
 
 const DEPLOYED_ROUTES = new Map<string, string>([
-  ['/', 'public/pro/welcome.html'],
   ['/dashboard', 'index.html'],
-  ['/pro', 'public/pro/index.html'],
 ]);
 
 const SOURCE_DOCUMENTS = [
   { path: 'index.html', canonical: 'https://www.worldmonitor.app/dashboard' },
-  { path: 'pro-test/welcome.html', canonical: 'https://www.worldmonitor.app/' },
-  { path: 'pro-test/index.html', canonical: 'https://www.worldmonitor.app/pro' },
-  { path: 'public/pro/welcome.html', canonical: 'https://www.worldmonitor.app/' },
-  { path: 'public/pro/index.html', canonical: 'https://www.worldmonitor.app/pro' },
 ];
 
 function tagText(html: string, tag: string): string {
@@ -171,11 +164,7 @@ async function validateHreflangCluster(
   return failures;
 }
 
-// public/pro/ is built by `npm run build:pro`, not committed (#6898): skip when the
-// checkout has not built it, fail when WM_EXPECT_BUILT_OUTPUT=1 says CI did.
-describe('international SEO application-locale mode (#5666)', { skip: shouldSkipProBuiltOutput() }, () => {
-  guardProBuiltOutput();
-
+describe('international SEO application-locale mode (#5666)', () => {
   it('publishes only x-default and English at each self-canonical application URL', () => {
     for (const { path, canonical } of SOURCE_DOCUMENTS) {
       const document = parseDocument(read(path));
@@ -187,6 +176,7 @@ describe('international SEO application-locale mode (#5666)', { skip: shouldSkip
         `${path}: indexable hreflang cluster`,
       );
       assert.equal(document.indexable, true, `${path}: canonical document remains indexable`);
+      assert.ok(document.structuredLanguages.length > 0, `${path}: structured language cohort`);
       assert.ok(document.structuredLanguages.every((language) => language === 'en'), `${path}: structured language must describe the raw English document`);
     }
   });
@@ -240,5 +230,16 @@ describe('international SEO application-locale mode (#5666)', { skip: shouldSkip
   it('never lists pseudo-localized query URLs in sitemap or robots output', () => {
     assert.doesNotMatch(read('public/sitemap.xml'), /[?&]lang=/i);
     assert.doesNotMatch(read('public/robots.www.txt'), /[?&]lang=/i);
+  });
+
+  it('does not announce retired marketing URLs as canonical, alternate, or sitemap targets', () => {
+    for (const { path } of SOURCE_DOCUMENTS) {
+      const document = parseDocument(read(path));
+      for (const url of [document.canonical, ...document.hreflang.values()]) {
+        assert.doesNotMatch(new URL(url).pathname, /^\/(?:pro|pricing)(?:\/|$)/, path);
+      }
+    }
+    assert.doesNotMatch(read('public/sitemap.xml'), /<loc>[^<]*\/(?:pro|pricing)(?:[\/?#<])/i);
+    assert.doesNotMatch(read('public/robots.www.txt'), /^(?:Allow|Sitemap):[^\n]*\/(?:pro|pricing)(?:[\/?#\s]|$)/im);
   });
 });

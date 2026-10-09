@@ -1,5 +1,4 @@
 import { describe, it } from 'node:test';
-import { guardProBuiltOutput, shouldSkipProBuiltOutput } from './_lib/pro-built-output.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -10,10 +9,7 @@ const ROOT = resolve(dirname(__filename), '..');
 
 const view = JSON.parse(readFileSync(join(ROOT, 'public/agent-view.json'), 'utf-8'));
 const serverCard = JSON.parse(
-  readFileSync(join(ROOT, 'public/.well-known/mcp/server-card.json'), 'utf-8'),
-);
-const agentCard = JSON.parse(
-  readFileSync(join(ROOT, 'public/.well-known/agent-card.json'), 'utf-8'),
+  readFileSync(join(ROOT, 'public/.well-known/mcp/docs-server-card.json'), 'utf-8'),
 );
 const vercelConfig = JSON.parse(readFileSync(join(ROOT, 'vercel.json'), 'utf-8'));
 const productFacts = JSON.parse(readFileSync(join(ROOT, 'public/product-facts.json'), 'utf-8'));
@@ -21,18 +17,20 @@ const productFacts = JSON.parse(readFileSync(join(ROOT, 'public/product-facts.js
 // Guards for the ?mode=agent machine-readable homepage view (orank Identity
 // `agent-mode-view` bonus): the static JSON must stay in parity with the real
 // discovery artifacts it summarizes, and the query-gated rewrite must fire
-// BEFORE the / → welcome rewrite or the marketing page wins.
+// before the public dashboard fallback.
 describe('agent-mode view (/?mode=agent)', () => {
-  guardProBuiltOutput();
   it('agent-view.json carries the machine-readable essentials', () => {
     assert.equal(view.kind, 'agent-view');
     for (const key of ['product', 'url', 'description', 'endpoints', 'authentication', 'rateLimits', 'documentation', 'capabilities', 'discovery']) {
       assert.ok(key in view, `agent-view.json missing ${key}`);
     }
     assert.ok(Array.isArray(view.capabilities) && view.capabilities.length >= 5);
-    assert.ok(view.authentication.apiKey.header === 'X-WorldMonitor-Key');
-    assert.ok(view.authentication.oauth2.scope === 'mcp');
+    assert.equal(view.endpoints.webMcp.url, 'https://www.worldmonitor.app/dashboard');
+    assert.match(view.endpoints.webMcp.note, /modelContext/);
+    assert.equal(view.authentication.apiKey, undefined, 'retired account keys must not be advertised');
+    assert.equal(view.authentication.oauth2, undefined, 'retired account OAuth must not be advertised');
     assert.match(view.authentication.summary, /Authentication/);
+    assert.match(view.authentication.summary, /anonymous|no auth/i);
   });
 
   it('advertises the sandbox, quickstart, and docs MCP endpoints', () => {
@@ -46,6 +44,7 @@ describe('agent-mode view (/?mode=agent)', () => {
     for (const key of ['sandbox', 'rest', 'mcp']) {
       assert.match(view.quickstart[key], /^curl /, `quickstart.${key} must be a runnable curl line`);
     }
+    assert.match(view.quickstart.mcp, /https:\/\/www\.worldmonitor\.app\/docs\/mcp(?:\s|$)/);
     // The sandbox quickstart must reference a fixture that actually ships.
     assert.doesNotThrow(() => readFileSync(join(ROOT, 'public/sandbox/get-resilience-score.json')));
   });
@@ -67,17 +66,14 @@ describe('agent-mode view (/?mode=agent)', () => {
     }
   });
 
-  it('the marketing homepage advertises its machine-readable alternate views', { skip: shouldSkipProBuiltOutput() }, () => {
-    // Source/build pair: public/pro/welcome.html is produced by
-    // `npm run build:pro` rather than committed (#6898), so this asserts the
-    // pointer survives the prerender rather than that two committed files agree.
+  it('the public dashboard advertises its machine-readable alternate views', () => {
     const alternateLinks = [
       ['application/json', 'https://www.worldmonitor.app/?mode=agent'],
       ['text/plain', '/llms.txt'],
       ['text/markdown', '/index.md'],
       ['text/markdown', '/world-monitor.md'],
     ];
-    for (const path of ['pro-test/welcome.html', 'public/pro/welcome.html']) {
+    for (const path of ['index.html']) {
       const html = readFileSync(join(ROOT, path), 'utf-8');
       for (const [type, href] of alternateLinks) {
         assert.ok(
@@ -126,19 +122,19 @@ describe('agent-mode view (/?mode=agent)', () => {
     assert.equal(sections.docs, 'https://www.worldmonitor.app/docs/llms.txt');
   });
 
-  it('stays in parity with the MCP server card and A2A agent card', () => {
-    assert.equal(view.endpoints.mcp.url, serverCard.url);
-    assert.equal(view.endpoints.mcp.serverCard, 'https://worldmonitor.app/.well-known/mcp/server-card.json');
-    assert.equal(view.endpoints.mcp.tools, undefined, 'agent-view must not carry a hand-maintained tool total');
-    assert.match(view.endpoints.mcp.note, /tools\/list.*live tool inventory/i);
-    assert.ok(serverCard.tools.length > 0, 'the linked live server card must expose tools');
-    assert.equal(view.endpoints.a2a.url, agentCard.url);
-    assert.equal(view.endpoints.nlweb.url, 'https://www.worldmonitor.app/ask');
+  it('stays in parity with the public docs MCP card without announcing retired product transports', () => {
+    assert.equal(view.endpoints.docsMcp.url, serverCard.url);
+    assert.equal(view.endpoints.docsMcp.serverCard, 'https://www.worldmonitor.app/.well-known/mcp/docs-server-card.json');
+    assert.equal(view.endpoints.docsMcp.tools, undefined, 'agent-view must not carry a hand-maintained tool total');
+    assert.ok(serverCard.tools.length > 0, 'the linked documentation server card must expose tools');
+    assert.equal(serverCard.authentication, 'none');
+    for (const endpoint of ['mcp', 'a2a', 'nlweb']) {
+      assert.equal(view.endpoints[endpoint], undefined, `${endpoint} is retired, not browser WebMCP`);
+    }
   });
 
   it('points agents at derived tool and locale inventories instead of orphaned totals', () => {
-    assert.equal(view.endpoints.mcp.tools, undefined);
-    assert.match(view.endpoints.mcp.note, /tools\/list.*live tool inventory/i);
+    assert.equal(view.endpoints.docsMcp.tools, undefined);
     const llmsFull = readFileSync(join(ROOT, 'public/llms-full.txt'), 'utf-8');
     assert.match(llmsFull, /product-facts\.json.*capabilities\.localeCodes/);
     assert.ok(productFacts.capabilities.localeCodes.length > 0);
@@ -149,7 +145,7 @@ describe('agent-mode view (/?mode=agent)', () => {
     );
   });
 
-  it('vercel.json serves it for /?mode=agent ahead of the welcome rewrite', () => {
+  it('vercel.json serves it for /?mode=agent ahead of the public dashboard rewrite', () => {
     const rewrites = vercelConfig.rewrites;
     const agentIdx = rewrites.findIndex(
       (r) =>
@@ -158,12 +154,13 @@ describe('agent-mode view (/?mode=agent)', () => {
         r.has.some((h) => h.type === 'query' && h.key === 'mode' && h.value === 'agent') &&
         r.destination === '/agent-view.json',
     );
-    const welcomeIdx = rewrites.findIndex(
-      (r) => r.source === '/' && r.destination === '/pro/welcome.html',
+    const dashboardIdx = rewrites.findIndex(
+      (r) => r.source === '/' && r.destination === '/dashboard.html',
     );
     assert.ok(agentIdx >= 0, 'missing /?mode=agent rewrite to /agent-view.json');
-    assert.ok(welcomeIdx >= 0, 'welcome rewrite missing');
-    assert.ok(agentIdx < welcomeIdx, '?mode=agent rewrite must precede the welcome rewrite (first match wins)');
+    assert.ok(dashboardIdx >= 0, 'public dashboard rewrite missing');
+    assert.ok(agentIdx < dashboardIdx, '?mode=agent rewrite must precede the dashboard rewrite (first match wins)');
+    assert.ok(!rewrites.some((r) => /\/pro(?:\/|$)/.test(r.destination)), 'rewrites must not restore the retired marketing build');
   });
 
   it('every discovery URL it advertises resolves to a tracked file or a live rewrite', () => {
@@ -188,8 +185,34 @@ describe('agent-mode view (/?mode=agent)', () => {
       );
       assert.doesNotThrow(() => readFileSync(join(ROOT, path)), `${path} must exist for ${url}`);
     }
-    // /index.md is rewrite-served (public/home.md) since #4830.
+    // /index.md and negotiated Markdown share the retained identity document.
     const mdRewrite = vercelConfig.rewrites.find((r) => r.source === '/index.md');
     assert.ok(mdRewrite, 'markdownHomepage advertised but /index.md rewrite is gone');
+    assert.equal(mdRewrite.destination, '/world-monitor.md');
+    assert.doesNotThrow(() => readFileSync(join(ROOT, 'public/world-monitor.md')));
+  });
+
+  it('public agent announcements do not direct users to retired product or account routes', () => {
+    for (const path of ['public/agent-view.json', 'public/home.md', 'public/world-monitor.md', 'public/llms-full.txt']) {
+      assert.doesNotMatch(
+        readFileSync(join(ROOT, path), 'utf-8'),
+        /https:\/\/(?:www\.)?worldmonitor\.app\/(?:mcp|pro|pricing|oauth|a2a|ask)(?:[\/?#\s"'`)]|$)/i,
+        `${path} must not announce retired routes; /docs/mcp and browser WebMCP remain public`,
+      );
+    }
+    assert.doesNotMatch(
+      readFileSync(join(ROOT, 'public/llms-full.txt'), 'utf-8'),
+      /\bget_(?:country_risk|world_brief) MCP tool\b|\bPro-only\b|\bnormal Pro\/API auth path\b|World Monitor API Starter at \$99\.99/i,
+      'inlined upstream methodology must not advertise retired fork interfaces or plans',
+    );
+  });
+
+  it('the extended agent document matches its retained public generator', async () => {
+    const { buildLlmsFullText } = await import('../scripts/build-llms-full.mjs');
+    assert.equal(
+      readFileSync(join(ROOT, 'public/llms-full.txt'), 'utf-8'),
+      buildLlmsFullText({ rootDir: ROOT }),
+      'public/llms-full.txt must retain the public generator output, including source attribution',
+    );
   });
 });

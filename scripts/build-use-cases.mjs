@@ -222,11 +222,6 @@ function renderCountryRiskUseCase({ tpl, baseUrl, lastmod }) {
       destination: 'dashboard',
       placement: 'use-case-cta-dashboard',
     },
-    pro: {
-      campaign: 'monitor-country-risk',
-      destination: 'pro',
-      placement: 'use-case-cta-pro',
-    },
     api: {
       campaign: 'monitor-country-risk',
       destination: 'api',
@@ -239,9 +234,8 @@ function renderCountryRiskUseCase({ tpl, baseUrl, lastmod }) {
     },
   };
   const dashboardHref = withContentAttribution('/dashboard?country=TW&expanded=1', handoffs.dashboard);
-  const proHref = withContentAttribution('/pro', handoffs.pro);
   const apiHref = withContentAttribution('/docs/api-reference', handoffs.api);
-  const mcpHref = withContentAttribution('/docs/mcp-quickstart', handoffs.mcp);
+  const mcpHref = withContentAttribution('/docs/mcp', handoffs.mcp);
 
   const body = `      <p class="eyebrow">Use case</p>
       <h1>Monitor country risk</h1>
@@ -265,7 +259,7 @@ function renderCountryRiskUseCase({ tpl, baseUrl, lastmod }) {
         <li id="step-review-current-instability-and-forecasts"><strong>Review current instability and forecasts.</strong> Open the country brief, inspect component drivers (unrest, conflict, security, information), and note any prediction-market contracts tied to the country without treating them as proof.</li>
         <li id="step-check-corroborating-economic-and-security-signals"><strong>Check corroborating economic and security signals.</strong> Look for independent families near the exposure — hotspot trends, keyword monitors, infrastructure adjacency, chokepoints, travel advisories, or sanctions context — and require more than repeated headlines.</li>
         <li id="step-record-uncertainty"><strong>Record uncertainty.</strong> Write what is observed, what is inferred, what is stale, and what coverage gaps can explain missing signals. Absence of a sensor is not proof of calm.</li>
-        <li id="step-set-the-follow-up-or-escalation"><strong>Set the follow-up or escalation.</strong> Choose routine watch, deepen dossier, enable Pro alerting, or automate via API/MCP. Continue into the exact product state below rather than the generic homepage.</li>
+        <li id="step-set-the-follow-up-or-escalation"><strong>Set the follow-up or escalation.</strong> Choose routine watch or deepen the dossier. Continue into the exact dashboard state below, or consult the public API and documentation MCP references.</li>
       </ol>
 
       <h2>Product proof used by this workflow</h2>
@@ -273,8 +267,7 @@ function renderCountryRiskUseCase({ tpl, baseUrl, lastmod }) {
         <li>Country Instability Index and Country Resilience Index on crawlable country pages and in the live dashboard country brief.</li>
         <li>Country brief dossier with component breakdown and infrastructure context.</li>
         <li>Hotspot trends, keyword monitors, and convergence cues for daily watch.</li>
-        <li>Optional Pro notification channels for automated watch.</li>
-        <li>Optional API and MCP <code>get_country_risk</code> / country-brief tools for programmable checks.</li>
+        <li>Public API reference and anonymous documentation MCP for checking integration contracts.</li>
       </ul>
 
       <h2>Worked example: five-country supplier footprint</h2>
@@ -294,9 +287,8 @@ function renderCountryRiskUseCase({ tpl, baseUrl, lastmod }) {
       <p><a class="cta" ${handoffAttributes(handoffs.dashboard, escapeHtml)} data-dashboard-link href="${escapeHtml(dashboardHref)}">Open Taiwan country brief →</a></p>
       <p>Secondary handoffs when they continue this workflow:</p>
       <ul class="related">
-        <li><a ${handoffAttributes(handoffs.pro, escapeHtml)} href="${escapeHtml(proHref)}">Pro alerting</a></li>
         <li><a ${handoffAttributes(handoffs.api, escapeHtml)} href="${escapeHtml(apiHref)}">API reference</a></li>
-        <li><a ${handoffAttributes(handoffs.mcp, escapeHtml)} href="${escapeHtml(mcpHref)}">MCP quickstart</a></li>
+        <li><a ${handoffAttributes(handoffs.mcp, escapeHtml)} href="${escapeHtml(mcpHref)}">Documentation MCP</a></li>
       </ul>
 
       <h2>Supporting material</h2>
@@ -329,7 +321,7 @@ function renderCountryRiskUseCase({ tpl, baseUrl, lastmod }) {
     },
     {
       name: 'Set the follow-up or escalation',
-      text: 'Choose routine watch, deepen dossier, enable Pro alerting, or automate via API/MCP. Continue into the exact product state below rather than the generic homepage.',
+      text: 'Choose routine watch or deepen the dossier. Continue into the exact dashboard state below, or consult the public API and documentation MCP references.',
     },
   ];
 
@@ -392,11 +384,6 @@ function renderVerifyBreakingNewsUseCase({ tpl, baseUrl, lastmod }) {
       destination: 'dashboard',
       placement: 'use-case-cta-dashboard',
     },
-    pro: {
-      campaign: 'verify-breaking-news',
-      destination: 'pro',
-      placement: 'use-case-cta-pro',
-    },
     api: {
       campaign: 'verify-breaking-news',
       destination: 'api',
@@ -412,9 +399,8 @@ function renderVerifyBreakingNewsUseCase({ tpl, baseUrl, lastmod }) {
     '/dashboard?view=mena&layers=ais,flights,fires,outages,hotspots,natural,military&timeRange=24h',
     handoffs.dashboard,
   );
-  const proHref = withContentAttribution('/pro', handoffs.pro);
   const apiHref = withContentAttribution('/docs/api-reference', handoffs.api);
-  const mcpHref = withContentAttribution('/docs/mcp-quickstart', handoffs.mcp);
+  const mcpHref = withContentAttribution('/docs/mcp', handoffs.mcp);
 
   const body = `      <p class="eyebrow">Use case</p>
       <h1>Verify breaking news</h1>
@@ -439,7 +425,7 @@ function renderVerifyBreakingNewsUseCase({ tpl, baseUrl, lastmod }) {
         <li id="step-check-news-velocity-without-equating-repetition-to-proof"><strong>Check news velocity without equating repetition to proof.</strong> Look at topic velocity, hotspot movement, and outlet diversity. Many copies of one video are still one source family.</li>
         <li id="step-test-only-relevant-independent-signals"><strong>Test only relevant independent signals.</strong> Use AIS/maritime, aviation/NOTAMs, FIRMS thermal, seismic, connectivity/outages, webcams, or country context when the claim’s physics or geography would leave a fingerprint. Skip layers that cannot speak to this claim.</li>
         <li id="step-record-freshness-fit-and-contradictions"><strong>Record freshness, fit, and contradictions.</strong> Log observation time, spatial/temporal mismatch, missing coverage that can explain a quiet sensor, and any signal that conflicts with the claim.</li>
-        <li id="step-assign-a-qualified-outcome"><strong>Assign a qualified outcome.</strong> Choose supported, contradicted, unresolved, or stale — with uncertainty visible — then continue into the exact dashboard, Pro alert, API, or MCP action below.</li>
+        <li id="step-assign-a-qualified-outcome"><strong>Assign a qualified outcome.</strong> Choose supported, contradicted, unresolved, or stale — with uncertainty visible — then continue into the dashboard or consult the public API and documentation MCP references below.</li>
       </ol>
 
       <h2>Product proof used by this workflow</h2>
@@ -447,8 +433,7 @@ function renderVerifyBreakingNewsUseCase({ tpl, baseUrl, lastmod }) {
         <li>Live map layers for AIS density and dark-ship cues, flights/military aviation, fires/thermal, natural hazards, outages, and hotspot escalation.</li>
         <li>Geographic convergence cues when multiple independent event types cluster in one cell.</li>
         <li>Country briefs and instability context to calibrate priors — not to validate the claim alone.</li>
-        <li>Optional Pro notification channels for continuing watch after the first pass.</li>
-        <li>Optional API and MCP tools for maritime, conflict, news, and related programmable checks.</li>
+        <li>Public API reference and documentation MCP for integration guidance after the first pass.</li>
       </ul>
 
       <h2>Worked example: Gulf port explosion claim</h2>
@@ -469,9 +454,8 @@ function renderVerifyBreakingNewsUseCase({ tpl, baseUrl, lastmod }) {
       <p><a class="cta" ${handoffAttributes(handoffs.dashboard, escapeHtml)} data-dashboard-link href="${escapeHtml(dashboardHref)}">Open verification map layers →</a></p>
       <p>Secondary handoffs when they continue this workflow:</p>
       <ul class="related">
-        <li><a ${handoffAttributes(handoffs.pro, escapeHtml)} href="${escapeHtml(proHref)}">Pro alerting</a></li>
         <li><a ${handoffAttributes(handoffs.api, escapeHtml)} href="${escapeHtml(apiHref)}">API reference</a></li>
-        <li><a ${handoffAttributes(handoffs.mcp, escapeHtml)} href="${escapeHtml(mcpHref)}">MCP quickstart</a></li>
+        <li><a ${handoffAttributes(handoffs.mcp, escapeHtml)} href="${escapeHtml(mcpHref)}">Documentation MCP</a></li>
       </ul>
 
       <h2>Supporting material</h2>
@@ -508,7 +492,7 @@ function renderVerifyBreakingNewsUseCase({ tpl, baseUrl, lastmod }) {
     },
     {
       name: 'Assign a qualified outcome',
-      text: 'Choose supported, contradicted, unresolved, or stale — with uncertainty visible — then continue into the exact dashboard, Pro alert, API, or MCP action below.',
+      text: 'Choose supported, contradicted, unresolved, or stale — with uncertainty visible — then continue into the dashboard or consult the public API and documentation MCP references below.',
     },
   ];
 
@@ -571,11 +555,6 @@ function renderSupplyChainDisruptionsUseCase({ tpl, baseUrl, lastmod }) {
       destination: 'dashboard',
       placement: 'use-case-cta-dashboard',
     },
-    pro: {
-      campaign: 'monitor-supply-chain-disruptions',
-      destination: 'pro',
-      placement: 'use-case-cta-pro',
-    },
     api: {
       campaign: 'monitor-supply-chain-disruptions',
       destination: 'api',
@@ -591,9 +570,8 @@ function renderSupplyChainDisruptionsUseCase({ tpl, baseUrl, lastmod }) {
     '/dashboard?chokepoint=bab_el_mandeb&layers=ais,tradeRoutes,hotspots,sanctions,flights,cables&timeRange=24h',
     handoffs.dashboard,
   );
-  const proHref = withContentAttribution('/pro', handoffs.pro);
   const apiHref = withContentAttribution('/docs/api-reference', handoffs.api);
-  const mcpHref = withContentAttribution('/docs/mcp-quickstart', handoffs.mcp);
+  const mcpHref = withContentAttribution('/docs/mcp', handoffs.mcp);
 
   const body = `      <p class="eyebrow">Use case</p>
       <h1>Monitor supply-chain disruptions</h1>
@@ -634,7 +612,7 @@ function renderSupplyChainDisruptionsUseCase({ tpl, baseUrl, lastmod }) {
         <li>AIS / trade-route layers, hotspot escalation, sanctions context, flights, and cable/infrastructure adjacency where relevant.</li>
         <li>Country risk and resilience pages for supplier geographies.</li>
         <li>Commodity Monitor and related market surfaces for confirmation — labeled as markets, not causal proof.</li>
-        <li>Optional Pro alerts plus API/MCP automation for continuing watch.</li>
+        <li>Public API reference and documentation MCP for integration guidance.</li>
       </ul>
 
       <h2>Worked example: Red Sea container exposure</h2>
@@ -656,9 +634,8 @@ function renderSupplyChainDisruptionsUseCase({ tpl, baseUrl, lastmod }) {
       <p><a class="cta" ${handoffAttributes(handoffs.dashboard, escapeHtml)} data-dashboard-link href="${escapeHtml(dashboardHref)}">Open Bab el-Mandeb disruption map →</a></p>
       <p>Secondary handoffs when they continue this workflow:</p>
       <ul class="related">
-        <li><a ${handoffAttributes(handoffs.pro, escapeHtml)} href="${escapeHtml(proHref)}">Pro alerting</a></li>
         <li><a ${handoffAttributes(handoffs.api, escapeHtml)} href="${escapeHtml(apiHref)}">API reference</a></li>
-        <li><a ${handoffAttributes(handoffs.mcp, escapeHtml)} href="${escapeHtml(mcpHref)}">MCP quickstart</a></li>
+        <li><a ${handoffAttributes(handoffs.mcp, escapeHtml)} href="${escapeHtml(mcpHref)}">Documentation MCP</a></li>
       </ul>
 
       <h2>Supporting material</h2>

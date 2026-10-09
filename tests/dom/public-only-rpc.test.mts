@@ -10,8 +10,9 @@ describe('permanent retired RPC policy', () => {
     const { rpcFetch } = await import('@/services/rpc-client');
     const fetch = vi.fn(() => Promise.resolve(Response.json({ ok: true })));
     vi.stubGlobal('fetch', fetch);
+    const credentialCases: HeadersInit[] = [{}, { Authorization: 'Bearer supplied-token', 'X-API-Key': 'supplied-key' }];
     for (const path of RETIRED_RPC_PATHS) {
-      for (const headers of [{}, { Authorization: 'Bearer supplied-token', 'X-API-Key': 'supplied-key' }]) {
+      for (const headers of credentialCases) {
         expect(() => rpcFetch(`https://public.example${path}/?test=1`, { headers })).toThrow('Retired RPC');
       }
     }

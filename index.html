@@ -16,6 +16,10 @@
     <link rel="canonical" href="https://www.worldmonitor.app/dashboard" />
     <link rel="alternate" hreflang="x-default" href="https://www.worldmonitor.app/dashboard" />
     <link rel="alternate" hreflang="en" href="https://www.worldmonitor.app/dashboard" />
+    <link rel="alternate" type="application/json" href="https://www.worldmonitor.app/?mode=agent" />
+    <link rel="alternate" type="text/plain" href="/llms.txt" />
+    <link rel="alternate" type="text/markdown" href="/index.md" />
+    <link rel="alternate" type="text/markdown" href="/world-monitor.md" />
 
     <!-- Additional Search Discovery -->
     <meta name="application-name" content="World Monitor" />
@@ -186,6 +190,29 @@
         "query-input": "required name=search_term_string"
       },
       "inLanguage": "en"
+    }
+    </script>
+
+    <script type="application/ld+json" nonce="wm-static-bootstrap">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "@id": "https://www.worldmonitor.app/#organization",
+      "name": "World Monitor",
+      "url": "https://www.worldmonitor.app/"
+    }
+    </script>
+
+    <script type="application/ld+json" nonce="wm-static-bootstrap">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareSourceCode",
+      "@id": "https://www.worldmonitor.app/#source",
+      "codeRepository": "https://github.com/koala73/worldmonitor",
+      "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+      "targetProduct": {
+        "@id": "https://www.worldmonitor.app/#software"
+      }
     }
     </script>
 

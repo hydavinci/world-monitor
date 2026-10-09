@@ -4,8 +4,6 @@ import { describe, it } from 'node:test';
 import { load } from 'js-yaml';
 import middleware from '../middleware';
 import agentRequestPolicy from '../shared/agent-request-policy.json';
-import { decodeHtmlEntities } from '../src/utils/html-entities';
-import { guardProBuiltOutput, shouldSkipProBuiltOutput } from './_lib/pro-built-output.mjs';
 
 describe('public agent documents', () => {
   // auth.md is intentionally heading-led for scanner compatibility. Its title,
@@ -28,7 +26,6 @@ describe('public agent documents', () => {
 });
 
 describe('agent homepage routing', () => {
-  guardProBuiltOutput();
   for (const agent of agentRequestPolicy.userAgents) {
     it(`${agent} receives the Markdown document even with Accept: text/html`, async () => {
       for (const host of ['worldmonitor.app', 'www.worldmonitor.app']) {
@@ -37,7 +34,7 @@ describe('agent homepage routing', () => {
             method, headers: { 'User-Agent': `${agent}/1.0`, Accept: 'text/html' },
           }));
           assert.ok(response);
-          assert.equal(response.headers.get('x-middleware-rewrite'), `https://${host}/pro/home.md`);
+          assert.equal(response.headers.get('x-middleware-rewrite'), `https://${host}/world-monitor.md`);
           assert.match(response.headers.get('content-type')!, /text\/markdown/);
           for (const header of ['Cache-Control', 'CDN-Cache-Control', 'Vercel-CDN-Cache-Control']) {
             assert.match(response.headers.get(header)!, /no-store/);
@@ -48,13 +45,12 @@ describe('agent homepage routing', () => {
     });
   }
 
-  it('serves the same complete homepage for crawler and Accept negotiation', { skip: shouldSkipProBuiltOutput() }, async () => {
-    const html = readFileSync(new URL('../public/pro/welcome.html', import.meta.url), 'utf8');
-    const depth = JSON.parse(readFileSync(new URL('../pro-test/src/generated/depth-stats.json', import.meta.url), 'utf8'));
+  it('serves the same complete public dashboard context for crawler and Accept negotiation', async () => {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
     const { htmlToMarkdown } = await import('../api/_md-url-twin');
-    const sections = [...html.matchAll(/<section\b[^>]*>[\s\S]*?<\/section>/g)]
+    const sections = [...html.matchAll(/<section\b[^>]*class="app-seo-summary"[^>]*>[\s\S]*?<\/section>/g)]
       .map(section => htmlToMarkdown(section[0], 'World Monitor').replace(/^# World Monitor\n\n/, ''));
-    assert.ok(sections.length > 0, 'the proof must exercise rendered homepage sections');
+    assert.equal(sections.length, 1, 'exercise the retained public dashboard summary');
     let canonicalMarkdown: string | undefined;
     for (const headers of [
       { 'User-Agent': 'Mozilla/5.0', Accept: 'text/markdown' },
@@ -66,37 +62,30 @@ describe('agent homepage routing', () => {
       const markdown = readFileSync(new URL(`../public${destination.pathname}`, import.meta.url), 'utf8');
       canonicalMarkdown ??= markdown;
       assert.equal(markdown, canonicalMarkdown);
-      assert.match(markdown, /Under the hood/);
-      assert.match(markdown, /^canonical: "https:\/\/www\.worldmonitor\.app\/"$/m);
-      for (const value of Object.values(depth)) {
-        const token = new RegExp(`\\b${value}\\b`);
-        assert.match(html, token);
-        assert.match(markdown, token);
-      }
-      // Compare each rendered teaser section, including its values and capture date.
+      assert.equal(destination.pathname, '/world-monitor.md');
+      assert.match(markdown, /^canonical: "https:\/\/www\.worldmonitor\.app\/world-monitor\.md"$/m);
+      assert.match(markdown, /AGPL-3\.0/);
       for (const section of sections) {
-        assert.ok(markdown.includes(section), 'all rendered homepage sections must survive');
+        assert.ok(markdown.includes(section), 'all retained public dashboard summary content must survive negotiation');
       }
     }
   });
 
-  it('publishes clean homepage markdown with every rendered stat pair', { skip: shouldSkipProBuiltOutput() }, () => {
-    const html = readFileSync(new URL('../public/pro/welcome.html', import.meta.url), 'utf8');
-    const markdown = readFileSync(new URL('../public/pro/home.md', import.meta.url), 'utf8');
+  it('publishes clean public markdown with every dashboard reference destination', () => {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const markdown = readFileSync(new URL('../public/world-monitor.md', import.meta.url), 'utf8');
     assert.equal([...markdown.matchAll(/^# /gm)].length, 1);
     assert.doesNotMatch(markdown, /&(?:#(?:x[0-9a-f]+|\d+)|[a-z]+);/i);
     assert.doesNotMatch(markdown, /[?&]utm_/i);
-    const band = html.match(/<section\b[^>]*\bid="depth"[^>]*>[\s\S]*?<\/section>/)?.[0];
-    assert.ok(band);
-    const pairs = [...band.matchAll(/<dt\b[^>]*>([^<]+)<\/dt>\s*<dd\b[^>]*>([^<]+)<\/dd>/g)];
-    assert.equal(pairs.length, 15, 'exercise every rendered stat, not just standalone numbers');
-    const section = markdown.slice(markdown.indexOf('Under the hood'));
-    const rows = section.match(/^- [^\n]+: \d+$/gm) ?? [];
-    assert.equal(rows.length, pairs.length);
-    for (const [, label, value] of pairs) {
-      const pair = `${decodeHtmlEntities(label)}: ${value}`;
-      assert.ok(rows.includes(`- ${pair}`), pair);
+    const references = html.match(/<nav aria-label="World Monitor references">[\s\S]*?<\/nav>/)?.[0];
+    assert.ok(references);
+    const hrefs = [...references.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map((match) => match[1]);
+    assert.equal(hrefs.length, 9, 'exercise every retained dashboard reference');
+    for (const href of hrefs) {
+      const absolute = new URL(href, 'https://www.worldmonitor.app').href;
+      assert.ok(markdown.includes(`](${absolute})`) || markdown.includes(`](${href})`), absolute);
     }
+    assert.doesNotMatch(markdown, /https:\/\/(?:www\.)?worldmonitor\.app\/(?:mcp|pro|pricing|oauth|a2a|ask)(?:[\/?#\s)]|$)/i);
   });
 
   it('routes the advertised suffix to the complete negotiated document before the generic twin', async () => {
@@ -118,7 +107,7 @@ describe('agent homepage routing', () => {
         const response = await middleware(new Request('https://www.worldmonitor.app/', {
           method, headers: { 'User-Agent': 'Mozilla/5.0', Accept: accept },
         }));
-        assert.equal(response?.headers.get('x-middleware-rewrite'), 'https://www.worldmonitor.app/pro/home.md');
+        assert.equal(response?.headers.get('x-middleware-rewrite'), 'https://www.worldmonitor.app/world-monitor.md');
         assert.equal(response?.headers.get('vary'), 'User-Agent, Accept');
         assert.match(response?.headers.get('cache-control') ?? '', /no-store/);
       }
@@ -174,7 +163,8 @@ describe('API User-Agent denial', () => {
       assert.equal(body.error, 'Forbidden');
       assert.equal(body.code, 'agent_request_blocked');
       assert.ok(body.message);
-      assert.match(body.hint, /User-Agent.*X-WorldMonitor-Key.*auth\.md/);
+      assert.match(body.hint, /User-Agent.*auth\.md/);
+      assert.doesNotMatch(body.hint, /X-WorldMonitor-Key|OAuth|subscription/i, 'recovery must not send users into retired account auth');
     });
   }
 });

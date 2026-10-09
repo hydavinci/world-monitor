@@ -277,7 +277,7 @@ export function renderVariantDashboardHtml(fullDashboardHtml: string, variant: s
     'SoftwareApplication featureList',
   );
 
-  html = removeJsonLdTypes(html, ['WebSite', 'WebPage', 'BreadcrumbList']);
+  html = removeJsonLdTypes(html, ['Organization', 'WebSite', 'WebPage', 'BreadcrumbList']);
 
   // Variants stay on their own canonical URL but must not be entity-orphaned:
   // join the canonical Organization/WebSite via WebPage + breadcrumbs + speakable

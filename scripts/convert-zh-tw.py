@@ -39,10 +39,10 @@ Two kinds of override, because two kinds of error:
 
 Usage:
     pip install opencc-python-reimplemented==0.1.7
-    python3 scripts/convert-zh-tw.py            # rewrite both catalogues
-    python3 scripts/convert-zh-tw.py --check    # exit 1 if either is stale
+    python3 scripts/convert-zh-tw.py            # rewrite the dashboard catalogue
+    python3 scripts/convert-zh-tw.py --check    # exit 1 if it is stale
 
-    npm run locales:zh-tw                       # the same two, as repo scripts
+    npm run locales:zh-tw                       # the same, as repo scripts
     npm run locales:zh-tw:check
 
 Output is byte-identical to the committed catalogues, so `--check` is a real
@@ -70,7 +70,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 CATALOGUES = (
     ("src", REPO_ROOT / "src/locales"),
-    ("pro-test", REPO_ROOT / "pro-test/src/locales"),
 )
 
 # Applied to every value, longest match first. Each entry is a term OpenCC
@@ -116,12 +115,6 @@ KEY_OVERRIDES = {
         # right (a deity, a diva) — here it is 天 + 后 meaning "days after".
         "popups.techEvent.days.inDays": {
             "天后": "天後",
-        },
-    },
-    "pro-test": {
-        # "Is this only for conflict monitoring?" — 只 as "only", not a measure word.
-        "faq.q5": {
-            "這隻": "這只",
         },
     },
 }
@@ -179,7 +172,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="write nothing; exit 1 if either catalogue differs from this script's output",
+        help="write nothing; exit 1 if the dashboard catalogue differs from this script's output",
     )
     return parser.parse_args(argv)
 

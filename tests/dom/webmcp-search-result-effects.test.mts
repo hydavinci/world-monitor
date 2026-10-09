@@ -87,8 +87,8 @@ const unusedNavigationBindings: Pick<
     enabled: true,
     countries: [],
     count: 0,
-    access: 'free',
-    limit: 3,
+    access: 'local',
+    limit: null,
   }),
   setCountryFollowed: async () => ({
     ok: true,
@@ -194,7 +194,6 @@ function createHarness(matches: SearchMatch[], enabledPanels: Record<string, boo
       unifiedSettings: { open: openSettings },
     } as never,
     getVariant: () => 'full',
-    hasPremiumAccess: () => false,
     openCountryBriefByCode,
     enablePanel,
     runWithAgentAnalyticsSuppressed: (callback) => callback(),
@@ -210,9 +209,8 @@ function createHarness(matches: SearchMatch[], enabledPanels: Record<string, boo
     isDestroyed: () => false,
     refreshIndex: vi.fn(),
     getModal: () => modal as never,
-    hasPremiumAccess: () => false,
     fetchLiveFlight: vi.fn(async () => {}),
-    getPreferenceContext: () => 'anonymous:settled:free',
+    getPreferenceContext: () => 'local',
     getVariant: () => 'full',
     isMatchExecutable: () => true,
     isPanelCurrentlyEnabled: (panelId) => enabledPanels[panelId] === true,
@@ -221,11 +219,8 @@ function createHarness(matches: SearchMatch[], enabledPanels: Record<string, boo
       () => candidate,
       signal,
     ),
-    subscribeAuth: () => () => {},
-    subscribeEntitlement: () => () => {},
     subscribeRuntimeConfig: () => () => {},
-    subscribeWidgetAccess: () => () => {},
-    onPremiumAccessChanged: vi.fn(),
+    subscribeWidgets: () => () => {},
     cancelPendingSelection: () => dispatcher.cancelPendingProgrammaticSelection(),
   });
   return {
@@ -537,21 +532,13 @@ describe('open_search_result rejects a caller-supplied effect class', () => {
         throw new Error('Unexpected dashboard panel catalog read.');
       },
       getAccessContext: async () => ({
-        accountState: 'signed_out',
-        clerk: 'unavailable',
-        productTier: 'anonymous',
-        capabilities: {
-          premiumAccess: false,
-          apiAccess: false,
-          mcpAccess: false,
-          dataExport: false,
-        },
+        mode: 'public',
+        capabilities: { dataExport: true },
         limits: {
-          enabledPanels: { used: 1, cap: 40 },
-          dashboardTabs: { used: 1, cap: 3, canCreate: true },
+          enabledPanels: { used: 1, cap: null },
+          dashboardTabs: { used: 1, cap: null, canCreate: true },
         },
       }),
-      openSignIn: async () => ({ ok: false, status: 'denied', reason: 'clerk_unavailable' }),
     }, () => {});
     const open = tools.find((tool) => tool.name === 'open_search_result');
     await expect(open!.execute({

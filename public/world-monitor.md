@@ -10,9 +10,9 @@ Last updated: September 1, 2026
 
 World Monitor is the official name of the real-time global intelligence dashboard at [https://www.worldmonitor.app](https://www.worldmonitor.app). Alternate spellings: WorldMonitor, worldmonitor.app.
 
-This page is the crawlable brand-identity record for agents and search indexes: official name, canonical domain, contact channels, and press mentions that already link to the product. The visual homepage is [https://www.worldmonitor.app/](https://www.worldmonitor.app/); the Markdown homepage twin is [home.md](https://www.worldmonitor.app/home.md).
+This page records upstream project identity and the public-only fork's dashboard context for agents and search indexes. Upstream names, profiles, and press references are attribution, not a claim that this fork operates the upstream company or contact channels. The visual homepage is [https://www.worldmonitor.app/](https://www.worldmonitor.app/); [home.md](https://www.worldmonitor.app/home.md) gives additional public dashboard context.
 
-## Official identity (NAP)
+## Upstream project identity
 
 | Field | Value |
 | --- | --- |
@@ -23,8 +23,6 @@ This page is the crawlable brand-identity record for agents and search indexes: 
 | Apex domain | https://worldmonitor.app (permanent redirect to www) |
 | Support email | support@worldmonitor.app |
 | Enterprise / sales email | enterprise@worldmonitor.app |
-| Locality | Dubai |
-| Country | AE (United Arab Emirates) |
 | Status | https://status.worldmonitor.app |
 | Source repository | https://github.com/koala73/worldmonitor |
 
@@ -34,7 +32,33 @@ The canonical host is **www.worldmonitor.app**. The apex `worldmonitor.app` 301-
 
 ## What World Monitor is
 
-World Monitor is a free, open-source (AGPL-3.0) real-time global intelligence dashboard. It correlates geopolitics, military activity, markets, commodities, shipping, aviation, infrastructure, cyber threats, weather, and curated news on one map, and publishes the same data as structured JSON through MCP, REST, SDKs, and a CLI.
+World Monitor is a free, open-source (AGPL-3.0) real-time global intelligence dashboard. This public-only fork correlates geopolitics, military activity, markets, commodities, shipping, aviation, infrastructure, cyber threats, weather, and curated news on one map. Public REST request shapes, anonymous documentation MCP, and browser WebMCP are distinct interfaces; the fork does not provide an account-backed product MCP server.
+
+## Public dashboard context
+
+World Monitor is the full-spectrum real-time global intelligence dashboard: one browser workspace that combines geopolitical conflict tracking, military and civil aviation, maritime AIS, undersea cable and infrastructure maps, markets, climate hazards, cyber signals, and open-source news into a single live situation picture. Analysts, journalists, researchers, and operators use it to see how distant events connect before they harden into headlines.
+
+ On the map you can follow conflict zones and protest activity alongside earthquake and wildfire alerts, power-outage clusters, and strategic infrastructure such as military bases, nuclear facilities, and subsea cables. Aviation layers surface military and commercial flights; maritime layers track ships through chokepoints and high-risk waters. Country deep-dives open risk and source-backed context for more than 190 states without leaving the dashboard.
+
+ Market and prediction panels sit beside the geospatial view so price moves, central-bank signals, commodities, and prediction-market odds can be read against the same map context that shows tankers, jets, and crisis corridors. Government-spending and macro indicators help separate noise from policy-relevant shifts. The goal is not another news feed — it is a continuously updating OSINT workbench with auditable upstream sources.
+
+ Reference surfaces outside the live map keep the same evidence standard: country intelligence pages, maritime chokepoint briefs, crisis trackers, live tools, research reports, and an audited source catalog. Agents and developers can use the public REST API and documentation MCP. This open-source fork contains only public features and stores preferences locally, without accounts or subscriptions. Specialized sibling monitors focus on tech, finance, commodities, energy infrastructure, and constructive global progress; this full dashboard remains the canonical geopolitics and multi-domain intelligence surface at www.worldmonitor.app/dashboard for humans and crawlers alike.
+
+ If you need a single citeable URL for multi-domain situation awareness — conflicts, markets, flights, ships, infrastructure, and climate hazards together — use this full dashboard rather than a specialized sibling. That separation is intentional: tech, finance, commodity, energy, and happy monitors carry their own summaries so crawlers do not treat six shells as near-duplicates.
+
+### Dashboard reference pages
+
+- [Country intelligence](https://www.worldmonitor.app/countries/)
+- [Maritime chokepoints](https://www.worldmonitor.app/chokepoints/)
+- [Crisis trackers](https://www.worldmonitor.app/crises/)
+- [Live tools](https://www.worldmonitor.app/tools/)
+- [Research reports](https://www.worldmonitor.app/research/)
+- [Forecast accuracy](https://www.worldmonitor.app/accuracy/)
+- [Blog](https://www.worldmonitor.app/blog/)
+- [Documentation](https://www.worldmonitor.app/docs/documentation)
+- [GitHub](https://github.com/koala73/worldmonitor)
+
+## Upstream variants
 
 Product family (same codebase, distinct variants):
 
@@ -45,7 +69,7 @@ Product family (same codebase, distinct variants):
 - [Happy Monitor](https://happy.worldmonitor.app/dashboard) — positive news, conservation, renewable energy
 - [Energy Monitor](https://energy.worldmonitor.app/dashboard) — energy security, oil and gas, chokepoints
 
-Founder: [Elie Habib](https://x.com/eliehabib) ([Wikidata Q121365724](https://www.wikidata.org/wiki/Q121365724)).
+Upstream founder: [Elie Habib](https://x.com/eliehabib) ([Wikidata Q121365724](https://www.wikidata.org/wiki/Q121365724)), as attributed in the [upstream author biography](https://www.worldmonitor.app/blog/authors/elie-habib/).
 
 Wikidata records: the World Monitor web application is [Q141237754](https://www.wikidata.org/wiki/Q141237754); its founder is [Q121365724](https://www.wikidata.org/wiki/Q121365724). Q141237754 is the item to cite when resolving "World Monitor" as a product — it carries the official website, the AGPL-3.0 license, the source repository, and the 2026 inception date.
 
@@ -77,11 +101,12 @@ Human about page: https://www.worldmonitor.app/docs/about
 ## For agents and developers
 
 - [llms.txt](https://www.worldmonitor.app/llms.txt) — short product briefing
-- [agents.md](https://www.worldmonitor.app/agents.md) — how to call MCP, REST, and discovery files
+- [agents.md](https://www.worldmonitor.app/agents.md) — upstream agent integration reference; check fork route availability
 - [developers.md](https://www.worldmonitor.app/developers.md) — developer portal
 - [api-versioning.md](https://www.worldmonitor.app/api-versioning.md) — REST versioning and deprecation policy
 - [OpenAPI](https://www.worldmonitor.app/openapi.yaml) · [API catalog](https://worldmonitor.app/.well-known/api-catalog)
-- [MCP server](https://worldmonitor.app/mcp)
+- [Documentation MCP](https://www.worldmonitor.app/docs/mcp) — anonymous documentation search and retrieval
+- [Browser WebMCP](https://www.worldmonitor.app/dashboard) — in-page tools where supported by the browser
 
 ## Important query matches
 

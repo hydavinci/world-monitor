@@ -27,6 +27,7 @@ permissions:
 jobs:
   reconcile:
     name: Reconcile registry to live configuration
+    if: github.repository == 'koala73/worldmonitor'
     runs-on: ubuntu-latest
     # Apply: three bounded attempts (5 min each) plus 20 s of backoff. Verify:
     # one 15-minute Viewer read budget plus backoff. Setup: about 3 min. The

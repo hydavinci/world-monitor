@@ -48,6 +48,7 @@ jobs:
 
   deploy:
     name: Wrangler deploy
+    if: github.repository == 'koala73/worldmonitor'
     needs: unit-test
     runs-on: ubuntu-latest
     defaults:
@@ -89,6 +90,7 @@ jobs:
 
   live-smoke:
     name: Live preflight smoke test
+    if: github.repository == 'koala73/worldmonitor'
     needs: deploy
     runs-on: ubuntu-latest
     steps:

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, join, relative, sep } from 'node:path';
 import ts from 'typescript';
+import { RETIRED_DATA_PATHS } from '../../api/_retired-routes.js';
 
 export const NOOP_QUERY_DESCRIPTION_RE = /\b(?:accepted but currently ignored|currently (?:ignored|a no-op)|no-op|no op)\b/i;
 
@@ -327,6 +328,7 @@ function handlerUsesField(handlerPath, field) {
 export function collectQueryParamContractViolations(root, options = {}) {
   const scopedProtoFiles = options.scopedProtoFiles ?? DEFAULT_SCOPED_PROTO_FILES;
   const forcedNoopQueryParams = options.forcedNoopQueryParams ?? DEFAULT_FORCED_NOOP_QUERY_PARAMS;
+  const retiredDataPaths = options.retiredDataPaths ?? RETIRED_DATA_PATHS;
   const seenQueryParams = new Set();
   const protoRoot = join(root, 'proto', 'worldmonitor');
   const protoFiles = walk(protoRoot).filter((file) => file.endsWith('.proto'));
@@ -336,6 +338,7 @@ export function collectQueryParamContractViolations(root, options = {}) {
     queryFields: 0,
     unimplementedFields: 0,
     scopedQueryFields: 0,
+    retiredQueryFields: 0,
   };
 
   for (const protoFile of protoFiles) {
@@ -347,6 +350,13 @@ export function collectQueryParamContractViolations(root, options = {}) {
     const isScopedProto = scopedProtoFiles.has(protoRel);
     const hasAnnotatedField = fields.some((field) => field.unimplemented);
     if (!isScopedProto && !hasAnnotatedField) continue;
+
+    const rpc = protoRel.match(/^worldmonitor\/([^/]+)\/(v\d+)\/([^/]+)\.proto$/);
+    const rpcPath = rpc ? `/api/${snakeToKebab(rpc[1])}/${rpc[2]}/${snakeToKebab(rpc[3])}` : null;
+    if (rpcPath && retiredDataPaths.has(rpcPath) && (!handlerPath || !existsSync(handlerPath))) {
+      stats.retiredQueryFields += fields.length;
+      continue;
+    }
 
     if (!handlerPath || !existsSync(handlerPath)) {
       for (const field of fields) {

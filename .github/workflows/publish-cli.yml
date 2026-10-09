@@ -30,6 +30,7 @@ permissions:
 
 jobs:
   publish:
+    if: github.repository == 'koala73/worldmonitor'
     runs-on: ubuntu-latest
     defaults:
       run:

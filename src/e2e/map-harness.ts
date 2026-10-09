@@ -614,19 +614,27 @@ const getDataCount = (data: unknown): number => {
 const normalizeLayerSnapshotId = (layerId: string): string =>
   layerId === 'conflict-zones-layer-country-geometry'
     ? 'conflict-zones-layer'
-    : layerId;
+    : layerId.endsWith('-singletons')
+      ? layerId.slice(0, -'-singletons'.length)
+      : layerId;
 
 const getDeckLayerSnapshot = (): LayerSnapshot[] => {
   const layers = internals.buildLayers?.() ?? [];
   const counts = new Map<string, number>();
+  const singletonCounts = new Map<string, number>();
 
   for (const layer of layers) {
     const layerId = normalizeLayerSnapshotId(layer.id);
     const dataCount = getDataCount(layer.props?.data);
-    const previous = counts.get(layerId) ?? 0;
+    const target = layer.id.endsWith('-singletons') ? singletonCounts : counts;
+    const previous = target.get(layerId) ?? 0;
     if (dataCount > previous) {
-      counts.set(layerId, dataCount);
+      target.set(layerId, dataCount);
     }
+  }
+
+  for (const [id, dataCount] of singletonCounts) {
+    counts.set(id, (counts.get(id) ?? 0) + dataCount);
   }
 
   return [...counts.entries()].map(([id, dataCount]) => ({ id, dataCount }));
@@ -864,7 +872,10 @@ const getLayerFirstScreenTransform = (layerId: string): string | null => {
   if (!maplibreMap) return null;
 
   const layers = internals.buildLayers?.() ?? [];
-  const target = layers.find((layer) => normalizeLayerSnapshotId(layer.id) === layerId);
+  const target = layers.find((layer) =>
+    normalizeLayerSnapshotId(layer.id) === layerId
+    && Array.isArray(layer.props?.data)
+    && layer.props.data.length > 0);
   const data = target?.props?.data;
   if (!Array.isArray(data) || data.length === 0) return null;
 
@@ -886,7 +897,10 @@ const getLayerFirstScreenTransform = (layerId: string): string | null => {
 
 const getFirstProtestTitle = (): string | null => {
   const layers = internals.buildLayers?.() ?? [];
-  const protestLayer = layers.find((layer) => layer.id === 'protest-clusters-layer');
+  const protestLayer = layers.find((layer) =>
+    normalizeLayerSnapshotId(layer.id) === 'protest-clusters-layer'
+    && Array.isArray(layer.props?.data)
+    && layer.props.data.length > 0);
   const data = protestLayer?.props?.data;
   if (!Array.isArray(data) || data.length === 0) return null;
 

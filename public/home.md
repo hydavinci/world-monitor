@@ -1,6 +1,6 @@
 ---
 title: "World Monitor"
-description: "Live global intelligence, API access, authentication, and agent capabilities."
+description: "Public dashboard context, source references, REST access, and documentation MCP."
 canonical: "https://www.worldmonitor.app/home.md"
 ---
 
@@ -43,7 +43,7 @@ Users can compare these parts on one map and then open the underlying panels for
 - Shipping chokepoints, ports, and vessel-transit intelligence
 - Aircraft, satellites, GPS interference, submarine cables, energy assets, and datacenters
 - AI briefs, scenario forecasts, custom monitors, and alerts
-- Machine-readable access through MCP, REST, SDKs, a CLI, agent skills, and static discovery files
+- Public REST request shapes, documentation MCP, in-browser WebMCP, and static discovery files
 
 ## Sources, provenance, and freshness
 
@@ -53,9 +53,9 @@ Data surfaces include source identity, timestamps, methodology, or related conte
 
 ## Access and plans
 
-The public dashboard is free and does not require an account. Pro adds advanced analysis, research, customization, and higher-value workflows. API plans cover programmatic and business use. Current features, limits, prices, and licensing terms are in the [machine-readable pricing guide](https://www.worldmonitor.app/pricing.md) and on the [visual pricing page](https://www.worldmonitor.app/pro#pricing).
+This public-only fork has no accounts, subscriptions, or paid plans. The dashboard is free and stores preferences locally. The source is available under [AGPL-3.0](https://www.worldmonitor.app/docs/license); provider data retains its own attribution and licensing requirements.
 
-Public discovery endpoints do not make every data operation anonymous. An MCP or REST call can require OAuth or a World Monitor API key. Read the [authentication guide](https://www.worldmonitor.app/docs/usage-auth) and [rate-limit guide](https://www.worldmonitor.app/docs/usage-rate-limits.md) before building an integration.
+Use the [public REST reference](https://www.worldmonitor.app/docs/api-reference) for supported request shapes and endpoint-specific limits. For example, the news digest accepts `variant=full&lang=en&public=1` without account credentials. Static [sandbox fixtures](https://www.worldmonitor.app/sandbox/index.json) are examples, not a promise that every upstream live operation remains available.
 
 ## Live instances
 
@@ -70,15 +70,15 @@ Public discovery endpoints do not make every data operation anonymous. An MCP or
 
 Start with the short [llms.txt briefing](https://www.worldmonitor.app/llms.txt), then use this Markdown page or the [extended LLM reference](https://www.worldmonitor.app/llms-full.txt) when you need more context.
 
-- [MCP server](https://worldmonitor.app/mcp): Streamable HTTP for structured tool calls. Run `tools/list` to get the current tool inventory instead of relying on a copied count.
+- [Documentation MCP](https://www.worldmonitor.app/docs/mcp): anonymous documentation search and retrieval, not a live-data tool server.
+- [Browser WebMCP](https://www.worldmonitor.app/dashboard): in-page dashboard tools where the browser provides `modelContext`; this is distinct from an HTTP MCP endpoint.
 - [REST API](https://www.worldmonitor.app/docs/api-reference): structured endpoints described by the [OpenAPI contract](https://www.worldmonitor.app/openapi.yaml).
 - [Agent-mode homepage](https://www.worldmonitor.app/?mode=agent): a compact JSON summary of endpoints, authentication, capabilities, and discovery files.
 - [Agent Skills](https://worldmonitor.app/.well-known/agent-skills/index.json): task-focused instructions for common country, resilience, and intelligence workflows.
-- [Agent Plugin metadata](https://www.worldmonitor.app/plugin.json): public metadata for the Agent Plugins 1.0.0 repository package. Install from https://github.com/koala73/worldmonitor (root `plugin.json`, `mcp.json`, and `skills/*/SKILL.md` live in the repository, not as sibling HTTP files).
-- [A2A agent card](https://worldmonitor.app/.well-known/agent-card.json): service identity and protocol discovery for agent-to-agent clients.
-- [SDK guide](https://www.worldmonitor.app/docs/sdks) and [worldmonitor CLI](https://www.npmjs.com/package/worldmonitor): supported clients for applications and shell workflows.
+- [Agent Plugin metadata](https://www.worldmonitor.app/plugin.json): repository discovery metadata; check the public-only route contract before using an upstream recipe.
+- [SDK guide](https://www.worldmonitor.app/docs/sdks) and [worldmonitor CLI](https://www.npmjs.com/package/worldmonitor): upstream client references; not every upstream operation ships in this fork.
 
-Use a descriptive `User-Agent` for HTTP requests. Preserve source names, timestamps, and confidence information when you summarize a result. If a data-bearing call returns an authentication error, do not infer that the public discovery endpoint grants access to that operation.
+Use a descriptive `User-Agent` for HTTP requests. Preserve source names, timestamps, and confidence information when you summarize a result. A discovery document is not evidence that an unavailable upstream operation exists in this fork.
 
 ## Trust boundaries
 

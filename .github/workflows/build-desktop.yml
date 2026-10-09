@@ -36,6 +36,7 @@ env:
 
 jobs:
   client-env:
+    if: github.repository == 'koala73/worldmonitor'
     permissions:
       contents: read
     runs-on: ubuntu-latest

@@ -22,14 +22,12 @@ declare global {
   interface Window {
     __wmPaintEntries?: PaintEntrySnapshot[];
     __wmLcpEntries?: LcpEntrySnapshot[];
-    __wmWelcomeRootClearCount?: number;
   }
 }
 
 const installPaintObservers = async (page: Page): Promise<void> => {
   await page.addInitScript(() => {
     localStorage.setItem('wm-layer-warning-dismissed', 'true');
-    localStorage.setItem('wm-pro-banner-launched-dismissed', String(Date.now()));
     localStorage.setItem('worldmonitor-mission-preset-dismissed-v1', '1');
     window.__wmPaintEntries = [];
     window.__wmLcpEntries = [];
@@ -82,25 +80,6 @@ const delayDashboardMain = async (page: Page): Promise<{ release: () => void; re
   });
 
   await page.route('**/src/main.ts', async (route) => {
-    resolveRequested();
-    await releasePromise;
-    await route.continue();
-  });
-
-  return { release: releaseMain, requested };
-};
-
-const delayWelcomeMain = async (page: Page): Promise<{ release: () => void; requested: Promise<void> }> => {
-  let releaseMain!: () => void;
-  let resolveRequested!: () => void;
-  const releasePromise = new Promise<void>((resolve) => {
-    releaseMain = resolve;
-  });
-  const requested = new Promise<void>((resolve) => {
-    resolveRequested = resolve;
-  });
-
-  await page.route('**/pro/assets/welcome-*.js', async (route) => {
     resolveRequested();
     await releasePromise;
     await route.continue();
@@ -371,116 +350,22 @@ test.describe('pre-hydration dashboard shell on mobile', () => {
   });
 });
 
-test.describe('server-rendered welcome page', () => {
-  test('keeps one visible heading and discoverable navigation after hydration', async ({ page }) => {
-    await page.goto('/pro/welcome.html', { waitUntil: 'domcontentloaded' });
-
-    await expect(page.locator('#seo-prerender')).toHaveCount(0);
-    await expect(page.locator('#root[data-wm-prerendered="welcome"] h1')).toHaveCount(1);
-    await expect(page.locator('#root h1')).toBeVisible();
-    await expect(page.locator('#root a[href="/dashboard"][data-umami-event-target="welcome-hero"]')).toBeVisible();
-    await expect(page.locator('#root footer a[href="/countries/"]')).toBeVisible();
-    await expect(page.locator('#root footer a[href="https://github.com/koala73/worldmonitor"]')).toBeVisible();
-  });
-
-  test('keeps the English prerender visible while its module is blocked', async ({ page }) => {
-    const delayedMain = await delayWelcomeMain(page);
-
-    try {
-      await page.goto('/pro/welcome.html?lang=en', { waitUntil: 'commit' });
-      await delayedMain.requested;
-
-      await expect(page.locator('#root[data-wm-prerender-lang="en"]')).toBeVisible();
-    } finally {
-      delayedMain.release();
-    }
-  });
-
-  for (const {
-    direction,
-    headline,
-    language,
-    ogLocale,
-  } of [
-    {
-      direction: 'ltr',
-      headline: "Au moment où c'est une nouvelle",
-      language: 'fr',
-      ogLocale: 'fr_FR',
-    },
-    {
-      direction: 'rtl',
-      headline: 'بحلول الوقت الذي تصبح فيه خبراً',
-      language: 'ar',
-      ogLocale: 'ar_SA',
-    },
-  ]) {
-    test(`keeps the English prerender until ${language} renders localized welcome copy`, async ({ page }) => {
-      const pageErrors: string[] = [];
-      page.on('pageerror', (error) => pageErrors.push(error.message));
-      await page.addInitScript(() => {
-        const originalReplaceChildren = Element.prototype.replaceChildren;
-        Element.prototype.replaceChildren = function replaceChildren(...nodes) {
-          if (this.id === 'root') {
-            window.__wmWelcomeRootClearCount = (window.__wmWelcomeRootClearCount ?? 0) + 1;
-          }
-          return originalReplaceChildren.call(this, ...nodes);
-        };
-      });
-      const delayedMain = await delayWelcomeMain(page);
-
-      try {
-        await page.goto(`/pro/welcome.html?lang=${language}`, { waitUntil: 'commit' });
-        await delayedMain.requested;
-
-        const root = page.locator('#root[data-wm-prerender-lang="en"]');
-        await expect(root).toContainText("By the time it's news");
-        await expect(root).toBeVisible();
-        await expect.poll(async () => page.evaluate(() => ({
-          direction: getComputedStyle(document.documentElement).direction,
-          language: document.documentElement.lang,
-        }))).toEqual({
-          direction: 'ltr',
-          language: 'en',
-        });
-        expect(await page.evaluate(() => window.__wmWelcomeRootClearCount ?? 0)).toBe(0);
-
-        delayedMain.release();
-
-        await expect(page.locator('#root h1')).toContainText(headline);
-        await expect(root).toBeVisible();
-        await expect.poll(async () => page.evaluate(() => ({
-          direction: getComputedStyle(document.documentElement).direction,
-          language: document.documentElement.lang,
-          ogLocale: document.querySelector('meta[property="og:locale"]')?.getAttribute('content'),
-        }))).toEqual({
-          direction,
-          language,
-          ogLocale,
-        });
-        expect(await page.evaluate(() => window.__wmWelcomeRootClearCount ?? 0)).toBe(1);
-        expect(pageErrors).toEqual([]);
-      } finally {
-        delayedMain.release();
-      }
-    });
-  }
-});
-
 test.describe('dashboard shell without JavaScript', () => {
   test.use({ javaScriptEnabled: false });
 
-  test('keeps the server-rendered welcome page visibly useful', async ({ page }) => {
-    await page.goto('/pro/welcome.html', { waitUntil: 'domcontentloaded' });
+  test('keeps public reference navigation visible and keyboard accessible', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
 
-    await expect(page.locator('#seo-prerender')).toHaveCount(0);
-    await expect(page.locator('#root[data-wm-prerendered="welcome"]')).toBeVisible();
-    await expect(page.locator('#root h1')).toHaveCount(1);
-    await expect(page.locator('#root h1')).toBeVisible();
-    await expect(page.locator('#root h1')).toContainText('you already knew');
-    await expect(page.locator('#root a[href="/dashboard"][data-umami-event-target="welcome-hero"]')).toBeVisible();
-    await expect(page.locator('#root footer a[href="/countries/"]')).toBeVisible();
-    await expect(page.locator('#root footer a[href="https://github.com/koala73/worldmonitor"]')).toBeVisible();
+    const fallback = page.locator('#dashboard-noscript');
+    await expect(fallback.getByRole('heading', { level: 2 })).toContainText('requires JavaScript');
+    await expect(fallback).toContainText('without accounts or subscriptions');
+    const references = fallback.getByRole('navigation', { name: 'World Monitor references' });
+    await expect(references).toBeVisible();
+    const countries = references.getByRole('link', { name: 'Country intelligence' });
+    await countries.focus();
+    await expect(countries).toBeFocused();
+    await countries.press('Tab');
+    await expect(references.getByRole('link', { name: 'Maritime chokepoints' })).toBeFocused();
   });
 
   test('hides the JS-only shell and keeps the no-JS content scrollable', async ({ page }) => {
@@ -499,11 +384,13 @@ test.describe('dashboard shell without JavaScript', () => {
       '/tools/',
       '/blog/',
       '/docs/documentation',
-      '/pro#pricing',
+      '/research/',
+      '/accuracy/',
       'https://github.com/koala73/worldmonitor',
     ]) {
       await expect(page.locator(`#dashboard-noscript a[href="${href}"]`)).toHaveCount(1);
     }
+    await expect(page.locator('#dashboard-noscript a[href^="/pro"], #dashboard-noscript a[href*="#pricing"]')).toHaveCount(0);
 
     const beforeScroll = await page.evaluate(() => ({
       bodyOverflow: getComputedStyle(document.body).overflow,

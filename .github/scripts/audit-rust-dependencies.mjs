@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { isMainModule } from '../../scripts/lib/main-module.mjs';
+import { assertGlibBackportCurrent, isVerifiedGlibBackport, verifyGlibBackport } from './verify-glib-backport.mjs';
 
 function validateRustDecisions(decisions) {
   if (!Array.isArray(decisions)) throw new Error('Rust decisions must be an array');
@@ -26,7 +27,9 @@ function validateRustDecisions(decisions) {
   }
 }
 
-export function classifyRustAudit(report, decisions, now = Date.now()) {
+export function classifyRustAudit(report, decisions, now = Date.now(), backport = null) {
+  if (backport && !isVerifiedGlibBackport(backport)) throw new Error('Unverified glib backport evidence');
+  if (backport) assertGlibBackportCurrent(backport, now);
   if (
     !(report?.database?.['advisory-count'] > 0) ||
     !(report?.lockfile?.['dependency-count'] > 0) ||
@@ -40,11 +43,14 @@ export function classifyRustAudit(report, decisions, now = Date.now()) {
   )
     throw new Error('Invalid or filtered cargo-audit report');
   validateRustDecisions(decisions);
+  if (backport && decisions.some((d) => d.id === backport.id))
+    throw new Error('Source-verified glib backport cannot also have a risk exemption');
   const result = {
     status: 'clean',
     blocking: [],
     noFix: [],
     approved: [],
+    backported: [],
     proposed: [],
     warnings: [],
     decisionErrors: [],
@@ -82,6 +88,11 @@ export function classifyRustAudit(report, decisions, now = Date.now()) {
       version: item.package.version,
       patched: item.versions.patched,
     };
+    if (backport && entry.id === backport.id && entry.crate === 'glib'
+      && entry.version === backport.version && item.package.source == null) {
+      result.backported.push({ ...entry, evidence: backport });
+      continue;
+    }
     const decision = decisions.find((d) => d.id === entry.id);
     if (decision?.status === 'proposed') result.proposed.push({ ...entry, decision });
     if (decision?.status === 'approved' && Date.parse(decision.expiresAt) > now)
@@ -94,19 +105,30 @@ export function classifyRustAudit(report, decisions, now = Date.now()) {
       result.decisionErrors.push(`${d.id}: decision expired; ${d.owner} must re-review`);
     if (!findings.some((f) => f.advisory.id === d.id)) result.decisionErrors.push(`${d.id}: stale decision; remove it`);
   }
+  if (backport && result.backported.length !== 1)
+    result.decisionErrors.push('Expected exactly one visible RUSTSEC-2024-0429 finding for the source-verified glib backport');
   if (result.blocking.length || result.decisionErrors.length) result.status = 'failed';
-  else if (result.noFix.length || result.approved.length || result.warnings.length) result.status = 'warning';
+  else if (result.noFix.length || result.approved.length || result.backported.length || result.warnings.length)
+    result.status = 'warning';
   return result;
 }
 
-export function runRustAudit({ lockfile, decisions, failOnOutage = false, run = spawnSync, now = Date.now() }) {
+export function runRustAudit({
+  lockfile, decisions, failOnOutage = false, run = spawnSync, now = Date.now(),
+  proofFile = process.env.GLIB_BACKPORT_PROOF, env = process.env,
+}) {
+  const startedAt = Date.now();
   // A fresh database and neutral cwd prevent local cargo ignore/config state or a stale cache from producing a clean result.
   validateRustDecisions(decisions);
   const expired = decisions.filter((d) => Date.parse(d.expiresAt) <= now);
   if (expired.length) throw new Error(`Rust advisory decisions expired: ${expired.map((d) => d.id).join(', ')}`);
+  const contents = readFileSync(lockfile, 'utf8');
+  const root = resolve(dirname(lockfile), '..');
+  const manifest = join(root, 'src-tauri/Cargo.toml');
+  const needsBackport = existsSync(manifest) || /^name\s*=\s*"glib"\s*$/m.test(contents);
+  const backport = needsBackport ? verifyGlibBackport({ root, proofFile, now, env, run }) : null;
   const dir = mkdtempSync(join(tmpdir(), 'worldmonitor-rust-audit-'));
   try {
-    readFileSync(lockfile); // Missing input is actor-fixable, never an upstream outage.
     const db = join(dir, 'db');
     const fetched = run('git', ['clone', '--depth=1', 'https://github.com/RustSec/advisory-db.git', db], {
       encoding: 'utf8',
@@ -130,7 +152,7 @@ export function runRustAudit({ lockfile, decisions, failOnOutage = false, run = 
     const report = JSON.parse(audited.stdout);
     if (audited.status === 1 && report.vulnerabilities?.count === 0)
       throw new Error('cargo audit failed without advisory findings');
-    const result = classifyRustAudit(report, decisions, now);
+    const result = classifyRustAudit(report, decisions, now + Date.now() - startedAt, backport);
     return { ...result, failed: result.status === 'failed' };
   } finally {
     rmSync(dir, { recursive: true, force: true });

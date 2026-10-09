@@ -73,6 +73,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.WORLDMONITOR_VALID_KEYS;
+  vi.unstubAllGlobals();
 });
 
 describe('gateway no-store floor + credentialed privacy (#6771)', () => {
@@ -90,9 +91,9 @@ describe('gateway no-store floor + credentialed privacy (#6771)', () => {
   });
 
   test('a credentialed non-public GET is marked private and not shared-cacheable', async () => {
-    // list-airport-flights is declared 'static', but a credentialed non-public
-    // GET is forced to slow-browser by the audience overwrite regardless.
-    const path = '/api/aviation/v1/list-airport-flights';
+    // A non-public harness route exercises credential privacy independently
+    // of the retired flight endpoint.
+    const path = '/api/foo/v1/items/abc';
     const res = await gatewayFor(path, { flights: [{ id: 1 }], totalAvailable: 1, source: 'relay' })(
       credentialedRequest(path),
       ctx,
@@ -105,6 +106,26 @@ describe('gateway no-store floor + credentialed privacy (#6771)', () => {
     expect(cacheControl).toContain('max-age=300');
     // Credentialed responses are never handed to the Vercel edge cache.
     expect(res.headers.get('CDN-Cache-Control')).toBeNull();
+  });
+
+  test('retired airport flights deny operator credentials before handler execution or cache access', async () => {
+    const fetch = vi.fn(async () => {
+      throw new Error('retired flights must not perform outbound I/O');
+    });
+    vi.stubGlobal('fetch', fetch);
+    const path = '/api/aviation/v1/list-airport-flights';
+    const handler = healthyHandler({ flights: [{ id: 1 }], totalAvailable: 1, source: 'relay' });
+    const gateway = createDomainGateway([{ method: 'GET', path, handler }]);
+    const res = await gateway(credentialedRequest(path), ctx);
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'feature_removed' });
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(res.headers.get('CDN-Cache-Control')).toBe('no-store');
+    expect(res.headers.get('Vercel-CDN-Cache-Control')).toBe('no-store');
+    expect(handler).not.toHaveBeenCalled();
+    expect(runRedisPipeline).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   test('an anonymous request to a public route is NOT marked private (no over-broadening)', async () => {
@@ -138,33 +159,36 @@ describe('gateway no-store floor + credentialed privacy (#6771)', () => {
     }
   });
 
-  test('audience-dependent vulnerability reads cannot populate a credential-agnostic browser cache', async () => {
+  test('retired vulnerability reads deny every audience without executing handlers or populating browser caches', async () => {
+    const fetch = vi.fn(async () => {
+      throw new Error('retired vulnerabilities must not perform outbound I/O');
+    });
+    vi.stubGlobal('fetch', fetch);
     const paths = [
       '/api/supply-chain/v1/get-country-vulnerabilities',
       '/api/supply-chain/v1/get-chokepoint-dependencies',
       '/api/supply-chain/v1/list-vulnerability-rankings',
     ];
     for (const path of paths) {
-      let calls = 0;
+      const readVulnerabilities = vi.fn(async (request: Request) =>
+        new Response(JSON.stringify({ audience: request.headers.get('X-Test-Audience') }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
       const handler = createDomainGateway([{
         method: 'GET',
         path,
-        handler: async (request) => {
-          calls += 1;
-          return new Response(JSON.stringify({ audience: request.headers.get('X-Test-Audience') }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        },
+        handler: readVulnerabilities,
       }]);
       const cache = new Map<string, Response>();
-      const fetchThroughBrowserCache = async (audience: 'dashboard' | 'api-key') => {
+      const fetchThroughBrowserCache = async (audience: 'dashboard' | 'api-key' | 'anonymous') => {
         const url = `https://worldmonitor.app${path}?_debug=1`;
         const cached = cache.get(url);
         if (cached) return cached.clone();
         const response = await handler(new Request(url, {
           headers: {
-            'X-WorldMonitor-Key': KEY,
+            ...(audience === 'anonymous' ? {} : { 'X-WorldMonitor-Key': KEY }),
             'X-Test-Audience': audience,
             'cf-connecting-ip': '203.0.113.7',
           },
@@ -175,13 +199,21 @@ describe('gateway no-store floor + credentialed privacy (#6771)', () => {
         return response;
       };
 
-      const dashboard = await fetchThroughBrowserCache('dashboard');
-      const apiKey = await fetchThroughBrowserCache('api-key');
-      expect(dashboard.headers.get('Cache-Control')).toBe('no-store');
-      expect(apiKey.headers.get('Cache-Control')).toBe('no-store');
-      expect(await dashboard.json()).toEqual({ audience: 'dashboard' });
-      expect(await apiKey.json()).toEqual({ audience: 'api-key' });
-      expect(calls).toBe(2);
+      for (const response of [
+        await fetchThroughBrowserCache('dashboard'),
+        await fetchThroughBrowserCache('api-key'),
+        await fetchThroughBrowserCache('anonymous'),
+      ]) {
+        expect(response.status).toBe(403);
+        expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+        expect(response.headers.get('CDN-Cache-Control')).toBe('no-store');
+        expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('no-store');
+        expect(await response.json()).toMatchObject({ error: 'feature_removed' });
+      }
+      expect(cache.size).toBe(0);
+      expect(readVulnerabilities).not.toHaveBeenCalled();
+      expect(runRedisPipeline).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
     }
   });
 });

@@ -15,7 +15,7 @@ permissions:
 jobs:
   monitor:
     name: Railway native deployment health
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.repository == 'koala73/worldmonitor' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:

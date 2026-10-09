@@ -1278,13 +1278,7 @@ export class PanelLayoutManager implements AppModule {
       id: generateTabId(),
       name,
       view: 'panels',
-      // Same unresolved-tier caveat as applyTabPanelState: clamping a new tab
-      // before the entitlement is known bakes a free-tier layout into a Pro
-      // user's workspace before its ownership marker can be safely reconciled.
-      // The variant default set can also exceed FREE_MAX_PANELS.
-      panelSettings: true
-        ? sanitizePublicPanelSettings(defaults.panelSettings)
-        : defaults.panelSettings,
+      panelSettings: sanitizePublicPanelSettings(defaults.panelSettings),
       panelOrder: defaults.panelOrder,
       bottomSet: [],
     };
@@ -1444,20 +1438,7 @@ export class PanelLayoutManager implements AppModule {
       }
     }
 
-    // Final free-tier guarantee: this is the only path that writes a tab's
-    // panel selection into STORAGE_KEYS.panels, so clamping here means no tab
-    // operation (add / switch / delete-fallback) can ever persist an over-cap
-    // workspace, regardless of how the snapshot was produced.
-    //
-    // Unless the tier isn't known yet and the bounded fallback has not fired —
-    // a tab click can land inside the same unresolved-session window the boot
-    // clamp defers around. Skipping the clamp leaves an over-cap workspace
-    // live for at most that window; App re-runs enforcement (and
-    // healStoredTabSnapshots) when the entitlement resolves or the fallback
-    // settles the account as free.
-    const capped = true
-      ? sanitizePublicPanelSettings(next)
-      : next;
+    const capped = sanitizePublicPanelSettings(next);
 
     this.ctx.panelSettings = capped;
     saveToStorage(STORAGE_KEYS.panels, capped);
@@ -2787,9 +2768,7 @@ export class PanelLayoutManager implements AppModule {
       // URL-derived context with the effective display state first. A shared
       // link is not a user preference, so it must never overwrite the saved
       // (and cloud-synced) map-layer selection.
-      if (true) {
-        normalized = sanitizePublicLayers(normalized);
-      }
+      normalized = sanitizePublicLayers(normalized);
       this.ctx.initialUrlState.layers = normalized;
       this.ctx.mapLayers = normalized;
       this.ctx.map.setLayers(normalized);

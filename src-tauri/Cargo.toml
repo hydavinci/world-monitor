@@ -17,6 +17,9 @@ reqwest = { version = "0.12", default-features = false, features = ["native-tls"
 getrandom = "0.2"
 opener = "0.8"
 
+[patch.crates-io]
+glib = { path = "vendor/glib-0.18.5" }
+
 [profile.release]
 lto = "fat"
 codegen-units = 1

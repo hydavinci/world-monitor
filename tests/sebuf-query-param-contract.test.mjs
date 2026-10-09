@@ -61,6 +61,18 @@ function writeHandler(root, body) {
 }
 
 describe('sebuf query-param implementation contract', () => {
+  it('accounts for retired flight-price inputs without requiring a removed business handler', () => {
+    const result = collectQueryParamContractViolations(root);
+    assert.deepEqual(result.violations.filter((entry) => entry.file.includes('search_flight_prices.proto')), []);
+    assert.equal(result.stats.retiredQueryFields, 10);
+  });
+
+  it('reactivates implementation checks when the retirement boundary is revoked', () => {
+    const result = collectQueryParamContractViolations(root, { retiredDataPaths: new Set() });
+    assert.equal(result.violations.filter((entry) => entry.file.includes('search_flight_prices.proto')).length, 10);
+    assert.equal(result.stats.retiredQueryFields, 0);
+  });
+
   it('generated OpenAPI operation params disclose every documented no-op', () => {
     for (const [file, path, names] of OPENAPI_NOOP_PARAMS) {
       const spec = JSON.parse(readFileSync(resolve(apiDir, file), 'utf8'));

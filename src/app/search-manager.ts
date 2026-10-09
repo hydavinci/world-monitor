@@ -110,76 +110,6 @@ export class SearchManager implements AppModule {
     return Math.min(timestamp, now);
   }
 
-  private static buildFlightSearchItems(
-    adsb: PositionSample[],
-    military: MilitaryFlight[],
-    adsbUpdatedAt: number,
-    now: number,
-  ): FlightSearchItem[] {
-    const safeAdsbUpdatedAt = SearchManager.flightObservationTime(adsbUpdatedAt, now, now);
-    return [
-      ...adsb.map((position) => {
-        const fl = Number.isFinite(position.altitudeFt)
-          ? Math.round(position.altitudeFt / 100)
-          : null;
-        const kts = Number.isFinite(position.groundSpeedKts)
-          ? Math.round(position.groundSpeedKts)
-          : null;
-        const observedAt = SearchManager.flightObservationTime(
-          position.observedAt,
-          safeAdsbUpdatedAt,
-          now,
-        );
-        return {
-          id: position.icao24,
-          title: (position.callsign || position.icao24).trim().toUpperCase(),
-          subtitle: position.onGround
-            ? t('modals.search.flightOnGround')
-            : fl !== null && kts !== null
-              ? t('modals.search.flightAirborne', { fl: String(fl), kts: String(kts) })
-              : fl !== null
-                ? `FL${fl}`
-                : t('modals.search.flightOnGround'),
-          data: {
-            kind: 'adsb' as const,
-            lat: position.lat,
-            lon: position.lon,
-            layer: 'flights' as const,
-          },
-          expiresAt: observedAt + FLIGHT_SEARCH_SOURCE_TTL_MS,
-        };
-      }),
-      ...military.map((flight) => {
-        const fl = Number.isFinite(flight.altitude)
-          ? Math.round(flight.altitude / 100)
-          : null;
-        // Military data is read from intelligenceCache when an independent
-        // ADS-B viewport callback fires. Never use that callback's timestamp as
-        // military freshness: doing so renewed a stalled military feed forever.
-        const observedAt = SearchManager.flightObservationTime(flight.lastSeen, 0, now);
-        return {
-          id: flight.hexCode,
-          title: (flight.callsign || flight.hexCode).trim().toUpperCase(),
-          subtitle: flight.onGround
-            ? t('modals.search.flightMilitaryOnGround', { type: flight.aircraftType })
-            : fl !== null
-              ? t('modals.search.flightMilitary', {
-                  type: flight.aircraftType,
-                  fl: String(fl),
-                })
-              : t('modals.search.flightMilitaryOnGround', { type: flight.aircraftType }),
-          data: {
-            kind: 'military' as const,
-            lat: flight.lat,
-            lon: flight.lon,
-            layer: 'military' as const,
-          },
-          expiresAt: observedAt + FLIGHT_SEARCH_SOURCE_TTL_MS,
-        };
-      }),
-    ].filter((item) => item.expiresAt > now);
-  }
-
   private ctx: AppContext;
   private callbacks: SearchManagerCallbacks;
   private readonly searchSelection: SearchSelectionDispatcher;
@@ -453,42 +383,19 @@ export class SearchManager implements AppModule {
     this.ctx.searchModal.setOnHumanInteraction(() => this.cancelPendingProgrammaticSelection());
     this.ctx.searchModal.setOnSelect((result) => this.searchSelection.handleSearchResult(result));
     this.ctx.searchModal.setOnCommand((cmd) => this.searchSelection.handleCommand(cmd));
-    // Always wire flight search; check pro status reactively inside the callback
-    // so mid-session sign-ins get the feature without a page reload.
     this.ctx.searchModal.setOnFlightSearch((callsign) => {
       this.handleLiveFlightSearch(callsign);
     });
 
   }
 
-  private handleLiveFlightSearch(callsign: string): void {return;
-    void this.fetchAndPublishLiveFlight(callsign)
-      .then(() => {
-        if (!this.destroyed) this.ctx.searchModal?.refreshSearch();
-      })
-      .catch(() => {
-        // Callsign lookup is optional enrichment. Keep the current viewport
-        // ADS-B and military index intact when that single request fails.
-      });
+  private handleLiveFlightSearch(_callsign: string): void {
   }
 
   private static adsbIdentities(position: PositionSample): string[] {
     return [position.icao24, position.callsign]
       .map((value) => value.trim().toUpperCase())
       .filter(Boolean);
-  }
-
-  private mergeLiveAdsb(
-    current: PositionSample[],
-    live: PositionSample[],
-  ): PositionSample[] {
-    const liveIdentities = new Set(live.flatMap(SearchManager.adsbIdentities));
-    return [
-      ...current.filter((position) => (
-        !SearchManager.adsbIdentities(position).some((id) => liveIdentities.has(id))
-      )),
-      ...live,
-    ];
   }
 
   private async fetchAndPublishLiveFlight(
@@ -524,11 +431,6 @@ export class SearchManager implements AppModule {
         + FLIGHT_SEARCH_SOURCE_TTL_MS;
       if (expiresAt > now) this.liveFlightOverlay.push({ position, expiresAt });
     }
-  }
-
-  private pruneLiveFlightOverlay(now: number): PositionSample[] {
-    this.liveFlightOverlay = this.liveFlightOverlay.filter((entry) => entry.expiresAt > now);
-    return this.liveFlightOverlay.map((entry) => entry.position);
   }
 
   private async registerBaseSearchSource(): Promise<void> {
@@ -820,27 +722,16 @@ export class SearchManager implements AppModule {
   updateFlightSource(
     adsb: PositionSample[],
     military: MilitaryFlight[],
-    adsbUpdatedAt = Date.now(),
+    _adsbUpdatedAt = Date.now(),
   ): void {
     if (this.destroyed) return;
     this.latestAdsb = [...adsb];
     this.latestMilitary = [...military];
-    if (!this.ctx.searchModal) return;{
-      this.flightSearchItems = [];
-      this.flightSourceExpiresAt = 0;
-      this.liveFlightOverlay = [];
-      this.ctx.searchModal.registerSource('flight', []);
-      return;
-    }
-    const now = Date.now();
-    const mergedAdsb = this.mergeLiveAdsb(adsb, this.pruneLiveFlightOverlay(now));
-    this.flightSearchItems = SearchManager.buildFlightSearchItems(
-      mergedAdsb,
-      military,
-      adsbUpdatedAt,
-      now,
-    );
-    this.publishCurrentFlightSearchItems(now);
+    if (!this.ctx.searchModal) return;
+    this.flightSearchItems = [];
+    this.flightSourceExpiresAt = 0;
+    this.liveFlightOverlay = [];
+    this.ctx.searchModal.registerSource('flight', []);
   }
 
   private publishCurrentFlightSearchItems(

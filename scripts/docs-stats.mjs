@@ -1235,9 +1235,6 @@ export const ACQUISITION_CLAIM_ROOTS = [
   'public/.well-known/ai-catalog.json',
   'public/.well-known/agent-skills',
   'public/api/llms.txt',
-  'pro-test/src/locales',
-  'pro-test/index.html',
-  'pro-test/welcome.html',
   'blog-site/src/content/blog',
   'scripts/build-agent-skills-index.mjs',
 ];
@@ -1268,22 +1265,21 @@ const ACQUISITION_CLAIM_EXTENSIONS = /\.(?:astro|html|json|md|mdx|mjs|txt)$/;
 function isCurrentAcquisitionClaimSurface(path) {
   return (
     ['index.html', 'README.md', 'README.zh-CN.md', 'README.ja-JP.md', 'server.json', 'cli/README.md',
-      'pro-test/index.html', 'pro-test/welcome.html', 'scripts/build-agent-skills-index.mjs'].includes(path)
+      'scripts/build-agent-skills-index.mjs'].includes(path)
     || /^docs\/.+\.(?:md|mdx)$/.test(path)
     || /^public\/[^/]+\.(?:md|txt|json)$/.test(path)
     || /^public\/(?:[^/]+\/)*llms\.txt$/.test(path)
     || path === 'public/.well-known/ai-catalog.json'
     || /^public\/\.well-known\/agent-skills\/[^/]+\/SKILL\.md$/.test(path)
-    || /^pro-test\/src\/locales\/[^/]+\.json$/.test(path)
     || /^blog-site\/src\/content\/blog\/[^/]+\.md$/.test(path)
   );
 }
 
-export function collectCurrentAcquisitionClaimFiles() {
+export function collectCurrentAcquisitionClaimFiles(rootDir = rootOf()) {
   const files = new Set();
   const visit = (path) => {
     if (ACQUISITION_CLAIM_EXCLUDES.some((prefix) => path.startsWith(prefix))) return;
-    const absolute = join(rootOf(), path);
+    const absolute = join(rootDir, path);
     let stat;
     try {
       stat = statSync(absolute);
@@ -1407,8 +1403,6 @@ export function validateVolatileInventoryClaims() {
     { path: 'blog-site/src/content/blog/build-supply-chain-early-warning-system-api.md', text: /Three signals, three endpoints/ },
     { path: 'blog-site/src/content/blog/free-geopolitical-data-apis-2026.md', text: /ingest ten feeds/ },
     { path: 'blog-site/src/content/blog/supply-chain-early-warning-dashboard-worldmonitor-api.md', text: /five panels/ },
-    { path: 'pro-test/src/locales/ja.json', text: /25ダッシュボード/ },
-    { path: 'pro-test/src/locales/ja.json', text: /紛争は1つのマップレイヤー/ },
   ];
   const failures = [];
   const observedRetainedContracts = new Set();

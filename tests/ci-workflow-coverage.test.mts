@@ -73,7 +73,7 @@ describe('root dependency cache (#8710)', () => {
   });
 
   for (const [workflowText, jobIds] of [
-    [testWorkflow, ['unit-shards', 'unit-built-output', 'sidecar', 'convex-tests', 'dom-tests', 'variant-smoke-shards', 'variant-smoke-pro-webmcp', 'resilience-validation-smoke']],
+    [testWorkflow, ['unit-shards', 'unit-built-output', 'sidecar', 'convex-tests', 'dom-tests', 'variant-smoke-shards', 'variant-smoke-pro-webmcp']],
     [lintCodeWorkflow, ['biome', 'markdown']],
     [read(resolve(workflowsDir, 'typecheck.yml')), ['typecheck']],
   ] as const) {
@@ -146,7 +146,6 @@ const REQUIRED_PR_SCRIPTS = [
   'test:data',
   'test:sidecar',
   'test:convex',
-  'test:resilience-validation-smoke',
 ] as const;
 
 // Every regression guard the combined ci-smoke invocation must keep exercising.
@@ -155,7 +154,6 @@ const REQUIRED_PR_SCRIPTS = [
 const REQUIRED_CI_SMOKE_SPECS = [
   'e2e/variant-live-smoke.spec.ts',
   'e2e/country-brief.spec.ts',
-  'e2e/mcp-grant-consent.spec.ts',
   'e2e/dashboard-news-request-budget.spec.ts',
   'e2e/bootstrap-request-budget.spec.ts',
   'e2e/bootstrap-hydration-request-budget.spec.ts',
@@ -167,7 +165,7 @@ const REQUIRED_CI_SMOKE_SPECS = [
   'e2e/dompurify-regression.spec.ts',
   'e2e/a11y-axe-scan.spec.ts',
   'e2e/map-overlay-marker-budget.spec.ts',
-  'e2e/mcp-market-built.spec.ts',
+  'e2e/terminal-chart.spec.ts',
 ] as const;
 
 const REQUIRED_TEST_JOBS = [
@@ -175,7 +173,6 @@ const REQUIRED_TEST_JOBS = [
   'sidecar',
   'convex-tests',
   'variant-smoke-full',
-  'resilience-validation-smoke',
   'desktop-config',
   'desktop-rust',
 ] as const;
@@ -187,7 +184,6 @@ const TIMEOUT_CAPPED_TEST_JOBS = [
   'variant-smoke-shards',
   'variant-smoke-pro-webmcp',
   'variant-smoke-full',
-  'resilience-validation-smoke',
   'desktop-config',
   'desktop-rust',
 ] as const;
@@ -224,16 +220,6 @@ const GATE_CHECK_EXEMPTIONS: Record<string, { workflow: string; coveredBy: strin
   'variant-smoke-shards': { workflow: 'Test', coveredBy: 'variant-smoke-full' },
   'variant-smoke-pro-webmcp': { workflow: 'Test', coveredBy: 'variant-smoke-full' },
 };
-
-const REQUIRED_RESILIENCE_VALIDATION_INPUTS = [
-  'Dockerfile.seed-bundle-resilience-validation',
-  'docs/methodology/country-resilience-index/validation/',
-  'scripts/benchmark-resilience-external.mjs',
-  'scripts/backtest-resilience-outcomes.mjs',
-  'scripts/validate-resilience-sensitivity.mjs',
-  'scripts/seed-bundle-resilience-validation.mjs',
-  'scripts/_bundle-runner.mjs',
-] as const;
 
 // Desktop drift gates (#5902): the literal awk patterns each change filter
 // must keep, so a filter refactor cannot silently un-gate a desktop-breaking
@@ -854,14 +840,15 @@ describe('deployment_status triggers — npm cache scope hygiene (#7593)', () =>
 });
 
 describe('CI workflow coverage', () => {
-  it('stages the regenerated sitemap and software dates in the weekly pulse PR', () => {
+  it('stages the regenerated public corpus and sitemap dates in the weekly pulse PR', () => {
     const pulseWorkflow = read(resolve(workflowsDir, 'crawlable-pulse-refresh.yml'));
     const openPrStep = workflowStepBlock(pulseWorkflow, 'Open the weekly pulse PR');
     assert.match(
       openPrStep,
-      /git\s+add\s+"\$snapshot_path"\s+public\/sitemap\.xml\s+public\/sitemap-main\.xml\s+public\/llms-full\.txt\s+pro-test\/src\/generated\/teasers\.json\s+pro-test\/welcome\.html\s+pro-test\/index\.html/,
-      'weekly pulse PRs must include the sitemap, llms-full corpus, and both shared software dates',
+      /git\s+add\s+"\$snapshot_path"\s+public\/sitemap\.xml\s+public\/sitemap-main\.xml\s+public\/llms-full\.txt\s+public\/home\.md\s+api\/_country-corpus-slugs\.generated\.js/,
+      'weekly pulse PRs must include the public corpus, sitemap and shared country slug map',
     );
+    assert.doesNotMatch(openPrStep, /pro-test\//, 'retired marketing pages are not public corpus outputs');
     assert.match(
       openPrStep,
       /git commit -m "chore\(corpus\): refresh[^\n]+\n[\s\S]*npm run build:sitemap\n\s+git add public\/sitemap\.xml public\/sitemap-main\.xml\n[\s\S]*git commit -m "chore\(corpus\): align[^\n]+\n[\s\S]*node scripts\/build-sitemap\.mjs --check\n\s+git push/,
@@ -1573,28 +1560,10 @@ describe('CI workflow coverage', () => {
     );
   });
 
-  it('keeps resilience validation bundle inputs in the CI change filter', () => {
-    assert.ok(
-      testWorkflow.includes('validation: ${{ steps.diff.outputs.validation }}'),
-      'test.yml must expose a validation change output',
-    );
-    for (const input of REQUIRED_RESILIENCE_VALIDATION_INPUTS) {
-      assert.ok(testWorkflow.includes(workflowRegexNeedle(input)), `test.yml must cover ${input}`);
-    }
-  });
-
-  it('runs resilience-validation-smoke only for validation changes that skip unit', () => {
-    const job = testJobBlock('resilience-validation-smoke');
-    assert.match(
-      job,
-      /\n {4}if: needs\.changes\.outputs\.validation == 'true' && needs\.changes\.outputs\.code != 'true'\n/,
-      'the smoke job is the validation-docs path; unit already runs the same files whenever code changed (#7772)',
-    );
-    assert.doesNotMatch(
-      job,
-      /outputs\.code == 'true'/,
-      'a second npm ci on every code PR re-runs tests already inside test:data',
-    );
+  it('does not require the removed paid resilience validation pipeline', () => {
+    assert.doesNotMatch(testWorkflow, /resilience-validation-smoke|outputs\.validation|VALIDATION=\$\(/);
+    assert.ok(!deployGateRequiredChecks().includes('resilience-validation-smoke'));
+    assert.equal(packageScripts['test:resilience-validation-smoke'], undefined);
   });
 
   it('lints markdown once, in a gate-required job that skips when no markdown changed (#7772)', () => {
@@ -1706,13 +1675,14 @@ describe('CI workflow coverage', () => {
   });
 
   it('routes the root Docker context policy into image build jobs', () => {
-    for (const variable of ['DIGEST', 'UMAMI']) {
+    for (const variable of ['UMAMI']) {
       const awkBlock = shellAwkAssignmentBlock(variable);
       assert.ok(
         evaluateAwkAssignmentBlock(awkBlock, ['.dockerignore']) > 0,
         `.dockerignore must set ${variable.toLowerCase()}=true`,
       );
     }
+    assert.doesNotMatch(testWorkflow, /^\s+DIGEST=\$\(/m, 'the retired digest image has no CI change selector');
   });
 
   it('keeps desktop drift-gate inputs in the CI change filter (#5902)', () => {

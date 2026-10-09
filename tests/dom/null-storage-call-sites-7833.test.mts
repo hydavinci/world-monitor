@@ -15,7 +15,7 @@
  *     `'object'`, so that gate never fires for the null shape.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 /** Android WebView with DOM storage disabled: the property itself is null. */
 function stubNullStorage(): void {

@@ -704,7 +704,6 @@ export class DeckGLMap {
   // Callbacks
   private onNewsClick?: (item: Pick<NewsLocationMarker, 'article' | 'title'>) => void;
   private onHotspotClick?: (hotspot: Hotspot) => void;
-  private onTradeArcClick?: (segment: TradeRouteSegment, waypoints: string[], x: number, y: number) => void;
   private onTimeRangeChange?: (range: TimeRange) => void;
   private onCountryClick?: (country: CountryClickPayload) => void;
   private onMapContextMenu?: (payload: { lat: number; lon: number; screenX: number; screenY: number; countryCode?: string; countryName?: string }) => void;
@@ -5464,12 +5463,6 @@ export class DeckGLMap {
     }
 
     if (layerId === 'trade-routes-layer') {
-      const segment = info.object as TradeRouteSegment;{
-        return;
-      }
-      const waypoints = ROUTE_WAYPOINTS_MAP.get(segment.routeId) ?? [];
-      this.popup.showRouteBreakdown(segment, waypoints, info.x, info.y);
-      this.onTradeArcClick?.(segment, waypoints, info.x, info.y);
       return;
     }
 
@@ -7518,8 +7511,7 @@ export class DeckGLMap {
     this.onHotspotClick = callback;
   }
 
-  public setOnTradeArcClick(cb: (segment: TradeRouteSegment, waypoints: string[], x: number, y: number) => void): void {
-    this.onTradeArcClick = cb;
+  public setOnTradeArcClick(_cb: (segment: TradeRouteSegment, waypoints: string[], x: number, y: number) => void): void {
   }
 
   public setOnTimeRangeChange(callback: (range: TimeRange) => void): void {

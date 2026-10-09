@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { PanelConfig } from '@/types';
 
 vi.mock('@/services/runtime', () => ({ isDesktopRuntime: () => false }));
 
@@ -25,7 +26,7 @@ describe('permanent public catalog', () => {
 
   it('prunes stale private preferences without changing public choices', async () => {
     const { sanitizePublicPanelSettings, sanitizePublicLayers } = await import('@/services/public-preferences');
-    const publicPanel = { name: 'Weather', enabled: false, priority: 3, fontScale: 1.2 };
+    const publicPanel: PanelConfig = { name: 'Weather', enabled: false, priority: 3, fontScale: 1.25 };
     const stored = { economic: publicPanel, 'stock-analysis': { name: 'Old', enabled: true, priority: 1 } };
     expect(sanitizePublicPanelSettings(stored)).toEqual({ economic: publicPanel });
     expect(stored).toHaveProperty('stock-analysis');

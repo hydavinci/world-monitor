@@ -44,7 +44,7 @@ jobs:
   deploy:
     name: Wrangler deploy
     needs: [unit-test]
-    if: github.ref == 'refs/heads/main'
+    if: github.repository == 'koala73/worldmonitor' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -176,6 +176,7 @@ jobs:
           NODE
 
   live-smoke:
+    if: github.repository == 'koala73/worldmonitor'
     name: Live control-plane smoke
     needs: [deploy]
     runs-on: ubuntu-latest

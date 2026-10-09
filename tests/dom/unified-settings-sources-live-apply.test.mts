@@ -11,7 +11,7 @@
  *   (a) toggled + closed              → fires exactly once, after teardown;
  *   (b) closed untouched              → silent;
  *   (c) toggled off and back on       → silent (net change is nil);
- *   (d) toggle the host refused       → silent (free-tier source cap);
+ *   (d) local write left unchanged   → silent;
  *   (e) one multi-word source swapped for two that concatenate to the same
  *       text                          → fires (separator-collision guard);
  *   (f) second session, nothing moved → silent (the baseline re-arms on open).
@@ -31,24 +31,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi }
 import { initTestI18n } from './helpers/i18n.mts';
 import type { UnifiedSettingsConfig } from '@/components/UnifiedSettings';
 
-const session: AuthSession = {
-  user: { id: 'A', name: 'User A', email: 'a@example.com', role: 'pro' },
-  isPending: false,
-};
-
-const entitlementState: EntitlementState = {
-  planKey: 'pro',
-  features: {
-    tier: 1,
-    apiAccess: true,
-    apiRateLimit: 10_000,
-    maxDashboards: 10,
-    prioritySupport: true,
-    exportFormats: ['json'],
-  },
-  validUntil: Date.now() + 86_400_000,
-};
-
 const storageValues = new Map<string, string>();
 const storage: Storage = {
   get length() { return storageValues.size; },
@@ -58,10 +40,6 @@ const storage: Storage = {
   removeItem: (key) => { storageValues.delete(key); },
   setItem: (key, value) => { storageValues.set(key, value); },
 };
-
-vi.mock('@/services/widget-store', () => ({
-  isProUser: () => true,
-}));
 
 vi.mock('@/services/preferences-content', () => ({
   renderPreferences: () => ({
@@ -82,10 +60,6 @@ vi.mock('@/config/panels', () => ({
   VARIANT_DEFAULTS: { full: [] },
   getEffectivePanelConfig: () => ({ name: '', enabled: false }),
   getVariantPanelCategories: () => [],
-  isPanelEntitled: () => true,
-  FREE_MAX_PANELS: 3,
-  countFreePanelCapUsage: () => 0,
-  isFreePanelCapCounted: () => false,
 }));
 
 vi.mock('@/config/variant', () => ({
@@ -170,6 +144,25 @@ afterEach(() => {
 });
 
 describe('UnifiedSettings source selection live apply (#6380)', () => {
+  it('offers only local tabs and applies every source anonymously with one notification on close', () => {
+    const sources = Array.from({ length: 64 }, (_, index) => `Public source ${index}`);
+    config.getAllSourceNames = () => sources;
+    disabledSources = new Set(sources);
+
+    settings.open('sources');
+    expect(Array.from(internal.overlay.querySelectorAll('[role="tab"]'))
+      .map(tab => tab.getAttribute('data-tab'))).toEqual(['settings', 'panels', 'sources']);
+    expect(internal.overlay.querySelector('[data-tab="account"], [data-tab="api-keys"], [data-tab="embeds"]'))
+      .toBeNull();
+    internal.overlay.querySelector<HTMLButtonElement>('[data-sources-all]')!.click();
+
+    expect(disabledSources.size).toBe(0);
+    expect(internal.overlay.querySelectorAll('[data-source][aria-checked="true"]')).toHaveLength(64);
+    expect(onSourcesChanged).not.toHaveBeenCalled();
+    settings.close();
+    expect(onSourcesChanged).toHaveBeenCalledTimes(1);
+  });
+
   it('(a) a source toggle followed by close notifies the host exactly once, after teardown', () => {
     settings.open('sources');
     expect(sourceButton(PLAIN_SOURCE).classList.contains('active')).toBe(true);
@@ -227,10 +220,8 @@ describe('UnifiedSettings source selection live apply (#6380)', () => {
     ).not.toHaveBeenCalled();
   });
 
-  it('(d) a toggle the host refuses (free-tier source cap) does not notify', () => {
-    // The real toggleSource returns early with a cap toast and leaves the set
-    // untouched. A "was a toggle clicked" flag would fire here; a signature
-    // comparison correctly does not.
+  it('(d) a local write that leaves the selection unchanged does not notify', () => {
+    // A click alone must not notify when the host leaves the selection unchanged.
     toggleSourceImpl = () => {};
 
     settings.open('sources');

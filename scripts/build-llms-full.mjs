@@ -42,6 +42,17 @@ const CHOKEPOINT_BLOGS = [
   'blog-site/src/content/blog/energy-shock-monitoring-chokepoints-worldmonitor.md',
 ];
 
+// Preserve upstream methods and provenance, not retired fork access promises.
+function publicOnlyInterfaces(text) {
+  return text
+    .replace('and exposed through the GetRiskScores RPC and the get_country_risk MCP tool.', 'and published on the dashboard and country reference pages.')
+    .replace('Scores are served through the get-resilience-score and get-resilience-ranking endpoints and the get_country_risk MCP tool.', 'This fork retains published country snapshots and their coverage and source attribution, not a live account-backed score API.')
+    .replace('It is available through the get_world_brief MCP tool and the dashboard', 'It is available through the dashboard')
+    .replace('Direct score and ranking API calls require the normal Pro/API auth path, while the runtime manifest is public at', 'This fork retains public country reference pages rather than account-backed score and ranking APIs. The runtime manifest is public at')
+    .replace(/^The Pro-only `\/api\/resilience\/v1\/get-resilience-indicators`[^\n]+$/gm, 'The upstream indicator methodology distinguishes observed, imputed, missing and restricted source values. The live indicator API is not available in this fork. Published reference data retains source attribution and licensing limits; consult the [indicator redistribution audit](./resilience-indicator-licensing.mdx) before reusing raw values.')
+    .replace('World Monitor API Starter at $99.99/mo for 1,000 requests/day against Liveuamap Pro at $150/mo for 200', 'the upstream commercial API comparison with Liveuamap');
+}
+
 function read(rootDir, relativePath) {
   return readFileSync(join(rootDir, relativePath), 'utf8');
 }
@@ -119,7 +130,7 @@ function stripMdx(source) {
   text = text.replace(/<[A-Z][A-Za-z0-9]*[^>]*\/>/g, '');
   text = text.replace(/<\/?[A-Z][A-Za-z0-9]*[^>]*>/g, '');
   text = rebaseInlinedDocsLinks(text);
-  return redactInternalApiOrigins(text.replace(/\n{3,}/g, '\n\n').trim());
+  return publicOnlyInterfaces(redactInternalApiOrigins(text.replace(/\n{3,}/g, '\n\n').trim()));
 }
 
 function briefPrefix(existing) {
@@ -213,12 +224,12 @@ export function withVersionHeader(prefix, versionHeader) {
 }
 
 function renderGlossary() {
-  const lines = ['## Glossary', ''];
+  const lines = ['## Glossary', '', 'These upstream methodology definitions describe published scores and evidence, not the live API or tool inventory of this public-only fork.', ''];
   for (const term of GLOSSARY_TERMS) {
     const title = term.abbr ? `${term.term} (${term.abbr})` : term.term;
-    lines.push(`### ${title}`, '', term.short, '');
+    lines.push(`### ${title}`, '', publicOnlyInterfaces(term.short), '');
     for (const paragraph of term.body || []) {
-      lines.push(paragraph, '');
+      lines.push(publicOnlyInterfaces(paragraph), '');
     }
   }
   return lines.join('\n');
@@ -281,7 +292,7 @@ export function renderComparisons() {
     '',
     `A comparison hub plus ${entries.length - 1} head-to-head and category pages. Every page uses the same ${COMPARISON_MATRIX_COLUMNS.length}-column matrix (${COMPARISON_MATRIX_COLUMNS.join(', ')}), states what each competitor wins, and answers the questions engines lift verbatim. Prices were checked at publication and can change.`,
     '',
-    ...entries.map((entry) => `- [${entry.title}](${entry.url}): ${entry.description}`),
+    ...entries.map((entry) => `- [${entry.title}](${entry.url}): ${publicOnlyInterfaces(entry.description)}`),
   ].join('\n');
 }
 

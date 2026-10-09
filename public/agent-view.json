@@ -1,16 +1,10 @@
 {
-  "$comment": "Machine-readable homepage view served at /?mode=agent (vercel.json rewrite). Structured summary for AI agents instead of marketing HTML. Parity with the MCP server card and agent card is guarded in tests/agent-mode-view.test.mjs.",
+  "$comment": "Machine-readable public-only homepage view served at /?mode=agent (vercel.json rewrite). Documentation MCP parity and public discovery are guarded in tests/agent-mode-view.test.mjs.",
   "kind": "agent-view",
   "product": "World Monitor",
   "url": "https://www.worldmonitor.app",
-  "description": "Live global-intelligence platform: real-time markets, conflict events, country risk and resilience, global procurement opportunities, shipping chokepoints, aviation/maritime activity, energy, climate, health, cyber threats, on-demand NLP utilities (classification, entity extraction, news clusters, keyword spikes), forecasts and AI-generated briefs — machine-readable JSON, correlated across layers.",
+  "description": "Public-only global intelligence dashboard combining news, conflicts, markets, aviation, maritime activity, infrastructure, climate hazards and cyber signals. Country, crisis, chokepoint and source reference pages accompany the live map; public REST and documentation MCP support programmatic discovery.",
   "endpoints": {
-    "mcp": {
-      "url": "https://worldmonitor.app/mcp",
-      "transport": "streamable-http",
-      "serverCard": "https://worldmonitor.app/.well-known/mcp/server-card.json",
-      "note": "Call tools/list or read the server card for the live tool inventory. tools/list, prompts/list and resources/list are anonymous. get_sources is the sole credential-free, daily-quota-free data tool and has a separate fail-closed 10/min/IP anonymous limit; describe_tool and all other tool calls need subscription auth."
-    },
     "rest": {
       "base": "https://api.worldmonitor.app",
       "openapi": "https://www.worldmonitor.app/openapi.json",
@@ -18,14 +12,9 @@
       "graphql": false,
       "note": "Send a descriptive User-Agent; generic UAs are filtered at the edge. Fetch the OpenAPI spec for the full operation list."
     },
-    "a2a": {
-      "url": "https://www.worldmonitor.app/a2a",
-      "agentCard": "https://worldmonitor.app/.well-known/agent-card.json",
-      "note": "Anonymous concierge: message/send routes a natural-language need to the right tool."
-    },
-    "nlweb": {
-      "url": "https://www.worldmonitor.app/ask",
-      "note": "POST {\"query\": \"...\"} → NLWeb JSON; prefer.streaming=true → SSE (start/result/complete)."
+    "webMcp": {
+      "url": "https://www.worldmonitor.app/dashboard",
+      "note": "In-page dashboard tools registered with the browser's modelContext provider where supported. This is browser WebMCP, not an HTTP product MCP server."
     },
     "cli": {
       "package": "worldmonitor",
@@ -67,7 +56,7 @@
       "url": "https://www.worldmonitor.app/docs/mcp",
       "transport": "streamable-http",
       "serverCard": "https://www.worldmonitor.app/.well-known/mcp/docs-server-card.json",
-      "note": "Public documentation search-and-retrieval MCP server — no auth. Route 'how do I…' questions here; route live-data calls to the product MCP."
+      "note": "Public documentation search-and-retrieval MCP server — no auth. Use it for documentation questions, not live data calls."
     },
     "sandbox": {
       "url": "https://www.worldmonitor.app/sandbox/index.json",
@@ -77,44 +66,25 @@
   },
   "quickstart": {
     "sandbox": "curl https://www.worldmonitor.app/sandbox/get-resilience-score.json",
-    "rest": "curl -H 'X-WorldMonitor-Key: wm_<40 hex>' 'https://api.worldmonitor.app/api/resilience/v1/get-resilience-score?countryCode=DE'",
-    "mcp": "curl -X POST https://worldmonitor.app/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'"
+    "rest": "curl -H 'User-Agent: worldmonitor-agent/1.0' 'https://api.worldmonitor.app/api/news/v1/list-feed-digest?variant=full&lang=en&public=1'",
+    "mcp": "curl -X POST https://www.worldmonitor.app/docs/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'"
   },
   "authentication": {
-    "summary": "Authentication: OAuth2 (scope=mcp) or an API key header for subscription data. Discovery surfaces (tools/list, prompts/list, resources/list, /a2a, /ask) are anonymous. get_sources is the sole credential-free, daily-quota-free data tool; describe_tool and all other tool calls are subscription-gated.",
-    "freeDataTool": {
-      "name": "get_sources",
-      "dailyQuota": false,
-      "anonymousRateLimit": "10 requests/min per IP, fail closed"
-    },
-    "oauth2": {
-      "authorizationServer": "https://worldmonitor.app/.well-known/oauth-authorization-server",
-      "protectedResource": "https://worldmonitor.app/.well-known/oauth-protected-resource",
-      "scope": "mcp"
-    },
-    "apiKey": {
-      "header": "X-WorldMonitor-Key",
-      "format": "wm_<40 hex>",
-      "issueAt": "https://www.worldmonitor.app/pro"
-    },
-    "guide": "https://www.worldmonitor.app/auth.md",
-    "plansAndLimits": "https://www.worldmonitor.app/pricing.md"
+    "summary": "Authentication: the public dashboard, public REST request shapes and documentation MCP are anonymous. This fork has no accounts or subscriptions. Send a descriptive User-Agent and follow each endpoint's access policy.",
+    "guide": "https://www.worldmonitor.app/docs/api-reference"
   },
   "rateLimits": {
-    "anonymous": "60 requests/min per IP on public MCP metadata methods, /a2a and /ask; get_sources uses a separate fail-closed 10 requests/min per IP ceiling",
-    "authenticated": "Per-minute burst is plan-resolved and shared per user across OAuth tokens and dashboard-issued wm_ keys: 60/minute on Pro, Pro Business and API Starter, 300 on API Business, 1000 on Enterprise. Subscription data calls reserve a per-user daily quota on the same plan-resolved budget through either door: Pro 50/day and Pro Business 250/day at one unit per call, API Starter 1000/day and API Business 10000/day drawn from the same allowance as their REST requests and charged at a per-tool weight of 1, 2 or 3, Enterprise unlimited. get_sources and metadata calls are daily-quota-free — see https://www.worldmonitor.app/pricing.md"
+    "anonymous": "Limits are endpoint-specific; anonymous access is not an unlimited quota. Respect rate-limit responses and use cached data where available."
   },
   "documentation": "https://www.worldmonitor.app/docs/documentation",
   "capabilities": [
-    "real-time market data (equities, commodities, crypto, FX)",
-    "global live conflict events and CII v8 scores for 31 Tier-1 countries",
-    "country resilience scores across the 196-country public rankable universe, with domain/pillar breakdown",
-    "13 shipping chokepoints with live AIS transit intelligence",
-    "maritime and aviation activity, airspace status",
-    "energy intelligence (LNG, pipelines, refineries, outages)",
-    "sanctions, supply-chain and tariff data",
-    "cyber threats, natural disasters, health and displacement signals",
-    "AI world/country briefs, scenario forecasts, prediction markets"
+    "curated news and OSINT feeds",
+    "conflict, military and civil aviation map layers",
+    "maritime activity and chokepoint reference pages",
+    "markets, commodities and prediction-market context",
+    "infrastructure, earthquakes, wildfire and cyber signals",
+    "country, crisis, research and source-attributed reference pages",
+    "public REST, documentation MCP and in-browser WebMCP"
   ],
   "discovery": {
     "llmsTxt": "https://www.worldmonitor.app/llms.txt",
