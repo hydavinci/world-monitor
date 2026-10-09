@@ -124,3 +124,44 @@ it('restores earlier entries when a later quota write fails', async () => {
   vi.unstubAllGlobals();
   expect(snapshot()).toEqual(before);
 });
+
+it.each(['remove', 'restore'])('attempts every local rollback entry after a %s failure', async failure => {
+  localStorage.setItem('wm-map-provider', 'auto');
+  if (failure === 'restore') localStorage.setItem('wm-font-scale', '1');
+  const storage = localStorage;
+  vi.stubGlobal('localStorage', {
+    getItem: storage.getItem.bind(storage),
+    removeItem(key: string) {
+      if (failure === 'remove' && key === 'wm-font-scale') throw new DOMException('Blocked', 'SecurityError');
+      storage.removeItem(key);
+    },
+    setItem(key: string, value: string) {
+      if (key === 'wm-stream-quality'
+        || (failure === 'restore' && key === 'wm-font-scale' && value === '1')) {
+        throw new DOMException('Full', 'QuotaExceededError');
+      }
+      storage.setItem(key, value);
+    },
+  });
+  const result = importSettings(file({
+    'worldmonitor-theme': 'light',
+    'wm-font-scale': '1.2',
+    'wm-map-provider': 'carto',
+    'wm-stream-quality': 'hd720',
+  }));
+  await expect(result).rejects.toThrow(/rollback failed/);
+  vi.unstubAllGlobals();
+  expect(localStorage.getItem('worldmonitor-theme')).toBe('dark');
+  expect(localStorage.getItem('wm-map-provider')).toBe('auto');
+});
+
+it('keeps validated imports local without uploading or creating cloud ownership markers', async () => {
+  const fetch = vi.fn(() => { throw new Error('Unexpected preference upload'); });
+  vi.stubGlobal('fetch', fetch);
+  await expect(importSettings(file({ 'worldmonitor-theme': 'light' })))
+    .resolves.toEqual({ success: true, keysImported: 1 });
+  expect(localStorage.getItem('worldmonitor-theme')).toBe('light');
+  expect(localStorage.getItem('wm-cloud-prefs-dirty-keys')).toBeNull();
+  expect(localStorage.getItem('wm-cloud-sync-version')).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});

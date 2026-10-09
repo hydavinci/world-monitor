@@ -223,9 +223,23 @@ export function importSettings(file: File): Promise<ImportResult> {
             applied++;
           }
         } catch (error) {
+          const rollbackErrors: unknown[] = [];
+          const failedKeys: string[] = [];
           for (const [key, value] of previous.slice(0, applied).reverse()) {
-            if (value === null) localStorage.removeItem(key);
-            else localStorage.setItem(key, value);
+            try {
+              if (value === null) localStorage.removeItem(key);
+              else localStorage.setItem(key, value);
+            } catch (rollbackError) {
+              rollbackErrors.push(rollbackError);
+              failedKeys.push(key);
+            }
+          }
+          if (rollbackErrors.length) {
+            throw new AggregateError(
+              [error, ...rollbackErrors],
+              `Cannot persist imported settings; rollback failed for ${failedKeys.join(', ')}.`,
+              { cause: error },
+            );
           }
           throw new Error('Cannot persist imported settings.', { cause: error });
         }

@@ -30,6 +30,7 @@ import {
 import { rateLimitErrorLevel as apiRateLimitErrorLevel, rateLimitFingerprintStage as apiRateLimitFingerprintStage } from '../api/_rate-limit.js';
 // @ts-expect-error — JS module, no declaration file
 import { limitWithFallback } from '../api/_rate-limit-fallback.js';
+import { retiredRouteResponse } from '../api/_retired-routes.js';
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
@@ -663,30 +664,19 @@ describe('rate-limit fail-open / fail-closed posture (#3531 M9)', () => {
   });
 });
 
-describe('rate-limit fail-closed call-site policy (#3531)', () => {
-  // High-cost endpoints that don't go through gateway.ts's checkEndpointRateLimit
-  // must opt into fail-closed at the call site — otherwise an Upstash blip
-  // silently lifts the only rate-limit gate they have. Static-analysis guard
-  // so a future caller reverting to bare `checkRateLimit(req, cors)` is caught
-  // in CI rather than during a Redis incident.
-  const FAIL_CLOSED_REQUIRED = [
-    'api/chat-analyst.ts', // streaming LLM analyst, Pro-only
-    'api/widget-agent.ts', // frontier-model widget proxy
-    'api/create-checkout.ts', // paid Dodo checkout relay
+describe('retired expensive edge routes remain fail-closed', () => {
+  const RETIRED_EXPENSIVE_ROUTES = [
+    '/api/chat-analyst',
+    '/api/widget-agent',
+    '/api/create-checkout',
   ];
 
-  for (const path of FAIL_CLOSED_REQUIRED) {
-    it(`${path} passes failClosed: true to checkRateLimit`, async () => {
-      const fs = await import('node:fs');
-      const url = new URL(`../${path}`, import.meta.url);
-      const src = fs.readFileSync(url, 'utf8');
-      const callMatch = src.match(/checkRateLimit\([^)]*\)/);
-      assert.ok(callMatch, `${path} should still call checkRateLimit`);
-      assert.match(
-        callMatch[0],
-        /failClosed:\s*true/,
-        `${path} must pass { failClosed: true } so a Redis outage doesn't silently bypass the only rate-limit gate it has`,
-      );
+  for (const path of RETIRED_EXPENSIVE_ROUTES) {
+    it(`${path} rejects before any provider or rate-limit dependency`, async () => {
+      const response = retiredRouteResponse(new Request(`https://worldmonitor.app${path}`, { method: 'POST' }));
+      assert.equal(response?.status, 403);
+      assert.equal((await response.json()).error, 'feature_removed');
+      assert.match(response.headers.get('Cache-Control') ?? '', /no-store/);
     });
   }
 });
@@ -704,24 +694,9 @@ describe('scoped rate-limit degraded call-site policy (#3531)', () => {
       reason: 'the provider-wide Nominatim bucket is shared across both routes and must fail closed before upstream work',
     },
     {
-      path: 'server/worldmonitor/leads/v1/register-interest.ts',
-      expected: /if\s*\(\s*scoped\.degraded\s*\)\s*\{/,
-      reason: 'desktop lead capture bypasses Turnstile, so Redis degradation must fail closed locally',
-    },
-    {
       path: 'server/worldmonitor/infrastructure/v1/reverse-geocode.ts',
       expected: /if\s*\(\s*providerLimit\.degraded\s*\)\s*\{/,
       reason: 'the gateway half of the provider-wide Nominatim bucket must fail closed before upstream work',
-    },
-    {
-      path: 'api/a2a.ts',
-      expected: /Redis-degraded scoped limits intentionally stay availability-first/,
-      reason: 'A2A concierge serves only anonymous, quota-free, cheap catalog matching — degradation is logged and stays availability-first',
-    },
-    {
-      path: 'api/ask.ts',
-      expected: /Redis-degraded scoped limits intentionally stay availability-first/,
-      reason: 'NLWeb /ask serves only anonymous, quota-free, cheap catalog matching — degradation is logged and stays availability-first',
     },
     {
       path: 'api/docs-mcp.ts',
@@ -729,24 +704,9 @@ describe('scoped rate-limit degraded call-site policy (#3531)', () => {
       reason: 'docs MCP facade proxies a fully public, cheap upstream — degradation is logged and stays availability-first',
     },
     {
-      path: 'api/mcp-proxy.ts',
-      expected: /Redis-degraded scoped limits intentionally stay availability-first/,
-      reason: 'MCP proxy is already premium-auth gated; scoped limit degradation is logged and remains availability-first',
-    },
-    {
       path: 'api/skills/fetch-agentskills.ts',
       expected: /Redis-degraded scoped limits intentionally stay availability-first/,
       reason: 'agent-skills import proxy fetches one public host behind a fixed allowlist and is called by the settings importer - degradation is logged and stays availability-first',
-    },
-    {
-      path: 'api/user-prefs.ts',
-      expected: /Redis-degraded scoped limits intentionally fail open for prefs writes/,
-      reason: 'cloud prefs writes are low-stakes, so Redis degradation should not block legitimate settings sync',
-    },
-    {
-      path: 'api/notify.ts',
-      expected: /limiter outage here should NOT fail open/,
-      reason: 'notify publishes create relay-side delivery obligations on the shared event queue, so Redis degradation fails closed instead of allowing unbounded fan-out',
     },
   ];
 

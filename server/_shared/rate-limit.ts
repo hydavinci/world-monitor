@@ -774,36 +774,13 @@ export const ENDPOINT_RATE_POLICIES: Record<string, EndpointRatePolicy> = {
   // Indicator drill-down fans out across the full scorer source graph on a
   // cold per-country cache miss. Match the MCP minute ceiling and fail closed.
   '/api/resilience/v1/get-resilience-indicators': { limit: 60, window: '60 s' },
-  // #3805 / PR #3821: MCP proxy is a top-level Vercel Edge Function in
-  // `api/mcp-proxy.ts` (registered as `external-protocol` in
-  // api/api-route-exceptions.json — JSON-RPC shape dictated by the MCP spec),
-  // so it does NOT flow through the gateway and `checkEndpointRateLimit`
-  // never fires for it. The handler reads this policy and enforces it
-  // in-handler via `checkScopedRateLimit` — keeping the registry as the
-  // single source of truth so future audit additions (and the
-  // enforce-rate-limit-policies lint) see the endpoint. The audit script
-  // resolves edge-function paths via api/api-route-exceptions.json instead
-  // of the OpenAPI specs.
-  '/api/mcp-proxy': { limit: 30, window: '60 s' },
   // Docs MCP facade (`api/docs-mcp.ts`, external-protocol exception — serves
   // /docs/mcp, proxying the Mintlify docs MCP server and lifting its
   // protocol-level tool-call failures into proper JSON-RPC error objects).
   // Anonymous by design (upstream is fully public), so the per-IP minute
   // limit is the whole abuse defence; 60/min mirrors the MCP public-method
-  // posture. Enforced in-handler via `checkScopedRateLimit`, same pattern as
-  // /api/mcp-proxy.
+  // posture. Enforced in-handler via `checkScopedRateLimit`.
   '/api/docs-mcp': { limit: 60, window: '60 s' },
-  // A2A concierge endpoint (`api/a2a.ts`, external-protocol exception —
-  // JSON-RPC shape dictated by the A2A spec, served at /a2a). Anonymous and
-  // quota-free by design (routes over the public tool catalog + public
-  // freshness envelope only), so the per-IP minute limit is the whole abuse
-  // defence; 60/min mirrors the MCP public-method posture. Enforced
-  // in-handler via `checkScopedRateLimit`, same pattern as /api/mcp-proxy.
-  '/api/a2a': { limit: 60, window: '60 s' },
-  // NLWeb /ask endpoint (`api/ask.ts`, external-protocol exception — request/
-  // response shape dictated by the NLWeb spec, served at /ask). Same anonymous
-  // cheap-catalog posture as /api/a2a, same in-handler enforcement.
-  '/api/ask': { limit: 60, window: '60 s' },
   // Agent-skills import proxy (`api/skills/fetch-agentskills.ts`, registered
   // as `migration-pending` in api/api-route-exceptions.json). Fetches one
   // skill definition from a fixed three-host allowlist on agentskills.io.
@@ -818,7 +795,7 @@ export const ENDPOINT_RATE_POLICIES: Record<string, EndpointRatePolicy> = {
   // `api/reverse-geocode.js`), both registered in
   // api/api-route-exceptions.json. Neither flows through the gateway, and
   // AGENTS.md forbids `api/*.js` from importing `../server/`, so unlike
-  // /api/mcp-proxy they cannot read this registry at runtime: each handler
+  // /api/docs-mcp they cannot read this registry at runtime: each handler
   // carries the same numbers as literal constants and enforces them with
   // `checkRateLimit` from `api/_rate-limit.js`. The registry stays the single
   // source of truth for the audit script and the docs, and
@@ -849,27 +826,6 @@ export const ENDPOINT_RATE_POLICIES: Record<string, EndpointRatePolicy> = {
   // before Nominatim. Redis outage therefore 503s instead of inheriting a
   // fail-open path that could expose the provider to unbounded aggregate load.
   '/api/infrastructure/v1/reverse-geocode': { limit: 60, window: '60 s' },
-  // Partner embed entitlement (#6599): keyed panels look up wm_ keys in Convex.
-  // Cap per-IP so a stolen snippet cannot amplify validation traffic.
-  '/api/embed/entitlement': { limit: 60, window: '60 s' },
-  // Grant exchange: validates a wme_ key in Convex, so it amplifies the same
-  // way the entitlement lookup does. A frame mints once per 30-minute grant,
-  // which leaves this budget almost entirely as headroom for shared egress IPs.
-  '/api/embed/session': { limit: 60, window: '60 s' },
-  // Partner map frame. Public traffic uses the client IP; a verified grant uses
-  // its account owner so every display for one partner shares the same budget.
-  // The CDN absorbs most canonical public requests before this policy runs.
-  '/api/embed/map-frame': { limit: 120, window: '60 s' },
-  // Widget agent is a top-level edge proxy (api/widget-agent.ts) that spends a
-  // frontier-model call on every POST. It does not flow through the gateway, so
-  // the handler enforces this budget in-process, keyed on the validated
-  // user/key identity rather than the edge egress IP. 20/hour matches the
-  // relay's pro bucket; basic callers are still capped tighter on the relay.
-  '/api/widget-agent': { limit: 20, window: '1 h' },
-  // Checkout session creation (api/create-checkout.ts) relays to Dodo. Same
-  // per-user 5/min fail-closed budget as the customer portal, enforced
-  // in-handler after JWT validation. A Redis outage must not lift it.
-  '/api/create-checkout': { limit: 5, window: '60 s' },
 };
 
 // Second, per-client-IP checkout budget on top of the per-user one above. Dodo
@@ -1018,21 +974,6 @@ export const FAIL_CLOSED_ENDPOINT_RATE_POLICY_REQUIRED: Record<string, RateLimit
   },
   '/api/infrastructure/v1/reverse-geocode': {
     reason: 'Proxies Nominatim (egress-IP ban enforcement), same provider and egress IPs as the legacy edge route. Must fail closed on a Redis outage rather than inherit the fail-open 600/min fallback.',
-  },
-  '/api/embed/entitlement': {
-    reason: 'Keyed-panel entitlement lookups amplify into Convex user-key validation; fail closed so a Redis outage cannot lift the per-IP budget.',
-  },
-  '/api/embed/session': {
-    reason: 'Grant minting amplifies into Convex embed-key validation and hands back a bearer credential; fail closed so a Redis outage cannot lift the per-IP budget on a credential-issuing path.',
-  },
-  '/api/embed/map-frame': {
-    reason: 'The keyless map frame is fully anonymous and fans out across four seed reads. Fail closed rather than inherit the availability-first global fallback: those reads come from the same Redis that would be degraded, so a fail-open origin would serve empty layers at unbounded volume while the CDN copy keeps real data on screen for the stale-while-revalidate window.',
-  },
-  '/api/widget-agent': {
-    reason: 'Each POST proxies a frontier-model widget generation. The edge must keep a per-identity cap when Redis is down instead of spending uncapped.',
-  },
-  '/api/create-checkout': {
-    reason: 'Checkout session creation relays to the paid Dodo provider. A Redis outage must not lift the per-user cap.',
   },
 };
 

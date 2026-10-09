@@ -205,8 +205,8 @@ test('envelope exception type is unchanged for native error classes', async () =
 // The `err.name` preference above is only an improvement while every custom
 // error class actually sets `this.name`. A subclass that omits it inherits
 // `Error.prototype.name === 'Error'` and silently reports the generic type —
-// the mangled-but-specific identifier it used to send is gone. All 19 classes
-// satisfy this today; this guard keeps the next one honest.
+// the mangled-but-specific identifier it used to send is gone. The public-only
+// inventory below replaces the historical account/billing inventory.
 test('every custom Error subclass sets this.name explicitly', async () => {
   const { readdirSync, readFileSync } = await import('node:fs');
   const { dirname, join, relative, resolve } = await import('node:path');
@@ -260,7 +260,7 @@ test('every custom Error subclass sets this.name explicitly', async () => {
   );
 
   const offenders = [];
-  let checked = 0;
+  const checked = [];
   const declaration = /class\s+(\w+Error)\s+extends\s+Error\b/;
   for (const dir of ['api', 'server', 'shared']) {
     for (const file of sourceFiles(join(repoRoot, dir))) {
@@ -269,7 +269,7 @@ test('every custom Error subclass sets this.name explicitly', async () => {
       source.split('\n').forEach((text, index) => {
         const className = text.match(declaration)?.[1];
         if (!className) return;
-        checked += 1;
+        checked.push(`${className} (${relative(repoRoot, file)})`);
         if (!setsName(classBody(source, index + 1))) {
           offenders.push(`${className} (${relative(repoRoot, file)}:${index + 1})`);
         }
@@ -277,7 +277,24 @@ test('every custom Error subclass sets this.name explicitly', async () => {
     }
   }
 
-  assert.ok(checked >= 19, `expected to scan the known custom Error classes, scanned ${checked}`);
+  // Pin actual live identities, not an arbitrary lower minimum. Newly added
+  // classes are still scanned and must explicitly set this.name.
+  for (const identity of [
+    'HealthBudgetExhaustedError (api/health.js)',
+    'RequestBodyTooLargeError (api/mcp/bounded-body.ts)',
+    'ResponseBodyTooLargeError (api/mcp/bounded-body.ts)',
+    'RssProxyPolicyError (api/rss-proxy.js)',
+    'CachedFetchTimeoutError (server/_shared/redis.ts)',
+    'SeedUnavailableError (server/_shared/required-seed.ts)',
+    'RiskInputsUnavailableError (server/worldmonitor/intelligence/v1/get-risk-scores.ts)',
+    'BboxValidationError (server/worldmonitor/maritime/v1/get-vessel-snapshot.ts)',
+    'BlindEvaluationError (shared/company-monitoring-blind-evaluation.ts)',
+    'CompanyMonitoringCurationError (shared/company-monitoring-curation.ts)',
+    'CompanyMonitoringOfflinePredictionError (shared/company-monitoring-offline-prediction-contracts.ts)',
+    'DecisionSignalProvenanceValidationError (shared/decision-signal-provenance.ts)',
+  ]) {
+    assert.ok(checked.includes(identity), `expected to scan ${identity}`);
+  }
   assert.deepEqual(
     offenders,
     [],

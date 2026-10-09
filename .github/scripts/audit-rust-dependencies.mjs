@@ -4,7 +4,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { isMainModule } from '../../scripts/lib/main-module.mjs';
-import { assertGlibBackportCurrent, isVerifiedGlibBackport, verifyGlibBackport } from './verify-glib-backport.mjs';
+import { GLIB_BACKPORT, assertGlibBackportCurrent, isVerifiedGlibBackport, verifyGlibBackport } from './verify-glib-backport.mjs';
+
+const registryControls = new WeakMap();
+const registrySource = 'registry+https://github.com/rust-lang/crates.io-index';
 
 function validateRustDecisions(decisions) {
   if (!Array.isArray(decisions)) throw new Error('Rust decisions must be an array');
@@ -88,11 +91,6 @@ export function classifyRustAudit(report, decisions, now = Date.now(), backport 
       version: item.package.version,
       patched: item.versions.patched,
     };
-    if (backport && entry.id === backport.id && entry.crate === 'glib'
-      && entry.version === backport.version && item.package.source == null) {
-      result.backported.push({ ...entry, evidence: backport });
-      continue;
-    }
     const decision = decisions.find((d) => d.id === entry.id);
     if (decision?.status === 'proposed') result.proposed.push({ ...entry, decision });
     if (decision?.status === 'approved' && Date.parse(decision.expiresAt) > now)
@@ -105,8 +103,24 @@ export function classifyRustAudit(report, decisions, now = Date.now(), backport 
       result.decisionErrors.push(`${d.id}: decision expired; ${d.owner} must re-review`);
     if (!findings.some((f) => f.advisory.id === d.id)) result.decisionErrors.push(`${d.id}: stale decision; remove it`);
   }
-  if (backport && result.backported.length !== 1)
-    result.decisionErrors.push('Expected exactly one visible RUSTSEC-2024-0429 finding for the source-verified glib backport');
+  if (backport) {
+    const control = registryControls.get(backport);
+    if (!control || JSON.stringify(control.database) !== JSON.stringify(report.database))
+      result.decisionErrors.push('Expected authenticated original-registry advisory control for the source-verified glib backport');
+    else result.backported.push({
+      id: control.finding.advisory.id,
+      crate: control.finding.package.name,
+      version: control.finding.package.version,
+      patched: control.finding.versions.patched,
+      evidence: backport,
+      origin: {
+        kind: 'original-registry-control-audit',
+        source: control.finding.package.source,
+        checksum: control.finding.package.checksum,
+        databaseCommit: control.databaseCommit,
+      },
+    });
+  }
   if (result.blocking.length || result.decisionErrors.length) result.status = 'failed';
   else if (result.noFix.length || result.approved.length || result.backported.length || result.warnings.length)
     result.status = 'warning';
@@ -142,6 +156,15 @@ export function runRustAudit({
         failed: failOnOutage,
         reason: `RustSec database could not be fetched: ${fetched.stderr || fetched.error?.message || fetched.status}`,
       };
+    let databaseCommit;
+    if (backport) {
+      const revision = run('git', ['-C', db, 'rev-parse', 'HEAD'], {
+        encoding: 'utf8', timeout: 30000, cwd: dir,
+      });
+      databaseCommit = revision.stdout?.trim();
+      if (revision.error || revision.status !== 0 || !/^[a-f0-9]{40}$/.test(databaseCommit || ''))
+        throw new Error('Fresh RustSec database commit unavailable');
+    }
     const audited = run(
       'cargo',
       ['audit', '--json', '--no-fetch', '--no-yanked', '--db', db, '--file', resolve(lockfile)],
@@ -152,6 +175,54 @@ export function runRustAudit({
     const report = JSON.parse(audited.stdout);
     if (audited.status === 1 && report.vulnerabilities?.count === 0)
       throw new Error('cargo audit failed without advisory findings');
+    if (backport) {
+      classifyRustAudit(report, decisions, now + Date.now() - startedAt);
+      // --no-fetch uses Database::open, so its report has no Git metadata.
+      // The fresh checkout's identity is measured separately, not invented in JSON.
+      if (report.database['last-commit'] !== null)
+        throw new Error('Project audit did not use the fresh RustSec database (unexpected no-fetch metadata)');
+      // RustSec skips path packages. This separate inventory represents only the
+      // authenticated original archive, never the patched application's source.
+      const controlLock = join(dir, 'original-glib-registry-control.lock');
+      writeFileSync(controlLock, `version = 4
+
+[[package]]
+name = "glib"
+version = "${GLIB_BACKPORT.version}"
+source = "${registrySource}"
+checksum = "${GLIB_BACKPORT.archiveSha256}"
+`);
+      const controlled = run('cargo',
+        ['audit', '--json', '--no-fetch', '--no-yanked', '--db', db, '--file', controlLock],
+        { encoding: 'utf8', timeout: 120000, maxBuffer: 16 * 1024 * 1024, cwd: dir });
+      if (controlled.error) throw controlled.error;
+      if (![0, 1].includes(controlled.status))
+        throw new Error(`Registry control audit failed: ${controlled.stderr || controlled.status}`);
+      const controlReport = JSON.parse(controlled.stdout);
+      const controlResult = classifyRustAudit(controlReport, [], now + Date.now() - startedAt);
+      const finding = controlReport.warnings.unsound?.[0];
+      if (JSON.stringify(controlReport.database) !== JSON.stringify(report.database)
+        || controlReport.lockfile['dependency-count'] !== 1
+        || controlReport.vulnerabilities.count !== 0
+        || Object.values(controlReport.warnings).flat().length !== 1
+        || controlResult.blocking.length !== 1 || controlResult.noFix.length || controlResult.warnings.length
+        || finding?.advisory.id !== GLIB_BACKPORT.id || finding.advisory.package !== 'glib'
+        || finding.advisory.informational !== 'unsound' || finding.advisory.withdrawn !== null
+        || finding.package.name !== 'glib' || finding.package.version !== GLIB_BACKPORT.version
+        || finding.package.source !== registrySource || finding.package.checksum !== GLIB_BACKPORT.archiveSha256
+        || JSON.stringify(finding.versions.patched) !== '[">=0.20.0"]')
+        throw new Error('Missing, revoked, malformed or mismatched original-registry glib advisory control');
+      const finalRevision = run('git', ['-C', db, 'rev-parse', 'HEAD'], {
+        encoding: 'utf8', timeout: 30000, cwd: dir,
+      });
+      const databaseStatus = run('git', ['-C', db, 'status', '--porcelain', '--untracked-files=all'], {
+        encoding: 'utf8', timeout: 30000, cwd: dir,
+      });
+      if (finalRevision.error || finalRevision.status !== 0 || finalRevision.stdout?.trim() !== databaseCommit
+        || databaseStatus.error || databaseStatus.status !== 0 || databaseStatus.stdout?.trim() !== '')
+        throw new Error('Fresh RustSec database changed during audit');
+      registryControls.set(backport, { databaseCommit, database: controlReport.database, finding });
+    }
     const result = classifyRustAudit(report, decisions, now + Date.now() - startedAt, backport);
     return { ...result, failed: result.status === 'failed' };
   } finally {

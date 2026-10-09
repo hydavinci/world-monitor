@@ -354,6 +354,81 @@ const glibReport = () => {
   }];
   return input;
 };
+const registryCommit = 'b'.repeat(40);
+const registrySource = 'registry+https://github.com/rust-lang/crates.io-index';
+const registryControlReport = () => {
+  const input = glibReport();
+  input.database['last-commit'] = null; // Pinned cargo-audit --no-fetch uses Database::open.
+  Object.assign(input.warnings.unsound[0].advisory, {
+    package: 'glib', informational: 'unsound', withdrawn: null,
+  });
+  Object.assign(input.warnings.unsound[0].package, {
+    source: registrySource,
+    checksum: '233daaf6e83ae6a12a52055f568f9d7cf4671dabb78ff9560ab6da230ce00ee5',
+  });
+  return input;
+};
+const publishedPathReport = () => {
+  // Shape reconstructed from run 37904799084's sanitized classification log:
+  // no glib finding, no vulnerabilities, and six visible maintenance notices.
+  const input = report();
+  input.database['last-commit'] = null;
+  input.warnings.unmaintained = [
+    ['RUSTSEC-2024-0370', 'proc-macro-error', '1.0.4'],
+    ['RUSTSEC-2025-0081', 'unic-char-property', '0.9.0'],
+    ['RUSTSEC-2025-0075', 'unic-char-range', '0.9.0'],
+    ['RUSTSEC-2025-0080', 'unic-common', '0.9.0'],
+    ['RUSTSEC-2025-0100', 'unic-ucd-ident', '0.9.0'],
+    ['RUSTSEC-2025-0098', 'unic-ucd-version', '0.9.0'],
+  ].map(([id, name, version]) => ({
+    advisory: { id }, package: { name, version }, versions: { patched: [] },
+  }));
+  return input;
+};
+function runBackportFixture(f, pathReport = publishedPathReport(), controlReport = registryControlReport(), runHook) {
+  return runRustAudit({
+    lockfile: join(f.root, 'src-tauri/Cargo.lock'), decisions: [], proofFile: f.proofFile,
+    now: f.proof.createdAt, env: f.env,
+    run: (executable, args, options) => {
+      const override = runHook?.(executable, args);
+      if (override) return override;
+      if (executable === 'git')
+        return { status: 0, stdout: args.includes('status') ? '' : `${registryCommit}\n` };
+      if (executable === 'cargo' && args[0] === 'audit') {
+        const isProject = args.at(-1) === join(f.root, 'src-tauri/Cargo.lock');
+        if (!isProject) {
+          const lock = readFileSync(args.at(-1), 'utf8');
+          assert.match(lock, /^name = "glib"$/m);
+          assert.match(lock, /^version = "0.18.5"$/m);
+          assert.match(lock, /^source = "registry\+https:\/\/github.com\/rust-lang\/crates.io-index"$/m);
+          assert.match(lock, /^checksum = "233daaf6e83ae6a12a52055f568f9d7cf4671dabb78ff9560ab6da230ce00ee5"$/m);
+          assert.ok(args.includes('--no-fetch'));
+        }
+        return { status: 0, stdout: JSON.stringify(isProject ? pathReport : controlReport) };
+      }
+      return f.run(executable, args, options);
+    },
+  });
+}
+
+test('published path report uses real original-registry control without inventing a path finding', () => {
+  const f = backportFixture();
+  try {
+    const input = publishedPathReport();
+    const before = JSON.stringify(input);
+    const result = runBackportFixture(f, input);
+    assert.equal(result.status, 'warning');
+    assert.equal(result.failed, false);
+    assert.equal(result.backported.length, 1);
+    assert.equal(result.backported[0].origin.kind, 'original-registry-control-audit');
+    assert.equal(result.backported[0].origin.databaseCommit, registryCommit);
+    assert.equal(result.backported[0].origin.checksum,
+      '233daaf6e83ae6a12a52055f568f9d7cf4671dabb78ff9560ab6da230ce00ee5');
+    assert.equal(result.warnings.length, 6);
+    assert.deepEqual(result.decisionErrors, []);
+    assert.equal(JSON.stringify(input), before, 'never append a fabricated finding to the path report');
+  } finally { f.cleanup(); }
+});
 
 test('whole-tree validation rejects changed, missing, moved, additional and symlinked vendor files', () => {
   for (const mutate of [
@@ -468,9 +543,10 @@ test('build failures, a passing control, wrong crashes and changed executables a
 test('only branded verified exact glib evidence receives a visible backport classification', () => {
   const f = backportFixture();
   try {
-    const evidence = f.verify();
+    const initial = runBackportFixture(f);
+    const evidence = initial.backported[0].evidence;
     const proofNow = f.proof.createdAt;
-    const result = classifyRustAudit(glibReport(), [], proofNow, evidence);
+    const result = classifyRustAudit(publishedPathReport(), [], proofNow, evidence);
     assert.equal(result.status, 'warning', 'never call the version finding clean');
     assert.equal(result.backported.length, 1);
     assert.equal(result.approved.length, 0, 'this is not renewed risk approval');
@@ -479,10 +555,11 @@ test('only branded verified exact glib evidence receives a visible backport clas
     assert.throws(() => classifyRustAudit(glibReport(), [], proofNow + 3600000, evidence), /stale/i);
     assert.throws(() => classifyRustAudit(glibReport(), [{ ...decision, id: evidence.id }], proofNow, evidence),
       /risk exemption/);
-    const unrelated = glibReport();
+    const unrelated = publishedPathReport();
     unrelated.vulnerabilities = report([finding()]).vulnerabilities;
     assert.equal(classifyRustAudit(unrelated, [], proofNow, evidence).status, 'failed');
-    assert.equal(classifyRustAudit(report(), [], proofNow, evidence).status, 'failed');
+    assert.equal(classifyRustAudit(report(), [], proofNow, f.verify()).status, 'failed',
+      'a fresh runtime-only proof still lacks the required advisory control');
     const registry = glibReport();
     registry.warnings.unsound[0].package.source = 'registry+https://github.com/rust-lang/crates.io-index';
     assert.equal(classifyRustAudit(registry, [], proofNow, evidence).status, 'failed');
@@ -499,22 +576,15 @@ test('the audit runner requires source and runtime proof before any outage handl
   const f = backportFixture();
   try {
     let databaseCalls = 0;
-    const run = (executable, args, options) => {
-      if (executable === 'git') { databaseCalls++; return { status: 0 }; }
-      if (executable === 'cargo' && args[0] === 'audit')
-        return { status: 0, stdout: JSON.stringify(glibReport()) };
-      return f.run(executable, args, options);
-    };
-    const result = runRustAudit({
-      lockfile: join(f.root, 'src-tauri/Cargo.lock'), decisions: [], proofFile: f.proofFile,
-      now: f.proof.createdAt, env: f.env, run,
+    const result = runBackportFixture(f, undefined, undefined, (executable, args) => {
+      if (executable === 'git' && args[0] === 'clone') databaseCalls++;
     });
     assert.equal(result.status, 'warning');
     assert.equal(result.failed, false);
     assert.equal(databaseCalls, 1);
     assert.throws(() => runRustAudit({
       lockfile: join(f.root, 'src-tauri/Cargo.lock'), decisions: [], proofFile: '',
-      now: f.proof.createdAt, env: f.env, run,
+      now: f.proof.createdAt, env: f.env, run: () => assert.fail('missing proof must block before any subprocess'),
     }), /missing.*proof/);
     assert.equal(databaseCalls, 1, 'a proof failure must not become a database outage');
   } finally { f.cleanup(); }
@@ -528,16 +598,107 @@ test('source or proof changed during the database/audit boundary cannot reuse ve
   ]) {
     const f = backportFixture();
     try {
-      assert.throws(() => runRustAudit({
-        lockfile: join(f.root, 'src-tauri/Cargo.lock'), decisions: [], proofFile: f.proofFile,
-        now: f.proof.createdAt, env: f.env,
-        run: (executable, args, options) => {
-          if (executable === 'git') { mutate(f); return { status: 0 }; }
-          if (executable === 'cargo' && args[0] === 'audit')
-            return { status: 0, stdout: JSON.stringify(glibReport()) };
-          return f.run(executable, args, options);
-        },
+      assert.throws(() => runBackportFixture(f, undefined, undefined, (executable, args) => {
+        if (executable === 'git' && args[0] === 'clone') mutate(f);
       }));
+    } finally { f.cleanup(); }
+  }
+});
+
+test('missing, filtered, revoked or mismatched registry controls cannot authorize a local record', () => {
+  for (const mutate of [
+    (r) => { r.warnings.unsound = []; },
+    (r) => { r.warnings.unsound.push(structuredClone(r.warnings.unsound[0])); },
+    (r) => { r.warnings.unsound[0].advisory.withdrawn = '2026-10-09'; },
+    (r) => { r.warnings.unsound[0].advisory.id = 'RUSTSEC-2026-0001'; },
+    (r) => { r.warnings.unsound[0].package.version = '0.18.4'; },
+    (r) => { r.warnings.unsound[0].package.source = null; },
+    (r) => { delete r.warnings.unsound[0].package.checksum; },
+    (r) => { r.warnings.unsound[0].package.checksum = 'c'.repeat(64); },
+    (r) => { r.warnings.unsound[0].versions.patched = ['>=0.19.0']; },
+    (r) => { r.warnings.unsound[0] = {}; },
+    (r) => { r.warnings.unmaintained = [finding([])]; },
+    (r) => { r.vulnerabilities = report([finding()]).vulnerabilities; },
+    (r) => { r.settings.ignore = ['RUSTSEC-2024-0429']; },
+    (r) => { r.database['last-commit'] = 'c'.repeat(40); },
+    (r) => { delete r.database['last-commit']; },
+    (r) => { r.database['advisory-count'] = 2; },
+    (r) => { r.lockfile['dependency-count'] = 2; },
+  ]) {
+    const f = backportFixture();
+    try {
+      const control = registryControlReport();
+      mutate(control);
+      assert.throws(() => runBackportFixture(f, undefined, control));
+    } finally { f.cleanup(); }
+  }
+});
+
+test('failed control commands and modified fresh database cannot yield a local backport record', () => {
+  for (const mode of ['bad-json', 'tool-failed', 'changed-head', 'dirty-database']) {
+    const f = backportFixture();
+    let revisions = 0;
+    try {
+      assert.throws(() => runBackportFixture(f, undefined, undefined, (executable, args) => {
+        if (executable === 'cargo' && args[0] === 'audit'
+          && args.at(-1) !== join(f.root, 'src-tauri/Cargo.lock')) {
+          if (mode === 'bad-json') return { status: 0, stdout: '{' };
+          if (mode === 'tool-failed') return { status: 2, stderr: 'control failed' };
+        }
+        if (executable === 'git' && args.includes('rev-parse')) {
+          revisions++;
+          if (mode === 'changed-head' && revisions === 2)
+            return { status: 0, stdout: `${'c'.repeat(40)}\n` };
+        }
+        if (mode === 'dirty-database' && executable === 'git' && args.includes('status'))
+          return { status: 0, stdout: ' M crates/glib/RUSTSEC-2024-0429.md\n' };
+      }));
+    } finally { f.cleanup(); }
+  }
+});
+
+test('stale project database or unrelated findings remain blocking with a valid registry control', () => {
+  const f = backportFixture();
+  try {
+    const stale = publishedPathReport();
+    stale.database['last-commit'] = 'c'.repeat(40);
+    assert.throws(() => runBackportFixture(f, stale), /fresh RustSec database/);
+    const unrelated = publishedPathReport();
+    unrelated.vulnerabilities = report([finding()]).vulnerabilities;
+    const result = runBackportFixture(f, unrelated);
+    assert.equal(result.failed, true);
+    assert.equal(result.blocking[0].id, 'RUSTSEC-2026-0001');
+    assert.equal(result.backported.length, 1);
+    const unexpectedGlib = glibReport();
+    unexpectedGlib.database['last-commit'] = null;
+    assert.equal(runBackportFixture(f, unexpectedGlib).failed, true,
+      'the local record does not suppress any actual project finding');
+    assert.equal(classifyRustAudit(publishedPathReport(), [], f.proof.createdAt, f.verify()).status, 'failed',
+      'runtime evidence alone cannot replace an authenticated advisory control');
+  } finally { f.cleanup(); }
+});
+
+test('missing, malformed, stale and revoked compiled proof blocks before registry control', () => {
+  for (const mutate of [
+    (f) => rmSync(f.proofFile),
+    (f) => writeFileSync(f.proofFile, '{'),
+    (f) => writeFileSync(f.proofFile, '{}'),
+    (f) => writeFileSync(f.proofFile, JSON.stringify({ ...f.proof, createdAt: f.proof.createdAt - 3600000 })),
+    (f) => { f.env.GITHUB_RUN_ID = '124'; },
+    (f) => { f.env.GITHUB_RUN_ATTEMPT = '2'; },
+    (f) => {
+      f.proof.contract.auditSha256 = 'revoked-source-proof';
+      f.save();
+    },
+  ]) {
+    const f = backportFixture();
+    let databaseCalls = 0;
+    try {
+      mutate(f);
+      assert.throws(() => runBackportFixture(f, undefined, undefined, (executable) => {
+        if (executable === 'git') databaseCalls++;
+      }));
+      assert.equal(databaseCalls, 0);
     } finally { f.cleanup(); }
   }
 });

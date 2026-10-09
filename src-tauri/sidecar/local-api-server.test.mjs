@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import http, { createServer, request as httpRequest } from 'node:http';
 import https from 'node:https';
-import { createHmac } from 'node:crypto';
 import dns from 'node:dns/promises';
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
@@ -59,7 +58,7 @@ test('keeps seed-owned defense snapshots cloud-preferred regardless of relay con
   assert.equal(__testing__.isCloudPreferred('/api/scorecard/v1/list-five-factor-scorecards'), true);
 });
 
-test('keeps seed-owned commodity vulnerability snapshots cloud-preferred', async () => {
+test('denies retired commodity vulnerability snapshots before local or cloud fallback', async () => {
   const endpoints = [
     '/api/supply-chain/v1/get-country-vulnerabilities',
     '/api/supply-chain/v1/get-chokepoint-dependencies',
@@ -71,7 +70,9 @@ test('keeps seed-owned commodity vulnerability snapshots cloud-preferred', async
 
   const remote = await setupRemoteServer();
   const unavailableHandler = `
+    export let calls = 0;
     export default async function handler() {
+      calls += 1;
       return new Response(JSON.stringify({ source: 'local-empty', upstreamUnavailable: true }), {
         status: 200,
         headers: { 'content-type': 'application/json' }
@@ -94,11 +95,18 @@ test('keeps seed-owned commodity vulnerability snapshots cloud-preferred', async
   try {
     for (const endpoint of endpoints) {
       const response = await authFetch(`http://127.0.0.1:${port}${endpoint}`);
-      assert.equal(response.status, 200);
+      assert.equal(response.status, 403);
       const body = await response.json();
-      assert.equal(body.source, 'remote');
+      assert.equal(body.error, 'feature_removed');
+      assert.equal(response.headers.get('cache-control'), 'private, no-store');
+      assert.equal(response.headers.get('cdn-cache-control'), 'no-store');
+      assert.equal(response.headers.get('vercel-cdn-cache-control'), 'no-store');
     }
-    assert.deepEqual(remote.hits, endpoints);
+    assert.deepEqual(remote.hits, []);
+    for (const endpoint of endpoints) {
+      const localHandler = await import(pathToFileURL(path.join(localApi.apiDir, `${endpoint.slice('/api/'.length)}.js`)).href);
+      assert.equal(localHandler.calls, 0);
+    }
   } finally {
     await app.close();
     await localApi.cleanup();
@@ -393,7 +401,7 @@ async function postJsonViaHttp(url, payload, headers = {}) {
         const text = Buffer.concat(chunks).toString('utf8');
         let json = null;
         try { json = JSON.parse(text); } catch { /* non-json response */ }
-        resolve({ status: res.statusCode || 0, text, json });
+        resolve({ status: res.statusCode || 0, headers: res.headers, text, json });
       });
     });
     req.on('error', reject);
@@ -687,7 +695,7 @@ test('preserves POST body when cloud fallback is triggered after local non-OK re
   }
 });
 
-test('signs desktop register-interest cloud fallback when shared secret is configured', async () => {
+test('denies desktop register-interest without cloud calls even with a legacy shared secret', async () => {
   const originalSecret = process.env.WM_DESKTOP_SHARED_SECRET;
   const originalConvex = process.env.CONVEX_URL;
   process.env.WM_DESKTOP_SHARED_SECRET = 'desktop-test-secret';
@@ -714,33 +722,12 @@ test('signs desktop register-interest cloud fallback when shared secret is confi
       'X-WorldMonitor-Desktop-Timestamp': '1',
       'X-WorldMonitor-Desktop-Signature': 'sha256=bad',
     });
-    assert.equal(response.status, 200);
-    assert.equal(remote.requests.length, 1);
-
-    const request = remote.requests[0];
-    assert.equal(request.path, '/api/leads/v1/register-interest');
-    assert.equal(request.json.source, 'desktop-settings');
-    const timestamp = request.headers['x-worldmonitor-desktop-timestamp'];
-    const signature = request.headers['x-worldmonitor-desktop-signature'];
-    assert.equal(request.headers['content-encoding'], undefined);
-    assert.match(request.headers['user-agent'], /Chrome\/131\.0\.0\.0/);
-    assert.match(timestamp, /^\d+$/);
-    assert.match(signature, /^sha256=[a-f0-9]{64}$/);
-    assert.notEqual(timestamp, '1');
-    assert.notEqual(signature, 'sha256=bad');
-
-    const canonical = JSON.stringify({
-      email: 'desktop@example.com',
-      source: 'desktop-settings',
-      appVersion: '2.8.0',
-      referredBy: '',
-      website: '',
-      turnstileToken: '',
-    });
-    const expected = `sha256=${createHmac('sha256', process.env.WM_DESKTOP_SHARED_SECRET)
-      .update(`${timestamp}\n${canonical}`)
-      .digest('hex')}`;
-    assert.equal(signature, expected);
+    assert.equal(response.status, 403);
+    assert.equal(response.json?.error, 'feature_removed');
+    assert.equal(response.headers['cache-control'], 'private, no-store');
+    assert.equal(response.headers['cdn-cache-control'], 'no-store');
+    assert.equal(response.headers['vercel-cdn-cache-control'], 'no-store');
+    assert.deepEqual(remote.requests, []);
   } finally {
     await app.close();
     await localApi.cleanup();
@@ -946,7 +933,7 @@ test('preserves caller Authorization while hiding the sidecar transport token', 
 });
 
 for (const registrationStatus of ['registered', 'already_registered']) {
-  test(`uses the authenticated Convex bridge for self-hosted register-interest (${registrationStatus})`, async () => {
+  test(`denies self-hosted register-interest before the historical Convex ${registrationStatus} response`, async () => {
     const originalConvex = process.env.CONVEX_URL;
     const originalSite = process.env.CONVEX_SITE_URL;
     const originalSecret = process.env.CONVEX_SERVER_SHARED_SECRET;
@@ -955,9 +942,9 @@ for (const registrationStatus of ['registered', 'already_registered']) {
     process.env.CONVEX_SITE_URL = 'http://self-hosted.convex.site';
     process.env.CONVEX_SERVER_SHARED_SECRET = 'convex-test-secret';
 
-    let captured;
+    const calls = [];
     globalThis.fetch = async (url, init) => {
-      captured = { url, init };
+      calls.push({ url, init });
       return new Response(JSON.stringify({
         status: registrationStatus,
         position: 7,
@@ -968,10 +955,13 @@ for (const registrationStatus of ['registered', 'already_registered']) {
     };
 
     const localApi = await setupApiDir({});
+    const remote = await setupRemoteServer();
     const app = await createLocalApiServer({
       port: 0,
       apiDir: localApi.apiDir,
-      remoteBase: 'https://worldmonitor.app',
+      remoteBase: remote.remoteBase,
+      cloudFallback: 'true',
+      allowPrivateRemoteBase: true,
       logger: { log() { }, warn() { }, error() { } },
     });
     const { port } = await app.start();
@@ -983,26 +973,17 @@ for (const registrationStatus of ['registered', 'already_registered']) {
         appVersion: '2.8.0',
         referredBy: 'REF123',
       });
-      assert.equal(response.status, 200);
-      assert.deepEqual(response.json, {
-        status: 'registered',
-        referralCode: '',
-        referralCount: 0,
-        position: 0,
-        emailSuppressed: false,
-      });
-      assert.equal(captured.url, 'http://self-hosted.convex.site/api/internal-register-interest');
-      assert.equal(captured.init.headers['x-convex-shared-secret'], 'convex-test-secret');
-      assert.equal(captured.init.headers['User-Agent'], 'worldmonitor-sidecar/1.0');
-      assert.deepEqual(JSON.parse(captured.init.body), {
-        email: 'self-hosted@example.com',
-        source: 'desktop-settings',
-        appVersion: '2.8.0',
-        referredBy: 'REF123',
-      });
+      assert.equal(response.status, 403);
+      assert.equal(response.json?.error, 'feature_removed');
+      assert.equal(response.headers['cache-control'], 'private, no-store');
+      assert.equal(response.headers['cdn-cache-control'], 'no-store');
+      assert.equal(response.headers['vercel-cdn-cache-control'], 'no-store');
+      assert.deepEqual(calls, []);
+      assert.deepEqual(remote.hits, []);
     } finally {
       await app.close();
       await localApi.cleanup();
+      await remote.close();
       globalThis.fetch = originalFetch;
       if (originalConvex === undefined) delete process.env.CONVEX_URL;
       else process.env.CONVEX_URL = originalConvex;
@@ -1040,10 +1021,14 @@ test('does not forward the sidecar transport token through Docker cloud proxy ro
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'docker@example.com', source: 'web-form' }),
     });
-    assert.equal(registerResponse.status, 200);
+    assert.equal(registerResponse.status, 403);
+    assert.equal((await registerResponse.json()).error, 'feature_removed');
+    assert.equal(registerResponse.headers.get('cache-control'), 'private, no-store');
+    assert.equal(registerResponse.headers.get('cdn-cache-control'), 'no-store');
+    assert.equal(registerResponse.headers.get('vercel-cdn-cache-control'), 'no-store');
 
-    assert.deepEqual(remote.hits, ['/api/youtube/live', '/api/leads/v1/register-interest']);
-    assert.equal(remote.headers.length, 2);
+    assert.deepEqual(remote.hits, ['/api/youtube/live']);
+    assert.equal(remote.headers.length, 1);
     for (const upstreamHeaders of remote.headers) {
       assert.equal(upstreamHeaders['x-worldmonitor-local-token'], undefined);
     }
@@ -2008,7 +1993,7 @@ test('accepts OLLAMA_MODEL via /api/local-env-update', async () => {
   }
 });
 
-test('accepts WM_DESKTOP_SHARED_SECRET via /api/local-env-update', async () => {
+test('rejects removed WM_DESKTOP_SHARED_SECRET via /api/local-env-update without mutation', async () => {
   const originalSecret = process.env.WM_DESKTOP_SHARED_SECRET;
   const localApi = await setupApiDir({});
 
@@ -2025,11 +2010,10 @@ test('accepts WM_DESKTOP_SHARED_SECRET via /api/local-env-update', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: 'WM_DESKTOP_SHARED_SECRET', value: 'desktop-secret-from-runtime' }),
     });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 403);
     const body = await response.json();
-    assert.equal(body.ok, true);
-    assert.equal(body.key, 'WM_DESKTOP_SHARED_SECRET');
-    assert.equal(process.env.WM_DESKTOP_SHARED_SECRET, 'desktop-secret-from-runtime');
+    assert.deepEqual(body, { error: 'key not in allowlist' });
+    assert.equal(process.env.WM_DESKTOP_SHARED_SECRET, originalSecret);
   } finally {
     if (originalSecret === undefined) delete process.env.WM_DESKTOP_SHARED_SECRET;
     else process.env.WM_DESKTOP_SHARED_SECRET = originalSecret;
@@ -2087,7 +2071,10 @@ test('stores ALPHA_VANTAGE_API_KEY without claiming the provider demo response v
   }
 });
 
-test('validates WM_DESKTOP_SHARED_SECRET without provider probe', async () => {
+test('rejects removed WM_DESKTOP_SHARED_SECRET without provider probe or mutation', async () => {
+  const originalSecret = process.env.WM_DESKTOP_SHARED_SECRET;
+  const originalRequest = https.request;
+  let probes = 0;
   const localApi = await setupApiDir({});
 
   const app = await createLocalApiServer({
@@ -2096,6 +2083,10 @@ test('validates WM_DESKTOP_SHARED_SECRET without provider probe', async () => {
     logger: { log() { }, warn() { }, error() { } },
   });
   const { port } = await app.start();
+  https.request = () => {
+    probes += 1;
+    throw new Error('removed desktop secret must not reach a provider');
+  };
 
   try {
     const response = await authFetch(`http://127.0.0.1:${port}/api/local-validate-secret`, {
@@ -2103,11 +2094,15 @@ test('validates WM_DESKTOP_SHARED_SECRET without provider probe', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: 'WM_DESKTOP_SHARED_SECRET', value: 'desktop-secret-from-runtime' }),
     });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 403);
     const body = await response.json();
-    assert.equal(body.valid, true);
-    assert.equal(body.message, 'Desktop shared secret stored');
+    assert.deepEqual(body, { error: 'key not in allowlist' });
+    assert.equal(probes, 0);
+    assert.equal(process.env.WM_DESKTOP_SHARED_SECRET, originalSecret);
   } finally {
+    https.request = originalRequest;
+    if (originalSecret === undefined) delete process.env.WM_DESKTOP_SHARED_SECRET;
+    else process.env.WM_DESKTOP_SHARED_SECRET = originalSecret;
     await app.close();
     await localApi.cleanup();
   }

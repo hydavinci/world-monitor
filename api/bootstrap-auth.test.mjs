@@ -224,6 +224,20 @@ function assertNonSharedCacheHeaders(resp) {
   assert.doesNotMatch(resp.headers.get('cache-control') || '', /\b(public|s-maxage)\b/i);
 }
 
+// Bootstrap remains public/operator infrastructure, not a retired route.
+// Unconfigured historical user keys have no authority, regardless of former
+// billing state; they must not trigger Redis or account-backend validation.
+async function assertRejectedUserKey(resp, calls) {
+  assert.equal(resp.status, 401);
+  assert.deepEqual(await resp.json(), { error: 'Invalid API key' });
+  assert.equal(resp.headers.get('cache-control'), 'no-store');
+  assertNonSharedCacheHeaders(resp);
+  for (const header of ['x-billing-verification', 'retry-after', 'x-validation-mode', 'x-ratelimit-mode']) {
+    assert.equal(resp.headers.get(header), null);
+  }
+  assert.deepEqual(calls, []);
+}
+
 test('no-Origin enterprise key keeps bootstrap shape but is not shared-cacheable', async () => {
   await withMockedBootstrapAuth({ entitlement: activeApiEntitlement() }, async () => {
     const resp = await handler(makeBootstrapRequest({ 'X-WorldMonitor-Key': ENTERPRISE_KEY }));
@@ -256,37 +270,27 @@ test('weather-only bootstrap with enterprise key uses key auth cache posture', a
   });
 });
 
-test('no-Origin valid wm_ user key in X-WorldMonitor-Key returns bootstrap data without shared cache headers', async () => {
+test('no-Origin historical wm_ user key is rejected without backend calls or shared caching', async () => {
   await withMockedBootstrapAuth({ entitlement: activeApiEntitlement() }, async (calls) => {
     const resp = await handler(makeBootstrapRequest({ 'X-WorldMonitor-Key': USER_KEY }));
 
-    assert.equal(resp.status, 200);
-    assert.deepEqual(Object.keys(await resp.json()).sort(), ['data', 'missing']);
-    assertNonSharedCacheHeaders(resp);
-    assert.ok(calls.some((call) => call.url.endsWith('/api/internal-validate-api-key')));
-    assert.ok(calls.some((call) => call.url.endsWith('/api/internal-entitlements')));
+    await assertRejectedUserKey(resp, calls);
   });
 });
 
-test('weather-only bootstrap with wm_ user key validates user auth before returning data', async () => {
+test('weather-only bootstrap rejects a historical wm_ user key instead of anonymous bypass', async () => {
   await withMockedBootstrapAuth({ entitlement: activeApiEntitlement() }, async (calls) => {
     const resp = await handler(makeWeatherBootstrapRequest({ 'X-WorldMonitor-Key': USER_KEY }));
 
-    assert.equal(resp.status, 200);
-    assert.deepEqual(Object.keys(await resp.json()).sort(), ['data', 'missing']);
-    assertNonSharedCacheHeaders(resp);
-    assert.ok(calls.some((call) => call.url.endsWith('/api/internal-validate-api-key')));
-    assert.ok(calls.some((call) => call.url.endsWith('/api/internal-entitlements')));
+    await assertRejectedUserKey(resp, calls);
   });
 });
 
-test('allowed-Origin valid wm_ user key returns bootstrap data without shared cache headers', async () => {
-  await withMockedBootstrapAuth({ entitlement: activeApiEntitlement() }, async () => {
+test('allowed Origin does not authorize a historical wm_ user key', async () => {
+  await withMockedBootstrapAuth({ entitlement: activeApiEntitlement() }, async (calls) => {
     const resp = await handler(makeBootstrapRequestWithAllowedOrigin({ 'X-WorldMonitor-Key': USER_KEY }));
 
-    assert.equal(resp.status, 200);
-    assert.deepEqual(Object.keys(await resp.json()).sort(), ['data', 'missing']);
-    assertNonSharedCacheHeaders(resp);
+    await assertRejectedUserKey(resp, calls);
   });
 });
 
@@ -324,13 +328,11 @@ test('weather-only bootstrap with malformed wm_ header is rejected instead of an
   });
 });
 
-test('no-Origin valid wm_ user key in X-Api-Key alias returns bootstrap data', async () => {
-  await withMockedBootstrapAuth({ entitlement: activeApiEntitlement() }, async () => {
+test('X-Api-Key alias does not authorize a historical wm_ user key', async () => {
+  await withMockedBootstrapAuth({ entitlement: activeApiEntitlement() }, async (calls) => {
     const resp = await handler(makeBootstrapRequest({ 'X-Api-Key': USER_KEY }));
 
-    assert.equal(resp.status, 200);
-    assert.deepEqual(Object.keys(await resp.json()).sort(), ['data', 'missing']);
-    assertNonSharedCacheHeaders(resp);
+    await assertRejectedUserKey(resp, calls);
   });
 });
 
@@ -346,7 +348,7 @@ test('revoked wm_ user key returns generic non-cacheable 401 without leaking gat
   });
 });
 
-test('billing-verification lapse on a wm_ user key exposes a machine-readable code', async () => {
+test('historical lapsed billing cannot trigger account verification for a wm_ user key', async () => {
   await withMockedBootstrapAuth({
     entitlement: {
       planKey: 'free',
@@ -354,19 +356,13 @@ test('billing-verification lapse on a wm_ user key exposes a machine-readable co
       features: { apiAccess: false },
       billingStatus: 'subscription_lapsed',
     },
-  }, async () => {
+  }, async (calls) => {
     const resp = await handler(makeBootstrapRequest({ 'X-WorldMonitor-Key': USER_KEY }));
-    const body = await resp.json();
-
-    assert.equal(resp.status, 403);
-    assert.equal(resp.headers.get('x-billing-verification'), 'subscription_lapsed');
-    assert.equal(resp.headers.get('cache-control'), 'no-store');
-    assert.equal(body.error, 'API access subscription lapsed');
-    assert.equal(body.code, 'subscription_lapsed');
+    await assertRejectedUserKey(resp, calls);
   });
 });
 
-test('retryable billing verification on a wm_ user key keeps Retry-After and code on the wire', async () => {
+test('historical pending billing cannot turn a wm_ user key denial into a retryable response', async () => {
   await withMockedBootstrapAuth({
     entitlement: {
       planKey: 'free',
@@ -375,29 +371,23 @@ test('retryable billing verification on a wm_ user key keeps Retry-After and cod
       billingStatus: 'renewal_verification_pending',
       retryAfterSeconds: 19,
     },
-  }, async () => {
+  }, async (calls) => {
     const resp = await handler(makeBootstrapRequest({ 'X-WorldMonitor-Key': USER_KEY }));
-    const body = await resp.json();
-
-    assert.equal(resp.status, 503);
-    assert.equal(resp.headers.get('retry-after'), '19');
-    assert.equal(body.code, 'renewal_verification_pending');
+    await assertRejectedUserKey(resp, calls);
   });
 });
 
-test('current API access keeps wm_ bootstrap usable while a stronger renewal is pending', async () => {
+test('historical current API access cannot authorize a wm_ user key during renewal', async () => {
   await withMockedBootstrapAuth({
     entitlement: {
       ...activeApiEntitlement(),
       billingStatus: 'renewal_verification_pending',
       retryAfterSeconds: 19,
     },
-  }, async () => {
+  }, async (calls) => {
     const resp = await handler(makeBootstrapRequest({ 'X-WorldMonitor-Key': USER_KEY }));
 
-    assert.equal(resp.status, 200);
-    assert.deepEqual(Object.keys(await resp.json()).sort(), ['data', 'missing']);
-    assertNonSharedCacheHeaders(resp);
+    await assertRejectedUserKey(resp, calls);
   });
 });
 
@@ -413,34 +403,20 @@ test('malformed wm_ user key is rejected before Redis or Convex validation', asy
   });
 });
 
-test('rate-limit Redis outage returns non-cacheable 503 before Convex validation', async () => {
+test('historical wm_ user key rejection does not depend on rate-limit Redis availability', async () => {
   await withMockedBootstrapAuth({ entitlement: activeApiEntitlement(), rateLimitStatus: 500 }, async (calls) => {
     const resp = await handler(makeBootstrapRequest({ 'X-WorldMonitor-Key': USER_KEY }));
-    const body = await resp.json();
-
-    assert.equal(resp.status, 503);
-    assert.equal(resp.headers.get('cache-control'), 'no-store');
-    assert.equal(resp.headers.get('x-ratelimit-mode'), 'degraded');
-    assert.equal(body.error, 'Rate-limit service temporarily unavailable');
-    assert.equal(calls.some((call) => call.url.endsWith('/api/internal-validate-api-key')), false);
-    assert.equal(calls.some((call) => call.url.endsWith('/api/internal-entitlements')), false);
+    await assertRejectedUserKey(resp, calls);
   });
 });
 
-test('over-limit wm_ user key returns non-cacheable 429 before Convex validation', async () => {
+test('historical over-limit wm_ user key is rejected before Redis or account validation', async () => {
   await withMockedBootstrapAuth({
     entitlement: activeApiEntitlement(),
     rateLimitResults: [{ result: 601 }, { result: 0 }, { result: 12 }],
   }, async (calls) => {
     const resp = await handler(makeBootstrapRequest({ 'X-WorldMonitor-Key': USER_KEY }));
-    const body = await resp.json();
-
-    assert.equal(resp.status, 429);
-    assert.equal(resp.headers.get('cache-control'), 'no-store');
-    assert.equal(resp.headers.get('retry-after'), '12');
-    assert.equal(body.error, 'Too many requests');
-    assert.equal(calls.some((call) => call.url.endsWith('/api/internal-validate-api-key')), false);
-    assert.equal(calls.some((call) => call.url.endsWith('/api/internal-entitlements')), false);
+    await assertRejectedUserKey(resp, calls);
   });
 });
 
@@ -456,14 +432,10 @@ test('wm_ credential outside the supported header fallback never leaks the gatew
   });
 });
 
-test('valid wm_ user key without current API access returns non-cacheable 403', async () => {
-  await withMockedBootstrapAuth({ entitlement: proOnlyEntitlement() }, async () => {
+test('historical pro-only entitlement cannot authorize a wm_ user key', async () => {
+  await withMockedBootstrapAuth({ entitlement: proOnlyEntitlement() }, async (calls) => {
     const resp = await handler(makeBootstrapRequest({ 'X-WorldMonitor-Key': USER_KEY }));
-    const body = await resp.json();
-
-    assert.equal(resp.status, 403);
-    assert.equal(resp.headers.get('cache-control'), 'no-store');
-    assert.doesNotMatch(JSON.stringify(body), /Convex|keyHash/i);
+    await assertRejectedUserKey(resp, calls);
   });
 });
 
@@ -476,28 +448,19 @@ test('missing credentials remain a non-cacheable 401', async () => {
   });
 });
 
-test('Convex validation outage returns a retryable non-cacheable 503, not a misleading 401', async () => {
-  await withMockedBootstrapAuth({ entitlement: activeApiEntitlement(), userKeyResponse: 'error' }, async () => {
+test('historical wm_ user key rejection never contacts an unavailable Convex backend', async () => {
+  await withMockedBootstrapAuth({ entitlement: activeApiEntitlement(), userKeyResponse: 'error' }, async (calls) => {
     const resp = await handler(makeBootstrapRequest({ 'X-WorldMonitor-Key': USER_KEY }));
-    const body = await resp.json();
-
-    assert.equal(resp.status, 503);
-    assert.equal(resp.headers.get('cache-control'), 'no-store');
-    assert.equal(resp.headers.get('retry-after'), '5');
-    assert.equal(resp.headers.get('x-validation-mode'), 'degraded');
-    assert.equal(body.error, 'Service temporarily unavailable');
-    // A transient outage must not leak as "Invalid API key" or expose internals.
-    assert.notEqual(body.error, 'Invalid API key');
-    assert.doesNotMatch(JSON.stringify(body), /gateway validation|Convex|keyHash/i);
+    await assertRejectedUserKey(resp, calls);
   });
 });
 
-test('key-auth response with an empty cache batch stays no-store (never shared-cacheable)', async () => {
+test('operator-key response with an empty cache batch stays no-store (never shared-cacheable)', async () => {
   // The mocked GET pipeline returns no data, so getCachedJsonBatch yields an
   // all-missing bundle. Under key auth that empty 200 must be no-store and emit
   // no CDN cache headers, or a CDN could cache an authenticated empty response.
   await withMockedBootstrapAuth({ entitlement: activeApiEntitlement() }, async () => {
-    const resp = await handler(makeBootstrapRequest({ 'X-WorldMonitor-Key': USER_KEY }));
+    const resp = await handler(makeBootstrapRequest({ 'X-WorldMonitor-Key': ENTERPRISE_KEY }));
     const body = await resp.json();
 
     assert.equal(resp.status, 200);
