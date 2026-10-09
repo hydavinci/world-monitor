@@ -53,6 +53,7 @@ export class UnifiedSettings {
   constructor(private config: UnifiedSettingsConfig) {
     this.overlay = document.createElement('div');
     this.overlay.className = 'modal-overlay';
+    declareOverlay(this.overlay, { reload: 'blocking' });
     this.overlay.id = 'unifiedSettingsModal';
     this.overlay.style.display = 'none';
     document.body.appendChild(this.overlay);
@@ -77,7 +78,6 @@ export class UnifiedSettings {
     this.render();
     this.focusTrap.activate();
     if (!this.historyRegistered) {
-      declareOverlay(this.overlay.querySelector('[role="dialog"]') as HTMLElement, { reload: 'blocking' });
       overlayHistory.open('settings', (origin) => this.close(origin));
       this.historyRegistered = true;
     }
@@ -161,6 +161,7 @@ export class UnifiedSettings {
           </div>
         </div>
       </div>`, 'Public settings template; dynamic labels and values are escaped'));
+    declareOverlay(this.overlay.querySelector('[role="dialog"]') as HTMLElement, { reload: 'blocking' });
     this.prefsCleanup = prefs.attach(this.overlay.querySelector('#us-tab-panel-settings') as HTMLElement);
     this.overlay.querySelector('.unified-settings-close')?.addEventListener('click', () => void this.requestClose());
     this.overlay.onclick = event => { if (event.target === this.overlay) void this.requestClose(); };

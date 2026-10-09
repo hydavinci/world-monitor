@@ -215,6 +215,8 @@ export function importSettings(file: File): Promise<ImportResult> {
         const result = e.target?.result as string;
         const entries = await parseImportedEntries(JSON.parse(result));
         const { invalidateFrameworkCache } = await import('@/services/analysis-framework-store');
+        // Raw reads/writes must throw: unavailable storage is not a successful
+        // import, and rollback must preserve each original storage failure.
         const previous = entries.map(([key]) => [key, localStorage.getItem(key)] as const);
         let applied = 0;
         try {

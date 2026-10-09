@@ -128,6 +128,14 @@ describe('raw localStorage guard (#7833)', () => {
     );
   });
 
+  it('keeps the local installation identity out of the raw-storage backlog', () => {
+    assert.deepEqual(
+      scan.observed.filter((entry) => entry.startsWith('src/services/user-identity.ts ::')),
+      [],
+      'local installation identity must use the canonical checked storage helpers',
+    );
+  });
+
   it('records every entry with a count so the ratchet can only tighten', () => {
     for (const entry of LEGACY_RAW_LOCAL_STORAGE) {
       assert.match(
@@ -154,6 +162,7 @@ describe('raw localStorage guard (#7833)', () => {
     for (const file of [
       'src/services/runtime.ts',
       'src/services/tv-mode.ts',
+      'src/services/user-identity.ts',
       'src/settings-main.ts',
       // Re-listing this one would mean the private rawGet/rawSet/rawRemove
       // trio came back. It was added by #7833 itself and removed in review:

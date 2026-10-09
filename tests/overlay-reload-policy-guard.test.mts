@@ -45,7 +45,27 @@ describe('overlay reload-contract gate', () => {
       scan.sites.length >= MIN_SITE_COUNT,
       `expected >= ${MIN_SITE_COUNT} overlay creation sites, found ${scan.sites.length}: the scan has drifted`,
     );
+    assert.deepEqual(scan.missingSiteOwners, [], 'every reviewed public overlay owner must remain visible to the scan');
     assert.deepEqual(scan.unparsable, [], 'every scanned file must parse, or the gate scans less than it claims');
+  });
+
+  it('does not let unrelated new overlays conceal a missing reviewed public owner', () => {
+    const root = mkdtempSync(join(tmpdir(), 'overlay-owner-'));
+    try {
+      mkdirSync(join(root, 'src'));
+      writeFileSync(join(root, 'src', 'replacement.ts'), Array.from({ length: MIN_SITE_COUNT }, (_, i) =>
+        `overlay${i}.setAttribute('role', 'dialog');\ndeclareOverlay(overlay${i}, { reload: 'blocking' });`,
+      ).join('\n'));
+      const result = scanRepo(root);
+      assert.ok(result.sites.length >= MIN_SITE_COUNT);
+      assert.ok(
+        'missingSiteOwners' in result && Array.isArray(result.missingSiteOwners),
+        'the gate must check reviewed public owners independently of the total site count',
+      );
+      assert.ok(result.missingSiteOwners.some((entry: string) => entry.startsWith('src/components/UnifiedSettings.ts ::')));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('covers every MODAL_SELECTORS clause and no other', () => {
@@ -81,13 +101,13 @@ describe('overlay reload-contract gate', () => {
     assert.deepEqual(scan.loneCompanions, []);
   });
 
-  it('sees the non-ARIA idioms: a role with no aria-modal, and an id with no class', () => {
-    // KeyboardHelp sets role="dialog" and never aria-modal; AviationCommandBar
-    // has no class at all, only an id. Both are real overlays the selector
-    // matches, and both must be counted rather than assumed.
-    const at = (file: string) => scan.sites.filter((s) => s.file === file).map((s) => s.receiver);
-    assert.deepEqual(at('src/components/RouteExplorer/KeyboardHelp.ts'), ['this.element']);
-    assert.deepEqual(at('src/components/AviationCommandBar.ts'), ['this.overlay']);
+  it('sees a role with no aria-modal or modal class', () => {
+    const fixture = [
+      "this.overlay = document.createElement('div');",
+      "this.overlay.id = 'publicHelp';",
+      "this.overlay.setAttribute('role', 'dialog');",
+    ].join('\n');
+    assert.deepEqual(sitesIn(fixture).map((site) => site.receiver), ['this.overlay']);
   });
 
   it('role plus className on one element is one site', () => {
@@ -240,7 +260,6 @@ describe('overlay reload-contract gate', () => {
       'src/app/event-handlers.ts :: popover',
       'src/components/IntelligenceGapBadge.ts :: overlay',
       'src/components/MobileWarningModal.ts :: this.element',
-      'src/components/RouteExplorer/KeyboardHelp.ts :: this.element',
       'src/components/SignalModal.ts :: this.element',
       'src/components/StoryModal.ts :: modalEl',
       'src/components/market-chart-modal.ts :: modalEl',

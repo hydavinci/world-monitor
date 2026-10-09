@@ -118,8 +118,22 @@ export const SAFE_DECLARATION_RE = /\bdeclareOverlay\(\s*([^,{]+?)\s*,\s*\{\s*re
 /** Hits this close together are one element's attributes, not two sites. */
 export const SITE_CLUSTER_RADIUS_LINES = 3;
 
-/** 21 sites in 19 files when this gate landed; 22 with the sign-up resume overlay. A scan that finds fewer has drifted. */
-export const MIN_SITE_COUNT = 22;
+/** Reviewed public owners; retired account and paid overlays do not count. */
+export const EXPECTED_OVERLAY_SITE_COUNTS = new Map([
+  ['src/app/event-handlers.ts', 2],
+  ['src/components/IntelligenceGapBadge.ts', 1],
+  ['src/components/LiveNewsPanel.ts', 1],
+  ['src/components/MobileWarningModal.ts', 1],
+  ['src/components/SearchModal.ts', 1],
+  ['src/components/SignalModal.ts', 1],
+  ['src/components/StoryModal.ts', 1],
+  ['src/components/UnifiedSettings.ts', 2],
+  ['src/components/confirm-dialog.ts', 1],
+  ['src/components/market-chart-modal.ts', 1],
+  ['src/components/watchlist-modal.ts', 1],
+  ['src/services/preferences-content.ts', 1],
+]);
+export const MIN_SITE_COUNT = [...EXPECTED_OVERLAY_SITE_COUNTS.values()].reduce((sum, count) => sum + count, 0);
 
 /** The module that defines the vocabulary; its selector strings are not sites. */
 export const EXCLUDED_FILES = new Set(['src/utils/open-modal.ts']);
@@ -135,13 +149,11 @@ export const RELOAD_GUARD = 'findReloadBlockingModal';
  *
  * chunk-reload.ts reloads once on `vite:preloadError`, when the running bundle
  * can no longer load its own code. It stays immediate: a broken chunk under a
- * modal is worse than the reload, and the one overlay whose work a reload used
- * to destroy for good, the email-code sign-up, now resumes on the same attempt
- * (src/services/sign-up-resume.ts). Deferring it with a retry is optional
- * polish, not a sign-up fix (#8662).
+ * modal is worse than the reload. This exception is only failure recovery;
+ * ordinary automatic reloads must still protect unfinished local preferences.
  */
 export const RELOAD_GUARD_EXEMPT = new Map([
-  ['src/bootstrap/chunk-reload.ts', 'failure recovery; an interrupted sign-up resumes via sign-up-resume'],
+  ['src/bootstrap/chunk-reload.ts', 'failure recovery; unloaded JavaScript chunks require a reload'],
 ]);
 
 /**
@@ -425,6 +437,10 @@ export function scanRepo(root = REPO_ROOT) {
     files,
     unparsable,
     sites,
+    missingSiteOwners: [...EXPECTED_OVERLAY_SITE_COUNTS].flatMap(([file, expected]) => {
+      const observed = sites.filter((site) => site.file === file).length;
+      return observed < expected ? [`${file} :: expected >= ${expected} sites, found ${observed}`] : [];
+    }),
     violations,
     loneCompanions,
     safeDeclarations: safeDeclarations.sort(),
@@ -447,7 +463,14 @@ function main() {
 
   if (scan.sites.length < MIN_SITE_COUNT) {
     problems.push(
-      `Expected >= ${MIN_SITE_COUNT} overlay creation sites under src/ (21 when this gate landed), found ${scan.sites.length}: the scan or the creation idioms have drifted.`,
+      `Expected >= ${MIN_SITE_COUNT} public overlay creation sites under src/, found ${scan.sites.length}: the scan or the creation idioms have drifted.`,
+    );
+  }
+
+  if (scan.missingSiteOwners.length > 0) {
+    problems.push(
+      'Reviewed public overlay owners are missing creation sites:',
+      ...scan.missingSiteOwners.map((owner) => `  - ${owner}`),
     );
   }
 
@@ -464,7 +487,7 @@ function main() {
 
   if (scan.unguardedReloads.length > 0) {
     problems.push(
-      `These automatic reloads under ${RELOAD_CONSUMER_DIR}/ live in an installer that never calls ${RELOAD_GUARD}(). Every reload consumer stays in lockstep on the one shared predicate (#8577): a reload over an open sign-up form destroys it.`,
+      `These automatic reloads under ${RELOAD_CONSUMER_DIR}/ live in an installer that never calls ${RELOAD_GUARD}(). Every reload consumer stays in lockstep on the one shared predicate (#8577): a reload can destroy unsaved local preferences.`,
       ...scan.unguardedReloads.map((r) => `  - ${r.file}:${r.line}  ${r.text}`),
     );
   }
