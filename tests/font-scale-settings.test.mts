@@ -9,7 +9,7 @@ import {
   parseFontScale,
 } from '../src/services/font-scale-settings.ts';
 import { __testing__ as settingsPersistenceTesting } from '../src/utils/settings-persistence.ts';
-import { CLOUD_SYNC_KEYS } from '../src/utils/sync-keys.ts';
+import { LOCAL_PREFERENCE_KEYS } from '../src/utils/local-preference-keys.ts';
 
 describe('font scale settings', () => {
   it('offers the bounded discrete scale used by global and panel controls', () => {
@@ -31,8 +31,8 @@ describe('font scale settings', () => {
     }
   });
 
-  it('includes the global preference in cloud sync and settings export/import filtering', () => {
-    assert.ok(CLOUD_SYNC_KEYS.includes(FONT_SCALE_STORAGE_KEY));
+  it('includes the global preference in local settings export/import filtering', () => {
+    assert.ok(LOCAL_PREFERENCE_KEYS.includes(FONT_SCALE_STORAGE_KEY));
     assert.equal(settingsPersistenceTesting.isSettingsKey(FONT_SCALE_STORAGE_KEY), true);
   });
 });

@@ -1,14 +1,14 @@
-import type { NewsItem, ClusteredEvent, MarketData, CyberThreat, Monitor } from '@/types';
-import type { PredictionMarket } from '@/services/prediction';
 import type { IntelligenceCache } from '@/app/app-context';
-import type { GpsJamData } from '@/services/gps-interference';
 import type { ConvergenceCard } from '@/services/correlation-engine';
-import { vesselTypeLabel } from '@/utils/vessel-type-label';
+import { SUPPORTED_EXPORT_FORMATS,type DataExportFormat } from '@/services/export-formats';
+import type { GpsJamData } from '@/services/gps-interference';
 import { t } from '@/services/i18n';
-import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
+import type { PredictionMarket } from '@/services/prediction';
+import type { ClusteredEvent,CyberThreat,MarketData,Monitor,NewsItem } from '@/types';
+import { setTrustedHtml,trustedHtml } from '@/utils/dom-utils';
+import { buildDataReportDocument,printReportDocument,sanitizeExportData } from '@/utils/export-report';
 import { showToast } from '@/utils/toast';
-import { buildDataReportDocument, printReportDocument, sanitizeExportData } from '@/utils/export-report';
-import { SUPPORTED_EXPORT_FORMATS, type DataExportFormat } from '@/services/gates/export-resolver';
+import { vesselTypeLabel } from '@/utils/vessel-type-label';
 
 // Iran-events domain sunset (war ended 2026-07). Default OFF: omit the IRAN
 // EVENTS CSV block. Set VITE_ENABLE_IRAN_ATTACKS=true to restore. Guarded so
@@ -197,16 +197,6 @@ export function exportToCSV(data: ExportData, filename = 'worldmonitor-export'):
       intel.imageryScenes.forEach(s => {
         lines.push(csvRow([s.id, s.satellite, s.datetime, s.resolutionM, s.mode]));
       });
-      lines.push('');
-    }
-
-    if (intel.sanctions) {
-      lines.push('=== SANCTIONS ===');
-      lines.push('# See JSON export for full sanctions data');
-      lines.push(`TotalCount,${intel.sanctions.totalCount}`);
-      lines.push(`SDNCount,${intel.sanctions.sdnCount}`);
-      lines.push(`SemaCount,${intel.sanctions.semaCount}`);
-      lines.push(`NewEntries,${intel.sanctions.newEntryCount}`);
       lines.push('');
     }
 

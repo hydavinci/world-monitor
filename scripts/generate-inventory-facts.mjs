@@ -57,8 +57,9 @@ export function buildInventoryFacts(stats = loadStatsForInventoryFacts()) {
 
   for (const [name, value] of Object.entries(capabilities)) {
     if (name === 'localeCodes') continue;
-    if (!Number.isInteger(value) || value <= 0) {
-      throw new Error(`inventory capability ${name} must be a positive integer`);
+    const minimum = name === 'mcpTools' ? 0 : 1;
+    if (!Number.isInteger(value) || value < minimum) {
+      throw new Error(`inventory capability ${name} must be an integer >= ${minimum}`);
     }
   }
   if (!Array.isArray(capabilities.localeCodes)
@@ -78,14 +79,14 @@ export function buildInventoryFacts(stats = loadStatsForInventoryFacts()) {
 }
 
 function expectedInventoryOutputs({ loadStats = loadStatsForInventoryFacts } = {}) {
-  const productFacts = readJson('shared/product-facts.generated.json');
-  if ('capabilities' in productFacts) {
-    throw new Error('shared/product-facts.generated.json must not contain extensible inventory counts');
-  }
-
   const stats = loadStats();
   const inventoryFacts = buildInventoryFacts(stats);
-  const publicFacts = { ...productFacts, capabilities: inventoryFacts.capabilities };
+  const publicFacts = {
+    name: 'World Monitor',
+    version: readJson('package.json').version,
+    publicOnly: true,
+    capabilities: inventoryFacts.capabilities,
+  };
   const edgeModule = `// AUTO-GENERATED build artifact from authoritative registries.\n// Do not edit manually. Run: npm run inventory:facts\n// @ts-check\n\nexport const PUBLIC_INVENTORY_FACTS = ${JSON.stringify(inventoryFacts, null, 2)};\n`;
 
   return new Map([

@@ -3,28 +3,15 @@
  * WTO MFN baselines, trade flows/barriers, and US customs/effective tariff context.
  */
 
-import { getRpcBaseUrl } from '@/services/rpc-client';
-import { premiumFetch } from '@/services/premium-fetch';
-import { getCurrentClerkUser } from '@/services/clerk';
-import { hasPremiumAccess } from '@/services/panel-gating';
-import { onEntitlementChange } from '@/services/entitlements';
-import { IS_EMBEDDED_PREVIEW } from '@/utils/embedded-preview';
-import type { GetTradeRestrictionsResponse, GetTariffTrendsResponse, GetTradeFlowsResponse, GetTradeBarriersResponse, GetCustomsRevenueResponse, ListComtradeFlowsResponse, ComtradeFlowRecord, TradeRestriction, TariffDataPoint, EffectiveTariffRate, TradeFlowRecord, TradeBarrier, CustomsRevenueMonth } from '@/generated/client/worldmonitor/trade/v1/service_client';
-import { createCircuitBreaker } from '@/utils/circuit-breaker';
-import { isFeatureAvailable } from '../runtime-config';
+import type { ComtradeFlowRecord,CustomsRevenueMonth,EffectiveTariffRate,GetCustomsRevenueResponse,GetTariffTrendsResponse,GetTradeBarriersResponse,GetTradeFlowsResponse,GetTradeRestrictionsResponse,ListComtradeFlowsResponse,TariffDataPoint,TradeBarrier,TradeFlowRecord,TradeRestriction } from '@/generated/client/worldmonitor/trade/v1/service_client';
 import { getHydratedData } from '@/services/bootstrap';
 import { TradeServiceClient } from '@/services/generated-rpc-clients';
+import { getRpcBaseUrl } from '@/services/rpc-client';
+import { createCircuitBreaker } from '@/utils/circuit-breaker';
+import { isFeatureAvailable } from '../runtime-config';
 
 // Re-export types for consumers
-export type { TradeRestriction, TariffDataPoint, EffectiveTariffRate, TradeFlowRecord, TradeBarrier, CustomsRevenueMonth, ComtradeFlowRecord };
-export type {
-  GetTradeRestrictionsResponse,
-  GetTariffTrendsResponse,
-  GetTradeFlowsResponse,
-  GetTradeBarriersResponse,
-  GetCustomsRevenueResponse,
-  ListComtradeFlowsResponse,
-};
+export type { ComtradeFlowRecord,CustomsRevenueMonth,EffectiveTariffRate,GetCustomsRevenueResponse,GetTariffTrendsResponse,GetTradeBarriersResponse,GetTradeFlowsResponse,GetTradeRestrictionsResponse,ListComtradeFlowsResponse,TariffDataPoint,TradeBarrier,TradeFlowRecord,TradeRestriction };
 
 // Two clients to prevent cross-entitlement cache leakage.
 //
@@ -39,22 +26,19 @@ export type {
 //     flowsBreaker, barriersBreaker, revenueBreaker. Unauthenticated,
 //     shareable response bodies, safe to cache across auth states.
 //
-//   - premiumClient (premiumFetch)      — ONLY used for get-tariff-trends
+//   - premiumClient (rpcFetch)      — ONLY used for get-tariff-trends
 //     and list-comtrade-flows. Injects the caller's Clerk bearer /
 //     tester-key / WORLDMONITOR_API_KEY, so pro users get real data
 //     instead of 401.
 const publicClient = new TradeServiceClient(getRpcBaseUrl(), { fetch: (...args) => globalThis.fetch(...args) });
-const premiumClient = new TradeServiceClient(getRpcBaseUrl(), { fetch: premiumFetch });
 
 const restrictionsBreaker = createCircuitBreaker<GetTradeRestrictionsResponse>({ name: 'WTO Restrictions', cacheTtlMs: 30 * 60 * 1000, persistCache: true });
 // Premium endpoints: persistCache:false so a pro user's response is NOT
 // written to localStorage/IndexedDB where a later free / signed-out session
 // on the same browser would read it back without re-authenticating.
-const tariffsBreaker = createCircuitBreaker<GetTariffTrendsResponse>({ name: 'WTO Tariffs', cacheTtlMs: 30 * 60 * 1000, persistCache: false });
 const flowsBreaker = createCircuitBreaker<GetTradeFlowsResponse>({ name: 'WTO Flows', cacheTtlMs: 30 * 60 * 1000, persistCache: true });
 const barriersBreaker = createCircuitBreaker<GetTradeBarriersResponse>({ name: 'WTO Barriers', cacheTtlMs: 30 * 60 * 1000, persistCache: true });
 const revenueBreaker = createCircuitBreaker<GetCustomsRevenueResponse>({ name: 'Treasury Revenue', cacheTtlMs: 30 * 60 * 1000, persistCache: true });
-const comtradeBreaker = createCircuitBreaker<ListComtradeFlowsResponse>({ name: 'Comtrade Flows', cacheTtlMs: 6 * 60 * 60 * 1000, persistCache: false });
 
 // Track the identity + entitlement fingerprint that last populated the
 // in-memory premium breaker caches. On any change — sign-out, user switch,
@@ -63,63 +47,23 @@ const comtradeBreaker = createCircuitBreaker<ListComtradeFlowsResponse>({ name: 
 // response. persistCache:false already closes the cross-browser-reload
 // path; this closes the in-tab SPA transition path.
 //
-// ENTITLEMENT SIGNAL: hasPremiumAccess() is the repo's single source of
+// ENTITLEMENT SIGNAL: false is the repo's single source of
 // truth (src/services/panel-gating.ts). It unions API key, tester key,
 // Clerk pro role, and Convex Dodo entitlement via isProUser/isEntitled.
 // The earlier version of this fingerprint used Clerk publicMetadata.plan,
 // which is NOT written by the webhook pipeline — a paying user with a
 // valid Dodo entitlement would still fingerprint as 'free', and a user
 // whose Dodo subscription lapsed would still fingerprint as 'pro' until
-// the next Clerk session refresh. Swap to hasPremiumAccess() so the
+// the next Clerk session refresh. Swap to false so the
 // fingerprint tracks authoritative entitlement state directly.
 //
 // Shape: `${userId}:${entitled ? 'pro' : 'free'}` | `anon:<state>` | undefined-not-yet-observed
-let lastPremiumFingerprint: string | null | undefined; // undefined = never observed
 
-function currentPremiumFingerprint(): string {
-  let userId = 'anon';
-  try {
-    userId = getCurrentClerkUser()?.id ?? 'anon';
-  } catch { /* Clerk not loaded yet */ }
-  let entitled = false;
-  try {
-    entitled = hasPremiumAccess();
-  } catch { /* entitlement/panel-gating not ready */ }
-  return `${userId}:${entitled ? 'pro' : 'free'}`;
-}
-
-function invalidatePremiumBreakersIfIdentityChanged(): void {
-  const fp = currentPremiumFingerprint();
-  if (lastPremiumFingerprint !== undefined && fp !== lastPremiumFingerprint) {
-    tariffsBreaker.clearMemoryCache();
-    comtradeBreaker.clearMemoryCache();
-  }
-  lastPremiumFingerprint = fp;
-}
-
-// Reactive path: when Convex publishes an entitlement change, wipe the
-// premium breakers immediately rather than waiting for the next premium
-// fetcher call. A user whose subscription lapses after they've opened
-// the tariff panel shouldn't keep seeing premium data until they click
-// something else.
-onEntitlementChange(() => {
-  const fp = currentPremiumFingerprint();
-  if (lastPremiumFingerprint !== undefined && fp !== lastPremiumFingerprint) {
-    tariffsBreaker.clearMemoryCache();
-    comtradeBreaker.clearMemoryCache();
-    lastPremiumFingerprint = fp;
-  }
-});
 
 const emptyRestrictions: GetTradeRestrictionsResponse = { restrictions: [], fetchedAt: '', upstreamUnavailable: false };
 // The client-side empty is a local degrade (feature off, breaker open, thrown
 // request), not a server verdict, so it carries the UNSPECIFIED zero value.
 // Only the handler names an actual coverage gap or fault.
-const emptyTariffs: GetTariffTrendsResponse = {
-  datapoints: [], fetchedAt: '', upstreamUnavailable: false,
-  unavailableReason: 'TARIFF_TREND_UNAVAILABLE_REASON_UNSPECIFIED',
-  coverageStartYear: 0, coverageEndYear: 0,
-};
 const emptyFlows: GetTradeFlowsResponse = {
   flows: [], fetchedAt: '', upstreamUnavailable: false,
   unavailableReason: 'TRADE_FLOW_UNAVAILABLE_REASON_UNSPECIFIED',
@@ -127,7 +71,6 @@ const emptyFlows: GetTradeFlowsResponse = {
 };
 const emptyBarriers: GetTradeBarriersResponse = { barriers: [], fetchedAt: '', upstreamUnavailable: false };
 const emptyRevenue: GetCustomsRevenueResponse = { months: [], fetchedAt: '', upstreamUnavailable: false };
-const emptyComtrade: ListComtradeFlowsResponse = { flows: [], fetchedAt: '', upstreamUnavailable: false };
 
 export async function fetchTradeRestrictions(countries: string[] = [], limit = 50): Promise<GetTradeRestrictionsResponse> {
   if (!isFeatureAvailable('wtoTrade')) return emptyRestrictions;
@@ -137,22 +80,6 @@ export async function fetchTradeRestrictions(countries: string[] = [], limit = 5
     }, emptyRestrictions, { shouldCache: r => (r.restrictions?.length ?? 0) > 0 });
   } catch {
     return emptyRestrictions;
-  }
-}
-
-export async function fetchTariffTrends(reportingCountry: string, partnerCountry: string, productSector = '', years = 10): Promise<GetTariffTrendsResponse> {
-  if (!isFeatureAvailable('wtoTrade')) return emptyTariffs;
-  // /pro live-preview iframe: no Clerk session → guaranteed 401 → breaker
-  // would fall through to emptyTariffs anyway. Short-circuit to silence the
-  // console noise this path causes on the embedding /pro page.
-  if (IS_EMBEDDED_PREVIEW) return emptyTariffs;
-  invalidatePremiumBreakersIfIdentityChanged();
-  try {
-    return await tariffsBreaker.execute(async () => {
-      return premiumClient.getTariffTrends({ reportingCountry, partnerCountry, productSector, years });
-    }, emptyTariffs, { shouldCache: r => (r.datapoints?.length ?? 0) > 0 });
-  } catch {
-    return emptyTariffs;
   }
 }
 
@@ -191,18 +118,5 @@ export async function fetchCustomsRevenue(): Promise<GetCustomsRevenueResponse> 
     }, emptyRevenue, { shouldCache: r => (r.months?.length ?? 0) > 0 });
   } catch {
     return emptyRevenue;
-  }
-}
-
-export async function fetchComtradeFlows(): Promise<ListComtradeFlowsResponse> {
-  // /pro live-preview iframe: see fetchTariffTrends comment above.
-  if (IS_EMBEDDED_PREVIEW) return emptyComtrade;
-  invalidatePremiumBreakersIfIdentityChanged();
-  try {
-    return await comtradeBreaker.execute(async () => {
-      return premiumClient.listComtradeFlows({ reporterCode: '', cmdCode: '', anomaliesOnly: false });
-    }, emptyComtrade, { shouldCache: r => (r.flows?.length ?? 0) > 0 });
-  } catch {
-    return emptyComtrade;
   }
 }

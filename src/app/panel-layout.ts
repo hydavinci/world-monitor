@@ -1,146 +1,102 @@
-import { clearTelegramIntelCache } from '@/services/telegram-intel';
-import { subscribeRuntimeConfig } from '@/services/runtime-config';
-import type { AppContext, AppModule } from '@/app/app-context';
-import { CORRELATION_DOMAINS } from '@/types/correlation';
-import type { CorrelationPanel } from '@/components/CorrelationPanel';
-import { normalizeExclusiveChoropleths } from '@/components/resilience-choropleth-utils';
-import { replayPendingCalls, clearAllPendingCalls } from '@/app/pending-panel-data';
-import { hasPanelSettingEntry, newsPanelKeyForCategory, newsPanelKeyLookupsFor } from '@/app/news-panel-keys';
+import { sanitizePublicLayers } from '@/services/public-preferences';
+import { sanitizePublicPanelSettings } from '@/services/public-preferences';
+import type { AppContext,AppModule } from '@/app/app-context';
 import {
-  createDeferredPanelShell,
-  getDeferredPanelShellFootprint as resolveDeferredPanelShellFootprint,
-  reconcileDeferredPanelShellColSpan,
-  shouldDeferInitialPanelMount,
-  type DeferredPanelShellFootprint,
+hydrateGeoHubPanelFromClusters,
+hydrateTechHubPanelFromClusters,
+} from '@/app/hub-activity-hydration';
+import { hasPanelSettingEntry,newsPanelKeyForCategory,newsPanelKeyLookupsFor } from '@/app/news-panel-keys';
+import { movePanelToKeyboardZone } from '@/app/panel-keyboard-reorder';
+import {
+createDeferredPanelShell,
+reconcileDeferredPanelShellColSpan,
+getDeferredPanelShellFootprint as resolveDeferredPanelShellFootprint,
+shouldDeferInitialPanelMount,
+type DeferredPanelShellFootprint,
 } from '@/app/panel-mount-deferral';
+import { clearAllPendingCalls, replayPendingCalls } from '@/app/pending-panel-data';
 import {
-  SPLIT_LAYOUT_MIN_WIDTH,
-  mapRightClassForVisualSide,
-  type MapVisualSide,
-} from '@/app/split-layout';
-import {
-  addResponsiveZoneListener,
-  removeResponsiveZoneListener,
-  type ResponsiveZoneListener,
+addResponsiveZoneListener,
+removeResponsiveZoneListener,
+type ResponsiveZoneListener,
 } from '@/app/responsive-zone-listener';
-import { getAlertsNearLocation } from '@/services/geo-convergence';
-import { effectivePubDateMs } from '@/services/feed-date';
-import type { ClusteredEvent, MapLayers, PanelConfig } from '@/types';
-import type { RelatedAsset } from '@/types';
-import type { TheaterPostureSummary } from '@/services/military-surge';
-import type { NewsPanel } from '@/components/NewsPanel';
-import type { AviationCommandBar } from '@/components/AviationCommandBar';
-import { MobilePanelNav } from '@/components/MobilePanelNav';
-import { debounce, loadFromStorage, saveToStorage } from '@/utils';
-import { escapeHtml } from '@/utils/sanitize';
 import {
-  CANONICAL_FEEDS,
-  STORAGE_KEYS,
-  SITE_VARIANT,
-  ALL_PANELS,
-  VARIANT_DEFAULTS,
-  isPanelInVariantDefaults,
-  getEffectivePanelConfig,
-  isPanelEntitled,
-  enforceFreePanelLimit,
+SPLIT_LAYOUT_MIN_WIDTH,
+mapRightClassForVisualSide,
+type MapVisualSide,
+} from '@/app/split-layout';
+import { MobilePanelNav } from '@/components/MobilePanelNav';
+import type { NewsPanel } from '@/components/NewsPanel';
+import type { Panel } from '@/components/Panel';
+import { PanelTabBar } from '@/components/PanelTabBar';
+import { normalizeExclusiveChoropleths } from '@/components/resilience-choropleth-utils';
+import type { SupplyChainPanel } from '@/components/SupplyChainPanel';
+import {
+ALL_PANELS,
+CANONICAL_FEEDS,
+SITE_VARIANT,
+STORAGE_KEYS,
+VARIANT_DEFAULTS,
+getEffectivePanelConfig,
+isPanelInVariantDefaults
 } from '@/config';
 import { BETA_MODE } from '@/config/beta';
+import { } from '@/config/map-layer-definitions';
 import { NQ_PULSE_DISCLOSURE } from '@/config/nq-context';
-import { t } from '@/services/i18n';
-import { getCurrentTheme } from '@/utils';
-import { trackCriticalBannerAction, trackCheckoutSuccess, trackCheckoutFailed, trackGateHit, trackMapViewChange, trackLayoutCustomized, replayPendingCheckoutSuccess, replayPendingProFunnelEvents, replayPendingConversionEvents, replayPendingMissionReturn } from '@/services/analytics';
-import { ProPreviewSection } from '@/components/ProPreviewSection';
-import { syncPanelPreview } from '@/services/mission-preview-registry';
-import { loadStoredMissionPreset } from '@/services/mission-presets';
-import { peekPendingMissionAttribution } from '@/services/analytics';
-import { getStoredMapModePreference } from '@/services/map-mode-preference';
-import { loadWidgets, saveWidget, isProUser, isProTierResolved } from '@/services/widget-store';
-import { sanitizeLockedLayers, shouldSanitizeLockedLayers } from '@/config/map-layer-definitions';
-import type { CustomWidgetSpec } from '@/services/widget-store';
+
 import {
-  panelGateStateChanged,
-  sweepLegacyDisabledCustomWidgets,
-} from '@/app/free-tier-gate';
-import { initEntitlementSubscription, destroyEntitlementSubscription, isEntitlementActive, hasTier, getEntitlementState, onEntitlementChange } from '@/services/entitlements';
-import { createEntitlementReloadController } from '@/services/entitlement-reload-controller';
-import { initSubscriptionWatch, destroySubscriptionWatch, onSubscriptionChange } from '@/services/billing';
-import { initPaymentFailureBanner } from '@/components/payment-failure-banner';
-import {
-  handleCheckoutReturn,
-  resolveCheckoutReturnRouting,
-} from '@/services/checkout-return';
-import { showCheckoutSuccess, consumePostCheckoutFlag, clearCheckoutAttempt, loadCheckoutAttempt } from '@/services/checkout';
-import {
-  markProActivationPending,
-  ProActivationController,
-} from '@/app/pro-activation-controller';
-import { PasskeyOfferBoot } from '@/app/passkey-offer-boot';
-import { showCheckoutFailureBanner } from '@/components/checkout-failure-banner';
-import { PanelTabBar, tabCapGateCopy } from '@/components/PanelTabBar';
-import {
-  loadTabsState,
-  saveTabsState,
-  generateTabId,
-  buildDefaultTabPanels,
-} from '@/services/tab-store';
-import type { PanelTab, TabsPersistReceipt, TabsState } from '@/services/tab-store';
-import {
-  DASHBOARD_TAB_UNAVAILABLE_RESULT,
-  applyPersistReceipt,
-  describeDashboardTabs,
-  mutationApplied,
-  mutationDenied,
-  resolveCreateDashboardTab,
-  resolveDeleteDashboardTab,
-  resolveRenameDashboardTab,
-  resolveSelectDashboardTab,
-  type DashboardTabAction,
-  type DashboardTabActionResult,
+DASHBOARD_TAB_UNAVAILABLE_RESULT,
+applyPersistReceipt,
+describeDashboardTabs,
+mutationApplied,
+mutationDenied,
+resolveCreateDashboardTab,
+resolveDeleteDashboardTab,
+resolveRenameDashboardTab,
+resolveSelectDashboardTab,
+type DashboardTabAction,
+type DashboardTabActionResult,
 } from '@/services/dashboard-tab-actions';
-import {
-  PANEL_LAYOUT_PERSIST_FAILED_MESSAGE,
-  PANEL_LAYOUT_UNAVAILABLE_RESULT,
-  applyLayoutPersistReceipt,
-  describePanelLayout,
-  mutationApplied as layoutMutationApplied,
-  mutationDenied as layoutMutationDenied,
-  applyExclusiveFullscreenEnter,
-  resolveMovePanel,
-  resolveSetPanelCollapsed,
-  resolveSetPanelFullscreen,
-  type PanelLayoutEntry,
-  type PanelLayoutMutationResult,
-  type PanelLayoutRegion,
-  type PanelLayoutSnapshot,
-} from '@/services/panel-layout-actions';
-import { showToast } from '@/utils';
-import { loadMcpPanels, saveMcpPanel } from '@/services/mcp-store';
-import type { McpPanelSpec } from '@/services/mcp-store';
-import { getAuthState, subscribeAuthState } from '@/services/auth-state';
-import type { AuthSession } from '@/services/auth-state';
-import { PanelGateReason, getPanelGateReason, hasPremiumAccess, resolveBillingAwareGateReason, resolveGateAction } from '@/services/panel-gating';
-import { evaluateTabCap, exportLockToGateReason } from '@/services/gates/export';
-import { primeExportGateActivation } from '@/services/gates/export-resolver';
-import type { TabCapVerdict } from '@/services/gates/export-resolver';
-import { markLcpDebug } from '@/utils/lcp-debug';
-import type { Panel } from '@/components/Panel';
-import type { SupplyChainPanel } from '@/components/SupplyChainPanel';
-import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
-import { loadPanelCollapsed, loadPanelColSpans, loadPanelSpans } from '@/utils/panel-storage';
-import { measure, mutate } from '@/utils/layout-batch';
+import type { TabCapVerdict } from '@/services/export-formats';
+import { effectivePubDateMs } from '@/services/feed-date';
 import { applyPanelFontScale } from '@/services/font-scale-settings';
+import { getAlertsNearLocation } from '@/services/geo-convergence';
+import { t } from '@/services/i18n';
+import { getStoredMapModePreference } from '@/services/map-mode-preference';
+import type { TheaterPostureSummary } from '@/services/military-surge';
 import {
-  hydrateGeoHubPanelFromClusters,
-  hydrateTechHubPanelFromClusters,
-} from '@/app/hub-activity-hydration';
-import { movePanelToKeyboardZone } from '@/app/panel-keyboard-reorder';
-import { isCatalogPanelLive, waitUntilPanelLive } from '@/app/panel-enablement';
+PANEL_LAYOUT_PERSIST_FAILED_MESSAGE,
+PANEL_LAYOUT_UNAVAILABLE_RESULT,
+applyExclusiveFullscreenEnter,
+applyLayoutPersistReceipt,
+describePanelLayout,
+mutationApplied as layoutMutationApplied,
+mutationDenied as layoutMutationDenied,
+resolveMovePanel,
+resolveSetPanelCollapsed,
+resolveSetPanelFullscreen,
+type PanelLayoutEntry,
+type PanelLayoutMutationResult,
+type PanelLayoutRegion,
+type PanelLayoutSnapshot,
+} from '@/services/panel-layout-actions';
+import type { PanelTab,TabsPersistReceipt,TabsState } from '@/services/tab-store';
 import {
-  armCheckoutReturnState,
-  loadCheckoutReturnState,
-  settleCheckoutReturnFocus,
-} from '@/services/checkout-return-state';
-import { resolveCheckoutContext, type CheckoutContext } from '../../shared/checkout-attribution';
+buildDefaultTabPanels,
+generateTabId,
+loadTabsState,
+saveTabsState,
+} from '@/services/tab-store';
+import type { CustomWidgetSpec } from '@/services/widget-store';
+import { loadWidgets,saveWidget } from '@/services/widget-store';
+import type { ClusteredEvent,MapLayers,PanelConfig,RelatedAsset } from '@/types';
+import { CORRELATION_DOMAINS } from '@/types/correlation';
+import { debounce,getCurrentTheme,loadFromStorage,saveToStorage,showToast } from '@/utils';
+import { setTrustedHtml,trustedHtml } from '@/utils/dom-utils';
+import { measure,mutate } from '@/utils/layout-batch';
+import { markLcpDebug } from '@/utils/lcp-debug';
+import { loadPanelColSpans,loadPanelCollapsed,loadPanelSpans } from '@/utils/panel-storage';
+import { escapeHtml } from '@/utils/sanitize';
 
 function readSessionStorageValue(key: string): string | null {
   try {
@@ -157,54 +113,6 @@ function writeSessionStorageValue(key: string, value: string): void {
     // Banner dismissal remains functional for this render even without persistence.
   }
 }
-
-/**
- * Panels that require premium access on web. Auth-based gating applies to
- * these — `updatePanelGating()` calls `Panel.showGatedCta()` to render
- * "Sign In to Unlock" / "Upgrade to Pro" for non-premium users.
- *
- * INVARIANT: every panel listed in `apiKeyPanels` (src/config/panels.ts
- * `isPanelEntitled`) MUST appear here. If it's API-key-entitled but missing
- * from this set, anonymous/free-Clerk users see the panel mount and run
- * its loader (which writes empty/loading/error UI directly into the body)
- * instead of the lock CTA. The PRO badge in the title still renders, so
- * the symptom is "PRO badge + panel-internal loading or empty copy"
- * which looks broken (e.g. Regional Intelligence rendering its empty-state
- * "is being refreshed" message to anonymous users — see todo #257 item 8).
- *
- * The static test in tests/panel-config-guardrails.test.mjs enforces
- * `apiKeyPanels ⊆ WEB_PREMIUM_PANELS` so this drift can't recur silently.
- */
-const WEB_PREMIUM_PANELS = new Set([
-  'stock-analysis',
-  'stock-backtest',
-  'daily-market-brief',
-  'market-implications',
-  'deduction',
-  'chat-analyst',
-  'wsb-ticker-scanner',
-  'latest-brief',
-  'regional-intelligence',
-  'trade-policy',
-  'global-procurement',
-]);
-
-/**
- * Panels that require a Clerk-authenticated PRO account specifically.
- * Desktop API key / browser tester keys do NOT satisfy the gate because
- * these panels are bound to a Clerk userId server-side (e.g. the Brief
- * is stored at brief:{clerkUserId}:{date} in Redis — no Clerk user, no
- * brief to fetch).
- *
- * Without this extra gate, API-key + free-Clerk users would see the
- * panel "unlocked" by hasPremiumAccess() and then hit a 403 when the
- * server re-checks entitlement from the JWT. This set promotes the
- * inconsistency to the layout gating layer so the user sees the
- * correct "Upgrade to Pro" CTA instead of a doomed fetch.
- */
-const WEB_CLERK_PRO_ONLY_PANELS = new Set([
-  'latest-brief',
-]);
 
 /**
  * Panel keys a dedicated panel owns but registers for AFTER the CANONICAL_FEEDS
@@ -227,7 +135,6 @@ const WEB_CLERK_PRO_ONLY_PANELS = new Set([
  * ever moves below the pass without being listed here.
  */
 const LATE_REGISTERED_PANEL_KEYS = new Set(['live-news']);
-const CW_PRO_GATE_TAB_RECOVERY_KEY = 'worldmonitor-cw-pro-gate-tab-recovery-v1';
 
 const DASHBOARD_REFERENCE_LINKS = [
   { label: 'Countries', path: '/countries/' },
@@ -426,7 +333,6 @@ export interface PanelLayoutManagerCallbacks {
   loadSecurityAdvisories?: () => Promise<void>;
   loadTelegramIntel?: () => Promise<void>;
   applyMapLayerChange?: (layer: keyof MapLayers, enabled: boolean, source: 'programmatic') => void;
-  isFreeTierFallbackActive?: () => boolean;
 }
 
 interface DeferredPanelMount {
@@ -466,24 +372,12 @@ export class PanelLayoutManager implements AppModule {
   private mobileMapCollapseBtn: HTMLButtonElement | null = null;
   private panelTabBar: PanelTabBar | null = null;
   private tabsState: TabsState | null = null;
-  private aviationCommandBar: AviationCommandBar | null = null;
   private readonly applyTimeRangeFilterDebounced: (() => void) & { cancel(): void };
   private unsubscribeRuntimeConfig: (() => void) | null = null;
-  private unsubscribeAuth: (() => void) | null = null;
-  private proBlockUnsubscribe: (() => void) | null = null;
-  private proBlockEntitlementUnsubscribe: (() => void) | null = null;
   private boundWidgetCreatorHandler: ((e: Event) => void) | null = null;
-  private unsubscribeEntitlementChange: (() => void) | null = null;
-  private gatingPrincipal: string | null | undefined = undefined;
-  private premiumPanelsUnlocked = new Set<string>();
-  private unsubscribeSubscriptionChange: (() => void) | null = null;
-  private unsubscribePaymentFailureBanner: (() => void) | null = null;
   private scheduledLoadAllRaf: number | null = null;
   private scheduledLoadAllIdle: number | null = null;
   private responsiveZoneListener: ResponsiveZoneListener | null = null;
-  private readonly proActivationController: ProActivationController;
-  private readonly passkeyOfferController: PasskeyOfferBoot;
-  private readonly checkoutReturnFocusController = new AbortController();
 
   constructor(ctx: AppContext, callbacks: PanelLayoutManagerCallbacks) {
     this.ctx = ctx;
@@ -492,337 +386,20 @@ export class PanelLayoutManager implements AppModule {
       this.applyTimeRangeFilterToNewsPanels();
     }, 120);
 
-    // Dodo Payments: entitlement subscription + billing watch for ALL users.
-    // Free users need the subscription active so they receive real-time
-    // entitlement updates after purchasing (P1: newly upgraded users must
-    // see their premium access without a manual page reload).
-    //
-    // Two account-bound return paths need to seed the transition detector as
-    // post-checkout:
-    //   1. Full-page Dodo redirect — handleCheckoutReturn() reads
-    //      subscription_id/status URL params and cleans them.
-    //   2. A legacy overlay-success flag left by an older tab.
-    const returnResult = handleCheckoutReturn();
-    const returnedFromOverlayFlag = consumePostCheckoutFlag();
-    const routing = resolveCheckoutReturnRouting(returnResult, returnedFromOverlayFlag);
-    const returnedFromDesktopBrowser = routing.kind === 'desktop';
-    const returnedFromCheckout = routing.kind !== 'none';
-    const returnedFromAccountCheckout = routing.kind === 'overlay' || routing.kind === 'account';
-    this.proActivationController = new ProActivationController(ctx, {
-      reloadPending: returnedFromAccountCheckout,
-      openAiAnalyst: () => this.revealAnalystPanel(),
-      openSearch: callbacks.openSearch,
-    });
-    // Boot shim only — the controller, prompt, and passkey services load on
-    // demand, keeping ~12 KB out of the first-paint chunk (see #7353 follow-up).
-    this.passkeyOfferController = new PasskeyOfferBoot(ctx);
-    if (returnedFromCheckout) {
-      const attempt = loadCheckoutAttempt();
-      const pendingAttribution = peekPendingMissionAttribution();
-      const checkoutContext: CheckoutContext | null = attempt?.context ?? (
-        pendingAttribution
-          ? resolveCheckoutContext({
-            surface: pendingAttribution.surface,
-            attribution: pendingAttribution.panelKey
-              ? { missionId: pendingAttribution.missionId, panelKey: pendingAttribution.panelKey }
-              : undefined,
-            ambientMissionId: pendingAttribution.missionId,
-          })
-          : null
-      );
-      if (checkoutContext) {
-        armCheckoutReturnState(
-          checkoutContext,
-          returnedFromDesktopBrowser
-            ? 'desktop-return'
-            : returnResult.kind === 'success'
-              ? 'url-return'
-              : 'overlay-flag',
-        );
-      }
-      // Funnel (#4931): the purchase-complete signal on the client side.
-      // Queued by the analytics facade until Umami loads after first paint.
-      trackCheckoutSuccess(returnResult.kind === 'success' ? 'url-return' : 'overlay-flag');
-      // Mission return leg (plan U4/R1): a checkout that started from a
-      // mission preview lands the buyer back on the originating mission and
-      // panel. The stored preset re-applies itself on boot; here we finish
-      // the leg — scroll+focus the originating panel and emit the
-      // completion-side attribution event.
-      // The durable carrier is the CheckoutAttempt (still present here — the
-      // clearCheckoutAttempt('success') below runs after this branch). The
-      // pending-conversion peek is only a fallback: the collector usually
-      // confirms and clears that entry BEFORE the Dodo redirect.
-      if (returnedFromAccountCheckout) {
-        // Pro Activation Onboarding: capture the plan identity from the attempt
-        // record and write the durable pending-onboarding marker BEFORE the
-        // clear below wipes the attempt. Success branch only (the `failed`
-        // branch structurally cannot reach here). An overlay-only return may
-        // carry no attempt record → the marker omits productId and the boot
-        // hook falls back to the live entitlement snapshot for plan identity
-        // (never a write-time frozen fallback — see decideActivationMount).
-        const activationProductId = loadCheckoutAttempt()?.productId ?? null;
-        markProActivationPending(activationProductId);
-        // Full-page return cleared its URL params; belt-and-braces clear
-        // of the attempt record here catches the success path where the
-        // overlay handler never ran (direct Dodo redirect).
-        clearCheckoutAttempt('success');
-      }
-      // waitForEntitlement: true keeps the banner mounted across the
-      // entitlement-watcher reload (post-PR-4 the watcher is the single
-      // reload source). If the user is already entitled on mount the
-      // banner goes straight to the "active" state; otherwise it waits
-      // up to 30s for the transition before surfacing a manual-refresh
-      // CTA. `email` is read from auth-state (authoritative on the main
-      // app) and masked in the banner before rendering to keep the raw
-      // address out of screenshots / screen-shares of the banner.
-      showCheckoutSuccess({
-        // The desktop marker acknowledges payment in an arbitrary browser;
-        // it cannot prove that browser is signed into the purchasing Clerk
-        // account. Keep that path informational instead of waiting on (or
-        // displaying) another browser identity's entitlement.
-        waitForEntitlement: !returnedFromDesktopBrowser,
-        accountAgnostic: returnedFromDesktopBrowser,
-        email: returnedFromDesktopBrowser ? null : getAuthState().user?.email ?? null,
-      });
-    } else if (returnResult.kind === 'failed') {
-      trackCheckoutFailed(returnResult.rawStatus);
-      showCheckoutFailureBanner(returnResult.rawStatus);
-    }
-    if (!returnedFromCheckout) {
-      // #4934 round-2 F2: the entitlement watcher reloads the page the
-      // moment Pro lands — often before the deferred Umami queue flushes,
-      // which would silently drop the terminal checkout-success event.
-      // This boot-time replay re-queues it from the durable marker the
-      // pre-reload track left behind (no-op on ordinary loads).
-      replayPendingCheckoutSuccess();
-    }
-    // #4934 round-5: /pro checkout-start events that died with the Dodo
-    // redirect are mirrored in sessionStorage; the buyer lands back here
-    // in the same tab — on BOTH the checkout-return and ordinary branches —
-    // so this replay is unconditional (no-op when nothing is pending).
-    replayPendingProFunnelEvents();
 
-    // Dashboard checkout-start / checkout-failed have the same exposure: both
-    // are followed by a navigation (the Dodo redirect) that outlives any
-    // in-page retry, so their durable markers replay here too.
-    replayPendingConversionEvents();
-    replayPendingMissionReturn();
-
-    // Always register the payment-failure-banner listener — onSubscriptionChange
-    // is an in-memory listener registry, doesn't open any network connection,
-    // and survives the destroy/reinit cycle on auth transitions (see
-    // billing.ts:124-126). Registering once here means the banner reacts when
-    // a user signs in mid-session and the App.ts auth-state subscription
-    // (App.ts:995-1006) starts the Convex subscription watch.
-    this.unsubscribePaymentFailureBanner = initPaymentFailureBanner();
-
-    // Defer Convex subscriptions until a real Clerk identity exists.
-    //
-    // `getUserId()` (user-identity.ts) always returns truthy for browser
-    // users — it falls back to an auto-generated `wm-anon-id` UUID — so the
-    // previous `if (userId)` gate never short-circuited. That meant every
-    // anonymous visitor opened a Convex WebSocket via getConvexClient()
-    // with `setAuth(getClerkToken)` returning null, which the Convex SDK
-    // could not authenticate, producing a constant
-    //   `WebSocket connection to wss://…/api/1.34.0/sync failed`
-    // reconnect loop in DevTools (todo #257 item 4). The subscriptions
-    // themselves never delivered useful state for anon users either:
-    //   - getEntitlementsForUser returns FREE_TIER_DEFAULTS without auth
-    //   - getSubscriptionForUser returns null without auth
-    // — so the loop was pure noise.
-    //
-    // For users who sign in mid-session, App.ts:1003-1006 destroys and
-    // re-initializes both subscriptions against the real Clerk userId, so
-    // skipping here is a no-op for the signed-in path.
-    //
-    // Note: PanelLayoutManager is constructed before initAuthState() awaits
-    // Clerk, so getAuthState().user is null even for users who will silently
-    // restore a Clerk session on this page load. Those users are picked up
-    // by subscribeAuthState a few hundred ms later via the same App.ts
-    // rebind path. Constructor-time anon is the common case.
-    if (getAuthState().user) {
-      const userId = getAuthState().user!.id;
-      initEntitlementSubscription(userId).catch(() => {});
-      initSubscriptionWatch(userId).catch(() => {});
-    }
-
-    // Reload at most once per account and browser tab on a free→pro
-    // transition. Legacy-pro users whose first snapshot is already pro must
-    // not reload, while a newly upgraded user gets one clean boot with every
-    // premium panel initialized against the paid entitlement.
-    //
-    // When we just returned from a Dodo full-page redirect checkout, seed
-    // lastEntitled = false instead of null. The webhook may have already
-    // landed by the time the user's browser comes back, so the first
-    // entitlement snapshot can arrive as pro. Without this seed the
-    // transition detector would swallow that snapshot as "legacy-pro" and
-    // the user would see locked panels until a manual refresh — exactly the
-    // symptom that caused the 2026-04-17/18 duplicate-subscription incident.
-    //
-    // The guard is persisted and verified BEFORE navigation. If storage is
-    // blocked, we fail closed to updatePanelGating() without reloading. This
-    // prevents the customer-visible failure where each new page boot receives
-    // another transient free→pro sequence and reloads again every ~500ms.
-    //
-    // REQUIRES_SKIP_INITIAL_SNAPSHOT_BEHAVIOR — this remains the sole
-    // automatic reload source for post-checkout success. Regression guards:
-    // tests/entitlement-transition.test.mts locks the raw transition semantics;
-    // tests/entitlement-reload-controller.test.mts locks the cross-boot
-    // one-navigation invariant from the daypesta customer recording.
-    const entitlementReloadController = createEntitlementReloadController({
-      returnedFromCheckout: returnedFromAccountCheckout,
-      onSnapshot: () => this.updatePanelGating(getAuthState()),
-      reload: () => {
-        console.log('[entitlements] Subscription activated — reloading once to unlock panels');
-        window.location.reload();
-      },
-    });
-    this.unsubscribeEntitlementChange = onEntitlementChange((state) => {
-      // Desktop checkout is handed to the OS browser, so the app itself never
-      // receives the Dodo return URL. Once its Clerk-bound entitlement becomes
-      // active, retire the app-local retry/referral state here instead. This
-      // is scoped to the desktop app; an anonymous or mismatched browser must
-      // never clear its own unrelated local checkout state.
-      // Preserve null for unavailable auth-handoff snapshots: isEntitlementActive
-      // collapses null→false, which would invent a free→pro edge and re-trigger
-      // the daypesta reload loop (see createEntitlementReloadController).
-      const entitlementActive =
-        state === null ? null : isEntitlementActive(state, Date.now());
-      if (
-        this.ctx.isDesktopApp &&
-        entitlementActive === true &&
-        loadCheckoutAttempt()
-      ) {
-        clearCheckoutAttempt('success');
-      }
-      entitlementReloadController.handleSnapshot(
-        entitlementActive,
-        getAuthState().user?.id ?? null,
-      );
-    });
-
-    // #4771: billing-state transitions can arrive on the SUBSCRIPTION row
-    // alone (webhook flips to on_hold, renewal verification records a
-    // verdict) with no entitlement snapshot change. Re-run gating so the
-    // billing-aware CTA copy tracks the current state, not just the banner.
-    this.unsubscribeSubscriptionChange = onSubscriptionChange(() => {
-      this.updatePanelGating(getAuthState());
-    });
   }
 
   async init(): Promise<void> {
     await this.renderLayout();
     if (this.ctx.isDestroyed) return;
-    void this.reconcileCheckoutReturnFocus();
 
-    // Subscribe to auth state for reactive panel gating on web
-    this.unsubscribeAuth = subscribeAuthState((state) => {
-      this.updatePanelGating(state);
-    });
-
-    this.unsubscribeRuntimeConfig = subscribeRuntimeConfig(() => {
-      this.updatePanelGating(getAuthState());
-    });
-
-    // Handle analyst action chip "Create chart widget →" click
-    this.boundWidgetCreatorHandler = ((e: CustomEvent<{ initialMessage?: string }>) => {
-      void import('@/components/WidgetChatModal').then((m) => m.openWidgetChatModal({
-        mode: 'create',
-        tier: 'pro',
-        initialMessage: e.detail.initialMessage,
-        onComplete: (spec) => {
-          void this.addCustomWidget(spec).catch((error) => {
-            console.error('[widget-builder] failed to add widget', error);
-            showToast(t('widgets.saveFailed'));
-          });
-        },
-      })).catch((err) => console.error('[widget-chat] failed to lazy-load WidgetChatModal', err));
-    }) as EventListener;
-    this.ctx.container.addEventListener('wm:open-widget-creator', this.boundWidgetCreatorHandler);
-
-    // Pro Activation Onboarding: after the dashboard settles, evaluate whether
-    // a pending-onboarding marker should open the interstitial (or surface the
-    // finish-setup chip). Deferred off the boot critical path like the panel
-    // hydration scheduler above.
-    this.proActivationController.init();
-    // Passkey offer: subscribes to auth and evaluates on a genuine sign-in.
-    // Registered after the Pro controller so the activation interstitial —
-    // which is a focus trap — wins the crowded post-sign-in moment; the offer
-    // hides behind it and restores when it closes.
-    this.passkeyOfferController.init();
-  }
-
-  /**
-   * Open + scroll the WM Analyst (chat-analyst) panel into view. The panel is a
-   * lazy/deferred premium panel, so it may not be in `ctx.panels` yet at click
-   * time; scrolling to its reserved grid slot trips the mount observer, and we
-   * retry briefly until the element appears (mirrors search-manager's
-   * scrollToPanelWhenReady contract).
-   */
-  private revealAnalystPanel(attemptsLeft = 12): void {
-    if (this.ctx.isDestroyed || typeof document === 'undefined') return;
-    const key = 'chat-analyst';
-    this.ctx.panels[key]?.show();
-    const el = document.querySelector(`[data-panel="${key}"]`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
-    if (attemptsLeft <= 0) return;
-    window.setTimeout(() => this.revealAnalystPanel(attemptsLeft - 1), 80);
-  }
-
-  private async reconcileCheckoutReturnFocus(): Promise<void> {
-    const state = loadCheckoutReturnState();
-    if (!state || state.delivery.panelFocus !== 'pending') return;
-    if (state.context.origin.kind !== 'mission-preview') return;
-
-    const panelKey = state.context.origin.panelKey;
-    const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
-      ? CSS.escape(panelKey)
-      : panelKey.replace(/["\\]/g, '\\$&');
-    document.querySelector<HTMLElement>(`[data-panel="${escaped}"]`)?.scrollIntoView({
-      block: 'start',
-      behavior: 'smooth',
-    });
-
-    try {
-      const outcome = await waitUntilPanelLive({
-        isLive: () => isCatalogPanelLive(panelKey, this.ctx.panels),
-        signal: this.checkoutReturnFocusController.signal,
-      });
-      if (outcome !== 'live' || this.ctx.isDestroyed) return;
-      const panel = this.ctx.panels[panelKey] as { getElement?: () => HTMLElement | null } | undefined;
-      const instanceElement = panel?.getElement?.();
-      const element = instanceElement?.isConnected
-        ? instanceElement
-        : document.querySelector<HTMLElement>(
-          `[data-panel="${escaped}"]:not([data-deferred-panel])`,
-        );
-      if (!element?.isConnected || element.hasAttribute('data-deferred-panel')) return;
-      element.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      element.tabIndex = -1;
-      element.focus({ preventScroll: true });
-      settleCheckoutReturnFocus();
-    } catch (error) {
-      if ((error as { name?: string }).name !== 'AbortError') {
-        console.warn('[checkout] Failed to restore preview panel focus', error);
-      }
-    }
   }
 
   destroy(): void {
-    this.checkoutReturnFocusController.abort();
     clearAllPendingCalls();
     this.applyTimeRangeFilterDebounced.cancel();
     this.unsubscribeRuntimeConfig?.();
     this.unsubscribeRuntimeConfig = null;
-    this.unsubscribeAuth?.();
-    this.unsubscribeAuth = null;
-    this.proBlockUnsubscribe?.();
-    this.proBlockUnsubscribe = null;
-    this.proBlockEntitlementUnsubscribe?.();
-    this.proBlockEntitlementUnsubscribe = null;
 
     const destroyedTargets = new Set<{ destroy?: () => void }>();
     const destroyOnce = (target: { destroy?: () => void } | null | undefined): void => {
@@ -886,17 +463,6 @@ export class PanelLayoutManager implements AppModule {
     this.ctx.positivePanel = null;
     destroyOnce(this.ctx.renewablePanel);
     this.ctx.renewablePanel = null;
-
-    // Clean up aviation components
-    destroyOnce(this.aviationCommandBar);
-    this.aviationCommandBar = null;
-
-    // Destroy every registered panel exactly once, including lazy-created
-    // and self-fetching panels that own subscriptions, intervals, or aborts.
-    for (const preview of this.missionPreviews.values()) {
-      preview.destroy();
-    }
-    this.missionPreviews.clear();
     for (const panel of Object.values(this.ctx.panels)) {
       destroyOnce(panel);
     }
@@ -913,106 +479,8 @@ export class PanelLayoutManager implements AppModule {
     // recording keys it believes are already mapped.
     this.ctx.newsCategoryPanelKeys.clear();
 
-    // Clean up billing subscription watch + entitlement subscription
-    destroySubscriptionWatch();
-    destroyEntitlementSubscription();
-
-    // Clean up entitlement change listener
-    this.unsubscribeEntitlementChange?.();
-    this.unsubscribeEntitlementChange = null;
-
-    // Clean up subscription-change gating listener (#4771)
-    this.unsubscribeSubscriptionChange?.();
-    this.unsubscribeSubscriptionChange = null;
-
-    // Clean up payment failure banner subscription
-    this.unsubscribePaymentFailureBanner?.();
-    this.unsubscribePaymentFailureBanner = null;
-
-    this.proActivationController.destroy();
-    this.passkeyOfferController.destroy();
-
     removeResponsiveZoneListener(this.responsiveZoneListener);
     this.responsiveZoneListener = null;
-  }
-
-  /** Reactively update premium panel gating based on auth state. */
-  private updatePanelGating(state: AuthSession): void {
-    // Also invalidate requests and queued calls when Telegram has not mounted yet.
-    if (this.ctx.isDesktopApp && !hasPremiumAccess(state)) clearTelegramIntelCache();
-    // #4771: resolve the billing-aware refinement of FREE_TIER once per pass
-    // — the inputs (subscription/entitlement snapshots, now) are invariant
-    // across the panel loop, and a single Date.now() keeps every panel on
-    // the same verdict at a period-end boundary.
-    const billingAwareFreeTier = resolveBillingAwareGateReason(PanelGateReason.FREE_TIER);
-    for (const [key, panel] of Object.entries(this.ctx.panels)) {
-      const isPremium = WEB_PREMIUM_PANELS.has(key)
-        || (this.ctx.isDesktopApp && key === 'telegram-intel');
-      let reason = getPanelGateReason(state, isPremium);
-
-      // Clerk-pro-only panels: even when hasPremiumAccess() returns
-      // true via API/tester key, these panels need a Clerk userId
-      // bound to a PRO entitlement. We DO NOT trust client-side
-      // entitlement state as an authoritative gate — the server-side
-      // /api/latest-brief check is authoritative. We only downgrade
-      // the gate reason here as AFFIRMATIVE DENIAL: when we KNOW
-      // (snapshot loaded AND tier < 1) the user is free. In every
-      // other case — snapshot not yet loaded, Convex subscription
-      // skipped, transient failure — we leave the panel unlocked
-      // and let the server 403 path drive the upgrade CTA inside
-      // the panel's refresh() catch block.
-      //
-      // Prior iterations of this code tried the opposite — gating
-      // positively on hasTier(1) — and locked legitimate Pro users
-      // out whenever the Convex snapshot was late, skipped, or
-      // failed. Affirmative-denial-only is the right shape: never
-      // over-gate, accept the one-doomed-fetch-per-session cost
-      // for API-key-only + free-Clerk users as the lesser harm.
-      if (
-        reason === PanelGateReason.NONE &&
-        WEB_CLERK_PRO_ONLY_PANELS.has(key) &&
-        getEntitlementState() !== null &&
-        !hasTier(1)
-      ) {
-        reason = state.user ? PanelGateReason.FREE_TIER : PanelGateReason.ANONYMOUS;
-      }
-
-      // #4771: a FREE_TIER verdict for a customer with stale paid evidence
-      // becomes a billing-state reason (verifying renewal / update payment /
-      // resubscribe) so we never push a paying user toward duplicate checkout.
-      if (reason === PanelGateReason.FREE_TIER) reason = billingAwareFreeTier;
-
-      const gatedPanel = panel as Panel;
-      const principal = state.user?.id ?? null;
-      const principalChanged = this.gatingPrincipal !== undefined && this.gatingPrincipal !== principal;
-      const hadUnlockedPayload = isPremium && this.premiumPanelsUnlocked.has(key);
-      if (hadUnlockedPayload && (principalChanged || reason !== PanelGateReason.NONE)) {
-        gatedPanel.clearSensitiveContent();
-      }
-
-      if (reason === PanelGateReason.NONE) {
-        // Bind before unlock so a snapshot taken under another user is refused.
-        gatedPanel.bindContentPrincipal(principal);
-        gatedPanel.unlockPanel();
-        if (isPremium) this.premiumPanelsUnlocked.add(key);
-      } else {
-        // Snapshot while the previous principal is still bound, then record
-        // the user who is now locked out.
-        const onAction = resolveGateAction(reason, {
-          openAuthModal: () => this.ctx.authModal?.open(),
-        });
-        gatedPanel.showGatedCta(reason, onAction);
-        gatedPanel.bindContentPrincipal(principal);
-        this.premiumPanelsUnlocked.delete(key);
-      }
-    }
-    this.gatingPrincipal = state.user?.id ?? null;
-
-    // KTD8: the tab cap rides the SAME pass, so it re-evaluates on both
-    // subscribeAuthState and onEntitlementChange (plus onSubscriptionChange).
-    // An auth-only subscription would miss the post-checkout snapshot — the
-    // bug documented at the proBlock wiring below.
-    this.updateTabCapLock();
   }
 
   /** #5159/#5205/#5201: storage access can throw (blocked cookies, sandboxed
@@ -1063,7 +531,6 @@ export class PanelLayoutManager implements AppModule {
     setTrustedHtml(this.ctx.container, trustedHtml(`
       ${this.ctx.isDesktopApp ? '<div class="tauri-titlebar" data-tauri-drag-region></div>' : ''}
       <a href="#main" class="skip-link">Skip to main content</a>
-      <div id="proBannerSlot" class="pro-banner-slot" aria-live="polite"></div>
       <div class="header" role="banner">
         <div class="header-left">
           <div class="variant-switcher">${(() => {
@@ -1127,14 +594,7 @@ export class PanelLayoutManager implements AppModule {
               <span class="variant-label">Good News</span>
             </a>`;
       })()}</div>
-          <span class="logo">MONITOR</span><span class="logo-mobile">World Monitor</span><span class="version">v${__APP_VERSION__}</span>${BETA_MODE ? '<span class="beta-badge">BETA</span>' : ''}
-          <a href="https://x.com/eliehabib" target="_blank" rel="noopener" class="credit-link">
-            <svg class="x-logo" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-            <span class="credit-text">@eliehabib</span>
-          </a>
-          <a href="https://github.com/koala73/worldmonitor" target="_blank" rel="noopener" class="github-link" title="${t('header.viewOnGitHub')}" aria-label="${t('header.viewOnGitHub')}">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-          </a>
+          <span class="logo">MONITOR</span><span class="logo-mobile">World Monitor</span>${BETA_MODE ? '<span class="beta-badge">BETA</span>' : ''}
           <button class="mobile-settings-btn" id="mobileSettingsBtn" title="${t('header.settings')}" aria-label="${t('header.settings')}">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
@@ -1166,7 +626,6 @@ export class PanelLayoutManager implements AppModule {
           ${this.ctx.isDesktopApp ? '' : `<button class="fullscreen-btn" id="fullscreenBtn" title="${t('header.fullscreen')}" aria-label="${t('header.fullscreen')}">⛶</button>`}
           ${SITE_VARIANT === 'happy' ? `<button class="tv-mode-btn" id="tvModeBtn" title="TV Mode (Shift+T)" aria-label="TV Mode"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>` : ''}
           <span id="unifiedSettingsMount"></span>
-          <span id="authWidgetMount" class="auth-widget-mount"></span>
         </div>
       </div>
       <div class="mobile-menu-overlay" id="mobileMenuOverlay"></div>
@@ -1176,12 +635,6 @@ export class PanelLayoutManager implements AppModule {
           <button class="mobile-menu-close" id="mobileMenuClose" aria-label="Close menu">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
-        </div>
-        <div class="mobile-menu-divider"></div>
-        <div class="mobile-menu-account" aria-label="Account">
-          <span class="mobile-menu-account-icon" aria-hidden="true">◯</span>
-          <div id="mobileAuthWidgetMount"></div>
-          <button class="mobile-auth-fallback" id="mobileAuthFallback" type="button">Sign In</button>
         </div>
         <div class="mobile-menu-divider"></div>
         ${(() => {
@@ -1221,19 +674,10 @@ export class PanelLayoutManager implements AppModule {
           <span class="mobile-menu-item-icon">${getCurrentTheme() === 'dark' ? '☀️' : '🌙'}</span>
           <span class="mobile-menu-item-label">${getCurrentTheme() === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
         </button>
-        <a class="mobile-menu-item" href="https://x.com/eliehabib" target="_blank" rel="noopener">
-          <span class="mobile-menu-item-icon"><svg class="x-logo" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></span>
-          <span class="mobile-menu-item-label">@eliehabib</span>
-        </a>
         <div class="mobile-menu-divider"></div>
         <div class="mobile-menu-footer-links">
           ${referenceLinksHtml}
-          <a href="${referenceOrigin}/pro#pricing" target="_blank" rel="noopener">Pricing</a>
-          <a href="https://www.worldmonitor.app/blog/" target="_blank" rel="noopener">Blog</a>
-          <a href="https://www.worldmonitor.app/docs/documentation" target="_blank" rel="noopener">Docs</a>
-          <a href="https://status.worldmonitor.app/" target="_blank" rel="noopener">Status</a>
         </div>
-        <div class="mobile-menu-version">v${__APP_VERSION__}</div>
       </nav>
       <div class="region-sheet-backdrop" id="regionSheetBackdrop"></div>
       <div class="region-bottom-sheet" id="regionBottomSheet">
@@ -1306,26 +750,6 @@ export class PanelLayoutManager implements AppModule {
           <span class="mobile-tab-icon" aria-hidden="true">•••</span><span>More</span>
         </button>
       </nav>
-      <footer class="site-footer">
-        <div class="site-footer-brand">
-          <img src="/favico/android-chrome-96x96.png" alt="" width="28" height="28" loading="lazy" decoding="async" class="site-footer-icon" />
-          <div class="site-footer-brand-text">
-            <span class="site-footer-name">WORLD MONITOR</span>
-            <span class="site-footer-sub">v${__APP_VERSION__} &middot; <a href="https://x.com/eliehabib" target="_blank" rel="noopener" class="site-footer-credit">@eliehabib</a></span>
-          </div>
-        </div>
-        <nav aria-label="World Monitor references">
-          ${referenceLinksHtml}
-          <a href="${referenceOrigin}/pro#pricing" target="_blank" rel="noopener">Pricing</a>
-          <a href="https://www.worldmonitor.app/blog/" target="_blank" rel="noopener">Blog</a>
-          <a href="https://www.worldmonitor.app/docs/documentation" target="_blank" rel="noopener">Docs</a>
-          <a href="https://status.worldmonitor.app/" target="_blank" rel="noopener">Status</a>
-          <a href="https://github.com/koala73/worldmonitor" target="_blank" rel="noopener">GitHub</a>
-          <a href="https://x.com/worldmonitorai" target="_blank" rel="noopener">X</a>
-          ${this.ctx.isDesktopApp ? '' : `<span id="footerDownloadMount"></span>`}
-        </nav>
-        <span class="site-footer-copy">&copy; ${new Date().getFullYear()} World Monitor</span>
-      </footer>
     `, "legacy direct innerHTML migration"));
     // Mark AFTER the innerHTML swap so the timestamp reflects when the new shell
     // DOM is actually live — placing it before setTrustedHtml recorded a time
@@ -1374,11 +798,11 @@ export class PanelLayoutManager implements AppModule {
 
     let state = loadTabsState();
     if (!state) {
-      // First run — wrap the user's current layout in an initial tab so
-      // nothing changes visually until they create a second tab.
+      // Preserve existing panel preferences while making Main the map workspace.
       const initial: PanelTab = {
         id: generateTabId(),
         name: t('dashboardTabs.defaultName'),
+        view: 'map',
         ...this.captureCurrentTabState(),
       };
       state = { activeTabId: initial.id, tabs: [initial] };
@@ -1391,6 +815,8 @@ export class PanelLayoutManager implements AppModule {
     // the tier is unresolved; the App-owned fallback counts as a settled free
     // answer and also re-runs this method for tabs not yet opened.
     this.healStoredTabSnapshots();
+    saveTabsState(state);
+    this.applyPanelSettings();
 
     this.panelTabBar = new PanelTabBar(() => this.tabsState!, {
       onSelect: (id) => this.switchToTab(id),
@@ -1432,11 +858,9 @@ export class PanelLayoutManager implements AppModule {
         );
       }
       case 'create': {
-        const resolved = resolveCreateDashboardTab(this.tabsState, cap, action.name);
+        const resolved = resolveCreateDashboardTab(this.tabsState, action.name);
         if (!resolved.ok) {
-          if (resolved.reason === 'tab_cap') trackGateHit('dashboard-tab');
           return mutationDenied('create', resolved.reason, resolved.message, {
-            ...(resolved.lockReason ? { lockReason: resolved.lockReason } : {}),
             cap: cap.cap,
             canCreate: cap.allowed,
             tabCount: this.tabsState.tabs.length,
@@ -1853,12 +1277,13 @@ export class PanelLayoutManager implements AppModule {
     const tab: PanelTab = {
       id: generateTabId(),
       name,
+      view: 'panels',
       // Same unresolved-tier caveat as applyTabPanelState: clamping a new tab
       // before the entitlement is known bakes a free-tier layout into a Pro
       // user's workspace before its ownership marker can be safely reconciled.
       // The variant default set can also exceed FREE_MAX_PANELS.
-      panelSettings: this.isProTierResolvedOrFallback()
-        ? enforceFreePanelLimit(defaults.panelSettings, isProUser())
+      panelSettings: true
+        ? sanitizePublicPanelSettings(defaults.panelSettings)
         : defaults.panelSettings,
       panelOrder: defaults.panelOrder,
       bottomSet: [],
@@ -1884,12 +1309,11 @@ export class PanelLayoutManager implements AppModule {
    */
   public healStoredTabSnapshots(): void {
     const state = this.tabsState;
-    if (!state || !this.isProTierResolvedOrFallback()) return;
+    if (!state || !true) return;
 
-    const pro = isProUser();
-    let healedSnapshots = pro ? this.restoreLegacyCustomWidgetTabs(state) : false;
+    let healedSnapshots = false;
     for (const tab of state.tabs) {
-      const clamped = enforceFreePanelLimit(tab.panelSettings, pro);
+      const clamped = sanitizePublicPanelSettings(tab.panelSettings);
       if (this.panelSettingsEnabledStateChanged(tab.panelSettings, clamped)) {
         healedSnapshots = true;
       }
@@ -1898,42 +1322,11 @@ export class PanelLayoutManager implements AppModule {
     if (healedSnapshots) saveTabsState(state);
   }
 
-  private isProTierResolvedOrFallback(): boolean {
-    return isProTierResolved() || this.callbacks.isFreeTierFallbackActive?.() === true;
-  }
-
-  /**
-   * Repair pre-`proGated` widget damage in saved tabs once per browser.
-   *
-   * App's global recovery can run before panel tabs initialize, so tabs own a
-   * separate marker. The same ambiguity applies here: markerless disabled
-   * widgets may be deliberate hides, which is why this sweep is bounded to one
-   * migration pass rather than being re-run on every entitlement refresh.
-   */
-  private restoreLegacyCustomWidgetTabs(state: TabsState): boolean {
-    try {
-      if (localStorage.getItem(CW_PRO_GATE_TAB_RECOVERY_KEY)) return false;
-
-      const ownedWidgetIds = new Set(loadWidgets().map((widget) => widget.id));
-      let changed = false;
-      for (const tab of state.tabs) {
-        const restored = sweepLegacyDisabledCustomWidgets(tab.panelSettings, ownedWidgetIds);
-        if (panelGateStateChanged(tab.panelSettings, restored)) changed = true;
-        tab.panelSettings = restored;
-      }
-      localStorage.setItem(CW_PRO_GATE_TAB_RECOVERY_KEY, 'done');
-      return changed;
-    } catch {
-      // Persistence-only migration; blocked storage leaves the tab usable.
-      return false;
-    }
-  }
-
   private panelSettingsEnabledStateChanged(
     before: Record<string, PanelConfig>,
     after: Record<string, PanelConfig>,
   ): boolean {
-    return panelGateStateChanged(before, after);
+    return JSON.stringify(before) !== JSON.stringify(after);
   }
 
   /** Capture the live panel state (settings + order) for a tab snapshot. */
@@ -1969,35 +1362,8 @@ export class PanelLayoutManager implements AppModule {
     return persist;
   }
 
-  /**
-   * Tab-cap state for the CURRENT tab count (plan 2026-07-25-001, KTD8).
-   * Pushes the locked/unlocked state into the tab bar and returns the verdict
-   * so `addTab` can enforce it without resolving twice.
-   *
-   * CREATION-ONLY: nothing here removes a tab. A user sitting above their cap
-   * (downgrade, lowered allowance, tabs created during a null-snapshot window)
-   * keeps every tab they have — only the "+" locks.
-   */
   private updateTabCapLock(): TabCapVerdict {
-    const verdict = evaluateTabCap(getAuthState(), this.tabsState?.tabs.length ?? 0);
-    if (verdict.allowed) {
-      // Only a would-be-capped user pays for the catalog probe; the cap stays
-      // inactive until Pro Business is provably purchasable, so the limit and
-      // the tier flip together (R10). Single-flight and shared with U5.
-      if (verdict.pendingActivation) {
-        void primeExportGateActivation().then((active) => {
-          if (active && !this.ctx.isDestroyed) this.updateTabCapLock();
-        });
-      }
-      this.panelTabBar?.setAddLock(null);
-      return verdict;
-    }
-    const reason = exportLockToGateReason(verdict.reason);
-    this.panelTabBar?.setAddLock({
-      copy: tabCapGateCopy(reason, verdict.cap),
-      onAction: resolveGateAction(reason, { openAuthModal: () => this.ctx.authModal?.open() }),
-    });
-    return verdict;
+    return { allowed: true, cap: null, pendingActivation: false };
   }
 
   private addTab(): void {
@@ -2005,10 +1371,6 @@ export class PanelLayoutManager implements AppModule {
 
     const verdict = this.updateTabCapLock();
     if (!verdict.allowed) {
-      // The metric fires on a blocked CLICK, never on render — a control
-      // nobody reached for is not a gate hit.
-      trackGateHit('dashboard-tab');
-      this.panelTabBar?.showAddLockNotice();
       return;
     }
 
@@ -2027,9 +1389,13 @@ export class PanelLayoutManager implements AppModule {
   }
 
   private deleteTab(tabId: string): TabsPersistReceipt {
-    if (!this.tabsState || this.tabsState.tabs.length <= 1) return { persisted: true };
-    const idx = this.tabsState.tabs.findIndex((t) => t.id === tabId);
-    if (idx === -1) return { persisted: true };
+    if (!this.tabsState) return { persisted: true };
+    const resolved = resolveDeleteDashboardTab(this.tabsState, tabId, true);
+    if (!resolved.ok) {
+      showToast(resolved.message);
+      return { persisted: false };
+    }
+    const idx = resolved.index;
     const wasActive = this.tabsState.activeTabId === tabId;
     const [removed] = this.tabsState.tabs.splice(idx, 1);
 
@@ -2066,18 +1432,15 @@ export class PanelLayoutManager implements AppModule {
     for (const [key, config] of Object.entries(panelSettings)) {
       next[key] = { ...config };
     }
-    // Carry over panels missing from the snapshot: dynamic panels (custom
-    // widgets / MCP / desktop config created after the snapshot) keep their
-    // current config so they don't get orphaned visible-but-untracked;
-    // panels added to the app since the snapshot seed from variant defaults
-    // (same formula as the App.ts settings merge).
+    // Newly discovered panels stay available without silently appearing in
+    // workspaces where the user has not selected them.
     for (const [key, config] of Object.entries(this.ctx.panelSettings)) {
       if (next[key]) continue;
       if (isDynamicPanel(key)) {
-        next[key] = { ...config };
+        next[key] = { ...config, enabled: false };
       } else {
         const effective = getEffectivePanelConfig(key, SITE_VARIANT);
-        next[key] = { ...effective, enabled: isPanelInVariantDefaults(key) && effective.enabled };
+        next[key] = { ...effective, enabled: false };
       }
     }
 
@@ -2092,8 +1455,8 @@ export class PanelLayoutManager implements AppModule {
     // live for at most that window; App re-runs enforcement (and
     // healStoredTabSnapshots) when the entitlement resolves or the fallback
     // settles the account as free.
-    const capped = this.isProTierResolvedOrFallback()
-      ? enforceFreePanelLimit(next, isProUser())
+    const capped = true
+      ? sanitizePublicPanelSettings(next)
       : next;
 
     this.ctx.panelSettings = capped;
@@ -2131,7 +1494,8 @@ export class PanelLayoutManager implements AppModule {
     const headerLeft = mapSection?.querySelector('.panel-header-left');
     if (!mapSection || !headerLeft) return;
 
-    const collapsed = PanelLayoutManager.isMobileMapCollapsedPreferred();
+    const collapsed = !document.getElementById('main')?.classList.contains('map-workspace')
+      && PanelLayoutManager.isMobileMapCollapsedPreferred();
     if (collapsed) mapSection.classList.add('collapsed');
 
     const btn = document.createElement('button');
@@ -2209,7 +1573,7 @@ export class PanelLayoutManager implements AppModule {
 
     this.criticalBannerEl.querySelector('.banner-view')?.addEventListener('click', () => {
       console.log('[Banner] View Region clicked:', top.theaterId, 'lat:', top.centerLat, 'lon:', top.centerLon);
-      trackCriticalBannerAction('view', top.theaterId);
+
       if (typeof top.centerLat === 'number' && typeof top.centerLon === 'number') {
         if (this.ctx.isMobile) this.revealMobileMap();
         this.ctx.map?.setCenter(top.centerLat, top.centerLon, 4);
@@ -2219,7 +1583,7 @@ export class PanelLayoutManager implements AppModule {
     });
 
     this.criticalBannerEl.querySelector('.banner-dismiss')?.addEventListener('click', () => {
-      trackCriticalBannerAction('dismiss', top.theaterId);
+
       this.criticalBannerEl?.classList.add('dismissed');
       document.body.classList.remove('has-critical-banner');
       writeSessionStorageValue('banner-dismissed', Date.now().toString());
@@ -2227,23 +1591,28 @@ export class PanelLayoutManager implements AppModule {
   }
 
   applyPanelSettings(): void {
+    const mapWorkspace = this.tabsState?.tabs.find(tab => tab.id === this.tabsState?.activeTabId)?.view === 'map';
+    document.getElementById('main')?.classList.toggle('map-workspace', mapWorkspace);
     Object.entries(this.ctx.panelSettings).forEach(([key, config]) => {
       if (key === 'map') {
         const mapSection = document.getElementById('mapSection');
         if (mapSection) {
-          mapSection.classList.toggle('hidden', !config.enabled);
+          const enabled = mapWorkspace || config.enabled;
+          mapSection.classList.toggle('hidden', !enabled);
+          if (mapWorkspace) mapSection.classList.remove('collapsed');
           const mainContent = document.querySelector('.main-content');
           if (mainContent) {
-            mainContent.classList.toggle('map-hidden', !config.enabled);
+            mainContent.classList.toggle('map-hidden', !enabled);
           }
           this.ensureCorrectZones();
         }
         return;
       }
+      const enabled = !mapWorkspace && config.enabled;
       const deferred = this.deferredPanelMounts.get(key);
       const placeholderWasHidden = deferred?.placeholder?.classList.contains('hidden') ?? false;
       let mountedFromDeferred = false;
-      if (config.enabled && deferred && !deferred.mounted && (!deferred.placeholder || placeholderWasHidden)) {
+      if (enabled && deferred && !deferred.mounted && (!deferred.placeholder || placeholderWasHidden)) {
         mountedFromDeferred = this.mountDeferredPanel(key);
       }
       // Reconcile placeholder visibility even when the mount attempt no-ops
@@ -2253,24 +1622,24 @@ export class PanelLayoutManager implements AppModule {
       // load then fails, since a hidden shell can never intersect the retry
       // observer.
       if (!mountedFromDeferred && deferred?.placeholder) {
-        deferred.placeholder.classList.toggle('hidden', !config.enabled);
+        deferred.placeholder.classList.toggle('hidden', !enabled);
       }
       const panel = this.ctx.panels[key];
       if (deferred?.placeholder?.isConnected) applyPanelFontScale(deferred.placeholder, config.fontScale);
       if (panel) applyPanelFontScale(panel.getElement(), config.fontScale);
       const liveMediaPanel = panel as { stopLiveMediaForClose?: () => void; resumeLiveMediaForShow?: () => void } | undefined;
-      if (!config.enabled) {
+      if (!enabled) {
         liveMediaPanel?.stopLiveMediaForClose?.();
       }
       if (!mountedFromDeferred) {
-        panel?.toggle(config.enabled);
+        panel?.toggle(enabled);
       }
-      if (config.enabled) {
+      if (enabled) {
         liveMediaPanel?.resumeLiveMediaForShow?.();
       }
     });
     this.mobilePanelNav?.refresh();
-    this.syncAllMissionPreviews();
+    this.ctx.map?.resize();
   }
 
   /**
@@ -2425,36 +1794,6 @@ export class PanelLayoutManager implements AppModule {
     }
   }
 
-  private missionPreviews = new Map<string, ProPreviewSection>();
-
-  /**
-   * Keep each mounted panel's Pro preview in sync with the ACTIVE mission
-   * (plan U5). The registry is the only authority: a preview exists exactly
-   * when the active mission's entry targets this panel, so a mission switch,
-   * a reset, or a registry rollback all converge through this one seam.
-   * Attached as a sibling AFTER the panel's content, so the panel's own
-   * content re-renders never touch it.
-   */
-  private syncMissionPreview(key: string, panel: Panel, activeMissionId?: string | null): void {
-    const missionId = activeMissionId !== undefined ? activeMissionId : (loadStoredMissionPreset()?.id ?? null);
-    syncPanelPreview(
-      this.missionPreviews,
-      key,
-      panel.getElement(),
-      missionId,
-      (spec) => new ProPreviewSection(spec),
-    );
-  }
-
-  private syncAllMissionPreviews(): void {
-    // One preset read for the whole board — this runs on every
-    // applyPanelSettings call, mission or not (hot-path rule).
-    const missionId = loadStoredMissionPreset()?.id ?? null;
-    for (const [key, panel] of Object.entries(this.ctx.panels)) {
-      if (panel) this.syncMissionPreview(key, panel, missionId);
-    }
-  }
-
   private mountPanelElement(grid: HTMLElement, key: string, panel: Panel, placeholder?: HTMLElement | null): boolean {
     const el = panel.getElement();
     if (el.parentElement) return false;
@@ -2468,7 +1807,6 @@ export class PanelLayoutManager implements AppModule {
     }
     this.mobilePanelNav?.applyToNewPanel(el);
     panel.notifyConnected();
-    this.syncMissionPreview(key, panel);
     return true;
   }
 
@@ -2661,7 +1999,6 @@ export class PanelLayoutManager implements AppModule {
     const domain = CORRELATION_DOMAINS.find(domain => key === `${domain}-correlation`);
     const engine = this.ctx.correlationEngine;
     if (domain && engine) {
-      (panel as CorrelationPanel).setAssessmentHandler(cards => engine.assessCards(domain, cards));
     }
     const config = this.ctx.panelSettings[key];
     if (config) panel.toggle(config.enabled);
@@ -2713,8 +2050,6 @@ export class PanelLayoutManager implements AppModule {
 
     this.lazyDefaultPanel('heatmap', () => import('@/components/MarketPanel'), 'HeatmapPanel');
     this.lazyDefaultPanel('markets', () => import('@/components/MarketPanel'), 'MarketPanel');
-    this.lazyDefaultPanel('stock-analysis', () => import('@/components/StockAnalysisPanel'), 'StockAnalysisPanel');
-    this.lazyDefaultPanel('stock-backtest', () => import('@/components/StockBacktestPanel'), 'StockBacktestPanel');
     // Web premium gating for stock-analysis and stock-backtest is handled
     // reactively by updatePanelGating() via auth state subscription.
 
@@ -2727,11 +2062,6 @@ export class PanelLayoutManager implements AppModule {
       });
       return monitorPanel;
     });
-
-    // Latest Brief — reads /api/latest-brief and opens the hosted
-    // magazine on click. Self-fetching (no data-loader integration);
-    // PRO gating handled by the base Panel class via premium: 'locked'.
-    this.lazyDefaultPanel('latest-brief', () => import('@/components/LatestBriefPanel'), 'LatestBriefPanel');
 
     this.lazyDefaultPanel('commodities', () => import('@/components/MarketPanel'), 'CommoditiesPanel');
     this.lazyDefaultPanel('energy-complex', () => import('@/components/EnergyComplexPanel'), 'EnergyComplexPanel');
@@ -2782,22 +2112,7 @@ export class PanelLayoutManager implements AppModule {
     this.createNewsPanel('ipo', 'panels.ipo');
     this.createNewsPanel('thinktanks', 'panels.thinktanks');
     this.lazyDefaultPanel('economic', () => import('@/components/EconomicPanel'), 'EconomicPanel');
-    this.lazyDefaultPanel('global-procurement', () => import('@/components/GlobalProcurementPanel'), 'GlobalProcurementPanel');
     this.lazyDefaultPanel('consumer-prices', () => import('@/components/ConsumerPricesPanel'), 'ConsumerPricesPanel');
-
-    this.lazyDefaultPanel('trade-policy', () => import('@/components/TradePolicyPanel'), 'TradePolicyPanel');
-    this.lazyDefaultPanel('sanctions-pressure', () => import('@/components/SanctionsPressurePanel'), 'SanctionsPressurePanel');
-    this.lazyImportedPanel('supply-chain', () => import('@/components/SupplyChainPanel'), 'SupplyChainPanel', (SupplyChainPanel) => {
-      const supplyChainPanel = new SupplyChainPanel();
-      supplyChainPanel.setOnScenarioActivate((id, result) => {
-        this.ctx.map?.activateScenario(id, result);
-      });
-      supplyChainPanel.setOnDismissScenario(() => {
-        this.ctx.map?.deactivateScenario();
-      });
-      this.ctx.map?.setSupplyChainPanel(supplyChainPanel);
-      return supplyChainPanel;
-    });
     this.lazyImportedPanel('china-corridors', () => import('@/components/ChinaCorridorPanel'), 'ChinaCorridorPanel', (ChinaCorridorPanel) => {
       const panel = new ChinaCorridorPanel();
       panel.setOnCorridorSelect((corridor) => {
@@ -2851,23 +2166,6 @@ export class PanelLayoutManager implements AppModule {
     }
 
     this.lazyDefaultPanel('gdelt-intel', () => import('@/components/GdeltIntelPanel'), 'GdeltIntelPanel');
-
-    this.lazyPanel('deduction', () =>
-      this.importPanel(
-        'deduction',
-        () => import('@/components/DeductionPanel'),
-        'DeductionPanel',
-        (DeductionPanel) => new DeductionPanel(() => this.ctx.allNews),
-      ),
-    );
-    this.lazyPanel('regional-intelligence', () =>
-      this.importPanel(
-        'regional-intelligence',
-        () => import('@/components/RegionalIntelligenceBoard'),
-        'RegionalIntelligenceBoard',
-        (RegionalIntelligenceBoard) => new RegionalIntelligenceBoard(),
-      ),
-    );
 
     this.lazyImportedPanel('cii', () => import('@/components/CIIPanel'), 'CIIPanel', (CIIPanel) => {
       const ciiPanel = new CIIPanel();
@@ -2934,7 +2232,6 @@ export class PanelLayoutManager implements AppModule {
 
     this.lazyDefaultPanel('disease-outbreaks', () => import('@/components/DiseaseOutbreaksPanel'), 'DiseaseOutbreaksPanel');
     this.lazyDefaultPanel('social-velocity', () => import('@/components/SocialVelocityPanel'), 'SocialVelocityPanel');
-    this.lazyDefaultPanel('wsb-ticker-scanner', () => import('@/components/WsbTickerScannerPanel'), 'WsbTickerScannerPanel');
 
     this.lazyImportedPanel('displacement', () => import('@/components/DisplacementPanel'), 'DisplacementPanel', (DisplacementPanel) => {
       const p = new DisplacementPanel();
@@ -2968,37 +2265,7 @@ export class PanelLayoutManager implements AppModule {
       return p;
     });
 
-    const _lockPanels = this.ctx.isDesktopApp && !hasPremiumAccess();
-
-    this.lazyDefaultPanel('daily-market-brief', () => import('@/components/DailyMarketBriefPanel'), 'DailyMarketBriefPanel');
-
-    this.lazyDefaultPanel('market-implications', () => import('@/components/MarketImplicationsPanel'), 'MarketImplicationsPanel');
-    // Gating for daily-market-brief, market-implications, and chat-analyst is handled
-    // reactively by updatePanelGating() via auth state subscription (all in WEB_PREMIUM_PANELS).
-
-    this.lazyImportedPanel('chat-analyst', () => import('@/components/ChatAnalystPanel'), 'ChatAnalystPanel', (ChatAnalystPanel) => {
-      // agent-bus-applier (and its zod-backed shared/agent-bus-actions schemas, ~69KB)
-      // is only reachable through this lazy panel's action handler. Start loading it
-      // here so it stays off the eager main entry, but do not make plain chat depend
-      // on the optional dashboard-control chunk being available.
-      const panel = new ChatAnalystPanel();
-      void import('@/app/agent-bus-applier')
-        .then(({ applyAgentBusAction }) => {
-          panel.setDashboardActionHandler((action) => applyAgentBusAction(this.ctx, action, {
-            getPanelConfig: (panelId) => getEffectivePanelConfig(panelId, SITE_VARIANT),
-            isPanelAllowed: (panelId, config) => isPanelEntitled(panelId, config, hasPremiumAccess(getAuthState())),
-            hasPremiumAccess: () => hasPremiumAccess(getAuthState()),
-            applyViewChange: (viewAction) => {
-              if (viewAction.view) trackMapViewChange(viewAction.view);
-            },
-            applyLayerChange: this.callbacks.applyMapLayerChange,
-          }));
-        })
-        .catch((err) => {
-          console.error('[panel] failed to lazy-load "chat-analyst" dashboard action handler', err);
-        });
-      return panel;
-    });
+    const _lockPanels = this.ctx.isDesktopApp && !false;
 
     this.lazyDefaultPanel(
       'forecast',
@@ -3020,7 +2287,7 @@ export class PanelLayoutManager implements AppModule {
       'telegram-intel',
       () => import('@/components/TelegramIntelPanel'),
       'TelegramIntelPanel',
-      (panel) => panel.setAccessGrantedHandler(() => { void this.callbacks.loadTelegramIntel?.(); }),
+      () => { void this.callbacks.loadTelegramIntel?.(); },
     );
 
     this.lazyDefaultPanel(
@@ -3041,18 +2308,6 @@ export class PanelLayoutManager implements AppModule {
     });
 
     this.lazyDefaultPanel('world-clock', () => import('@/components/WorldClockPanel'), 'WorldClockPanel');
-
-    this.lazyImportedPanel('airline-intel', () => import('@/components/AirlineIntelPanel'), 'AirlineIntelPanel', (AirlineIntelPanel) => {
-      const panel = new AirlineIntelPanel();
-      void import('@/components/AviationCommandBar')
-        .then(({ AviationCommandBar }) => {
-          if (!this.ctx.isDestroyed) this.aviationCommandBar = new AviationCommandBar();
-        })
-        .catch((err) => {
-          console.error('[panel] failed to lazy-load "airline-intel" command bar', err);
-        });
-      return panel;
-    });
 
     this.lazyPanel('gulf-economies', () =>
       this.importPanel('gulf-economies', () => import('@/components/GulfEconomiesPanel'), 'GulfEconomiesPanel', (GulfEconomiesPanel) => new GulfEconomiesPanel()),
@@ -3110,12 +2365,6 @@ export class PanelLayoutManager implements AppModule {
       if (isPanelInVariantDefaults('tech-readiness')) {
         void p.refresh();
       }
-      return p;
-    });
-
-    this.lazyImportedPanel('national-debt', () => import('@/components/NationalDebtPanel'), 'NationalDebtPanel', (NationalDebtPanel) => {
-      const p = new NationalDebtPanel();
-      void p.refresh();
       return p;
     });
 
@@ -3260,21 +2509,6 @@ export class PanelLayoutManager implements AppModule {
       );
     }
 
-    for (const spec of loadMcpPanels()) {
-      if (!this.ctx.panelSettings[spec.id]) {
-        this.ctx.panelSettings[spec.id] = { name: spec.title, enabled: true, priority: 3 };
-      }
-      const capturedSpec = spec;
-      this.lazyPanel(spec.id, () =>
-        this.importPanel(
-          spec.id,
-          () => import('@/components/McpDataPanel'),
-          'McpDataPanel',
-          (McpDataPanel) => new McpDataPanel(capturedSpec),
-        ),
-      );
-    }
-
     const variantOrder = (VARIANT_DEFAULTS[SITE_VARIANT] ?? VARIANT_DEFAULTS['full'] ?? []).filter(k => k !== 'map');
     const activePanelSet = new Set(Object.keys(this.ctx.panelSettings));
     const crossVariantKeys = Object.keys(this.ctx.panelSettings).filter(k => !variantOrder.includes(k) && k !== 'map');
@@ -3369,87 +2603,6 @@ export class PanelLayoutManager implements AppModule {
     });
     panelsGrid.appendChild(addPanelBlock);
 
-    // Always create Pro and MCP add-panel blocks — show/hide reactively via auth state.
-    const proBlock = document.createElement('button');
-    proBlock.className = 'add-panel-block ai-widget-block ai-widget-block-pro';
-    proBlock.dataset.clsMover = 'pro-widget-cta';
-    proBlock.setAttribute('aria-label', t('widgets.createInteractive'));
-    const proIcon = document.createElement('span');
-    proIcon.className = 'add-panel-block-icon';
-    proIcon.textContent = '\u26a1';
-    const proLabel = document.createElement('span');
-    proLabel.className = 'add-panel-block-label';
-    proLabel.textContent = t('widgets.createInteractive');
-    const proBadge = document.createElement('span');
-    proBadge.className = 'widget-pro-badge';
-    proBadge.textContent = t('widgets.proBadge');
-    proBlock.appendChild(proIcon);
-    proBlock.appendChild(proLabel);
-    proBlock.appendChild(proBadge);
-    proBlock.addEventListener('click', () => {
-      void import('@/components/WidgetChatModal').then((m) => m.openWidgetChatModal({
-        mode: 'create',
-        tier: 'pro',
-        onComplete: (spec) => {
-          void this.addCustomWidget(spec).catch((error) => {
-            console.error('[widget-builder] failed to add widget', error);
-            showToast(t('widgets.saveFailed'));
-          });
-        },
-      })).catch((err) => console.error('[widget-chat] failed to lazy-load WidgetChatModal', err));
-    });
-    panelsGrid.appendChild(proBlock);
-
-    const mcpBlock = document.createElement('button');
-    mcpBlock.className = 'add-panel-block mcp-panel-block';
-    mcpBlock.dataset.clsMover = 'mcp-cta';
-    mcpBlock.setAttribute('aria-label', t('mcp.connectPanel'));
-    const mcpIcon = document.createElement('span');
-    mcpIcon.className = 'add-panel-block-icon';
-    mcpIcon.textContent = '\u26a1';
-    const mcpLabel = document.createElement('span');
-    mcpLabel.className = 'add-panel-block-label';
-    mcpLabel.textContent = t('mcp.connectPanel');
-    const mcpBadge = document.createElement('span');
-    mcpBadge.className = 'widget-pro-badge';
-    mcpBadge.textContent = t('widgets.proBadge');
-    mcpBlock.appendChild(mcpIcon);
-    mcpBlock.appendChild(mcpLabel);
-    mcpBlock.appendChild(mcpBadge);
-    mcpBlock.addEventListener('click', () => {
-      void import('@/components/McpConnectModal').then((m) => m.openMcpConnectModal({
-        onComplete: (spec) => this.addMcpPanel(spec),
-      })).catch((err) => console.error('[mcp-connect] failed to lazy-load McpConnectModal', err));
-    });
-    panelsGrid.appendChild(mcpBlock);
-
-    // Reactively show/hide Pro-only UI blocks ("Create Interactive Widget" +
-    // "Connect MCP" CTAs) based on premium access.
-    //
-    // hasPremiumAccess() folds in isEntitled() (Convex Dodo entitlement) per
-    // panel-gating.ts:11-27 — so a paying subscriber whose Clerk publicMetadata
-    // is never written by the webhook still resolves to true once the Convex
-    // snapshot lands. BUT: the snapshot lands AFTER auth state stabilises, and
-    // Convex updates do NOT necessarily fire a fresh subscribeAuthState event.
-    // Subscribing only to subscribeAuthState meant these CTAs stayed
-    // display:none for the whole page lifetime for paying users — exactly the
-    // shape PR #3505 chased on the server side, repeated here on the client.
-    //
-    // Subscribe to BOTH auth state and entitlement changes; whichever fires
-    // last (typically entitlements) is the one that flips the CTAs visible.
-    // Mirrors the same dual-subscription wiring used by updatePanelGating
-    // for existing panels (see lines ~259 and ~282).
-    const proBlocks = [proBlock, mcpBlock];
-    const applyProBlockGating = (isPro: boolean) => {
-      for (const block of proBlocks) {
-        block.style.display = isPro ? '' : 'none';
-      }
-    };
-    const reapply = () => applyProBlockGating(hasPremiumAccess(getAuthState()));
-    reapply();
-    this.proBlockUnsubscribe = subscribeAuthState(reapply);
-    this.proBlockEntitlementUnsubscribe = onEntitlementChange(reapply);
-
     const bottomGrid = document.getElementById('mapBottomGrid');
     if (bottomGrid) {
       bottomOrder.forEach(key => {
@@ -3480,7 +2633,6 @@ export class PanelLayoutManager implements AppModule {
       layers: this.ctx.mapLayers,
       timeRange: '7d',
     }, preferGlobe, {
-      isFreeTierFallbackActive: this.callbacks.isFreeTierFallbackActive,
     });
 
     const eagerSupplyChainPanel = this.ctx.panels['supply-chain'] as SupplyChainPanel | undefined;
@@ -3635,12 +2787,8 @@ export class PanelLayoutManager implements AppModule {
       // URL-derived context with the effective display state first. A shared
       // link is not a user preference, so it must never overwrite the saved
       // (and cloud-synced) map-layer selection.
-      if (shouldSanitizeLockedLayers(
-        hasPremiumAccess(getAuthState()),
-        isProTierResolved(),
-        this.callbacks.isFreeTierFallbackActive?.() === true,
-      )) {
-        normalized = sanitizeLockedLayers(normalized, false);
+      if (true) {
+        normalized = sanitizePublicLayers(normalized);
       }
       this.ctx.initialUrlState.layers = normalized;
       this.ctx.mapLayers = normalized;
@@ -3691,20 +2839,6 @@ export class PanelLayoutManager implements AppModule {
       () => import('@/components/CustomWidgetPanel'),
       'CustomWidgetPanel',
       (CustomWidgetPanel) => new CustomWidgetPanel(spec),
-    ).then((panel) => {
-      if (panel) this.addDynamicPanel(spec.id, panel);
-    });
-  }
-
-  addMcpPanel(spec: McpPanelSpec): void {
-    saveMcpPanel(spec);
-    this.ctx.panelSettings[spec.id] = { name: spec.title, enabled: true, priority: 3 };
-    saveToStorage(STORAGE_KEYS.panels, this.ctx.panelSettings);
-    void this.importPanel(
-      spec.id,
-      () => import('@/components/McpDataPanel'),
-      'McpDataPanel',
-      (McpDataPanel) => new McpDataPanel(spec),
     ).then((panel) => {
       if (panel) this.addDynamicPanel(spec.id, panel);
     });
@@ -4055,7 +3189,7 @@ export class PanelLayoutManager implements AppModule {
     key: string,
     loader: () => Promise<T | null>,
     setup?: (panel: T) => void,
-    lockedFeatures?: string[],
+    _lockedFeatures?: string[],
   ): boolean {
     if (!this.shouldCreatePanel(key)) return false;
     if (this.ctx.panels[key] || this.lazyPanelRegistrations.has(key)) return false;
@@ -4065,25 +3199,18 @@ export class PanelLayoutManager implements AppModule {
         if (this.ctx.isDestroyed) return null;
         const panel = await loader();
         if (!panel) return null;
-        const basePanel = panel;
         if (this.ctx.isDestroyed) {
-          basePanel.destroy?.();
+          panel.destroy();
           return null;
         }
-        this.ctx.panels[key] = basePanel;
-        if (lockedFeatures) {
-          basePanel.showLocked(lockedFeatures);
-        } else {
-          // Re-apply auth gating for panels that load after the initial auth state fire.
-          this.updatePanelGating(getAuthState());
-          await replayPendingCalls(key, panel);
-          if (this.ctx.isDestroyed) {
-            basePanel.destroy?.();
-            return null;
-          }
-          if (setup) setup(panel);
+        this.ctx.panels[key] = panel;
+        await replayPendingCalls(key, panel);
+        if (this.ctx.isDestroyed) {
+          panel.destroy();
+          return null;
         }
-        return basePanel;
+        setup?.(panel);
+        return panel;
       },
     });
     return true;
@@ -4112,6 +3239,7 @@ export class PanelLayoutManager implements AppModule {
     }
     return registration.loading;
   }
+
 
   private makeDraggable(el: HTMLElement, key: string): void {
     type DropPosition = {
@@ -4463,7 +3591,7 @@ export class PanelLayoutManager implements AppModule {
             this.bottomSetMemory.delete(key);
           }
           this.savePanelOrder();
-          trackLayoutCustomized('panel-reorder');
+
         }
       }
       dragStarted = false;
@@ -4523,7 +3651,7 @@ export class PanelLayoutManager implements AppModule {
           });
           if (moved) {
             this.savePanelOrder();
-            trackLayoutCustomized('panel-reorder');
+
           }
           moveBtn.focus();
           return;
@@ -4541,7 +3669,7 @@ export class PanelLayoutManager implements AppModule {
         if (back) parent.insertBefore(el, sibling);
         else parent.insertBefore(el, sibling.nextElementSibling);
         this.savePanelOrder();
-        trackLayoutCustomized('panel-reorder');
+
         // The button travels with the panel; keep focus on it so repeated
         // presses keep moving the same panel.
         moveBtn.focus();

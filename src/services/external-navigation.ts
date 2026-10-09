@@ -29,7 +29,6 @@
  * manually instead. See its comment before changing a feature string.
  */
 
-import { enqueueSentryCall } from '@/bootstrap/sentry-defer';
 import { isDesktopRuntime } from './desktop-runtime';
 import { invokeTauri } from './tauri-bridge';
 
@@ -71,12 +70,8 @@ function originForTelemetry(raw: string): string {
 }
 
 function reportOpenFailure(url: string, reason: string): void {
-  enqueueSentryCall((s) => s.captureMessage('[external-navigation] open_url failed', {
-    level: 'warning',
-    tags: { component: 'external-navigation', action: 'open_url', reason },
-    // The URL itself is withheld: portal session URLs are bearer-like.
-    extra: { origin: originForTelemetry(url), reason },
-  }));
+  // Withhold the full URL: external URLs can carry bearer-like credentials.
+  console.warn('[external-navigation] open_url failed', { origin: originForTelemetry(url), reason });
 }
 
 /** Distinguishes "the native side said no" from "it never answered". */

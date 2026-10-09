@@ -35,11 +35,9 @@ import {
   extractMediaToneDeterioration,
   extractMilitaryFlightSurge,
   extractOrefAlertCluster,
-  extractPhysicalPremiumRegimeTransition,
   extractRadiationAnomaly,
   extractRegulatoryAction,
   extractRiskScoreSpike,
-  extractSanctionsSurge,
   extractShippingDisruption,
   extractThermalSpike,
   extractUnrestSurge,
@@ -56,18 +54,6 @@ const REDIS_URL = 'https://cross-source-signals.test.upstash.io';
 const HOUR = 3600 * 1000;
 const now = Date.now();
 const iso = (msAgo = 0) => new Date(now - msAgo).toISOString();
-
-function freshPhysicalReadings(at = now) {
-  const physicalAsOf = new Date(at).toISOString().slice(0, 10);
-  const paperAsOf = new Date(at).toISOString();
-  return ['gold', 'silver'].map((metal) => ({
-    metal,
-    state: 'ok',
-    physicalAsOf,
-    paperAsOf,
-    provenance: { fxAsOf: paperAsOf },
-  }));
-}
 
 function seedEnvelope(data, fetchedAt = now) {
   return {
@@ -114,6 +100,23 @@ describe('readAllSourceKeys envelope handling', () => {
       json: async () => SOURCE_KEYS.map((key) => ({ result: byKey[key] ?? null })),
     });
   }
+
+  it('does not read retired pressure or physical-premium datasets', async () => {
+    let commands = [];
+    globalThis.fetch = async (_url, options) => {
+      commands = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => commands.map(() => ({ result: null })),
+      };
+    };
+    await readAllSourceKeys();
+    const keys = commands.map(command => command[1]);
+    assert.ok(keys.includes('seismology:earthquakes:v1'));
+    assert.ok(keys.includes(CII_RISK_SCORE_CACHE_KEYS.stale));
+    assert.equal(keys.includes('sanctions:pressure:v1'), false);
+    assert.equal(keys.includes('market:physical-divergence:v1'), false);
+  });
 
   it('unwraps a contract-mode envelope down to its payload', async () => {
     const payload = { earthquakes: [{ id: 'us1', magnitude: 7.1 }] };
@@ -352,17 +355,6 @@ const FIXTURES = [
     },
   },
   {
-    extractor: extractSanctionsSurge,
-    expectTheater: 'Eastern Europe',
-    key: 'sanctions:pressure:v1',
-    enveloped: true, // seed-sanctions-pressure.mjs:550 declareRecords
-    payload: {
-      totalCount: 412,
-      newEntryCount: 12,
-      countries: [{ countryName: 'Russia', count: 180 }],
-    },
-  },
-  {
     extractor: extractEarthquakeSignificant,
     expectTheater: 'East Asia',
     expectDetectedAt: (p) => p.earthquakes[0].occurredAt,
@@ -524,264 +516,12 @@ const FIXTURES = [
       recordCount: 1,
     },
   },
-  {
-    extractor: extractPhysicalPremiumRegimeTransition,
-    expectTheater: 'Global Markets',
-    expectDetectedAt: (p) => p.transitions[0].detectedAt,
-    key: 'market:physical-divergence:v1',
-    enveloped: false,
-    payload: {
-      methodologyVersion: 'physical-divergence-v2',
-      readings: freshPhysicalReadings(),
-      transitions: [{
-        id: `physical-premium:gold:normal-elevated:${now - HOUR}`,
-        metal: 'gold',
-        fromRegime: 'normal',
-        toRegime: 'elevated',
-        detectedAt: now - HOUR,
-        methodologyVersion: 'physical-divergence-v2',
-      }],
-    },
-  },
 ];
 
 // extractDisplacementSurge is deliberately absent from FIXTURES: its key
 // publishes an annual UNHCR stock with no flow field, so the extractor is
 // documented-silent rather than fixed. It is pinned separately below.
 const INTENTIONALLY_SILENT = new Set([extractDisplacementSurge]);
-
-describe('every extractor fires on the shape its writer actually publishes', () => {
-  for (const { extractor, key, enveloped, payload, expectTheater, expectDetectedAt } of FIXTURES) {
-    it(`${extractor.name} fires on a ${enveloped ? 'contract-mode' : 'legacy bare'} ${key}`, () => {
-      const stored = enveloped ? seedEnvelope(payload) : payload;
-      const signals = extractor({ [key]: asReadByTheSeeder(stored) });
-      assert.ok(signals.length >= 1, `${extractor.name} produced no signal`);
-      assert.ok(signals.every((s) => Number.isFinite(s.severityScore) && s.severityScore > 0));
-      assert.ok(signals.every((s) => Number.isFinite(s.detectedAt) && s.detectedAt > 0));
-
-      // Pinned rather than "non-empty": a theater that quietly collapses to
-      // 'Global' is how the military-flight signal sat outside every composite,
-      // and only an exact assertion catches that.
-      assert.equal(signals[0].theater, expectTheater);
-
-      // Only asserted where the extractor sources its stamp from the payload.
-      // Without this, reverting to a field the writer never published still
-      // passes: detectedAt just falls back to the run clock.
-      if (expectDetectedAt) {
-        assert.equal(signals[0].detectedAt, expectDetectedAt(payload),
-          `${extractor.name} did not carry the timestamp its payload published`);
-      }
-      if (extractor === extractPhysicalPremiumRegimeTransition) {
-        assert.equal(signals.length, 1, 'one stored regime transition must emit exactly one signal');
-        assert.deepEqual({
-          id: signals[0].id,
-          type: signals[0].type,
-          theater: signals[0].theater,
-          severity: signals[0].severity,
-          severityScore: signals[0].severityScore,
-          detectedAt: signals[0].detectedAt,
-        }, {
-          id: payload.transitions[0].id,
-          type: 'CROSS_SOURCE_SIGNAL_TYPE_PHYSICAL_PREMIUM_REGIME_TRANSITION',
-          theater: 'Global Markets',
-          severity: 'CROSS_SOURCE_SIGNAL_SEVERITY_MEDIUM',
-          severityScore: 2,
-          detectedAt: payload.transitions[0].detectedAt,
-        });
-      }
-    });
-  }
-
-  // The bug itself, pinned: before the unwrap the extractors were handed the
-  // envelope, and this is what that produced.
-  for (const { extractor, key, enveloped, payload } of FIXTURES.filter((f) => f.enveloped)) {
-    it(`${extractor.name} produces nothing from the raw envelope (the pre-fix shape)`, () => {
-      void enveloped;
-      assert.deepEqual(extractor({ [key]: seedEnvelope(payload) }), []);
-    });
-  }
-});
-
-it('physical premium transitions expire after the 48-hour emission cooldown', () => {
-  const now = Date.now();
-  const signals = extractPhysicalPremiumRegimeTransition({
-    'market:physical-divergence:v1': {
-      readings: freshPhysicalReadings(now),
-      transitions: [{
-        id: 'physical-premium:gold:normal-elevated:stale',
-        metal: 'gold',
-        fromRegime: 'normal',
-        toRegime: 'elevated',
-        detectedAt: now - 48 * HOUR,
-      }],
-    },
-  });
-
-  assert.deepEqual(signals, []);
-});
-
-it('rejects non-canonical physical premium transitions', () => {
-  const now = Date.now();
-  const base = {
-    id: `physical-premium:gold:normal-elevated:${now}`,
-    metal: 'gold',
-    fromRegime: 'normal',
-    toRegime: 'elevated',
-    detectedAt: now,
-    methodologyVersion: 'physical-divergence-v2',
-  };
-  for (const transition of [
-    { ...base, fromRegime: '<script>' },
-    { ...base, methodologyVersion: 'future-method' },
-    { ...base, id: 'attacker-controlled' },
-    {
-      ...base,
-      detectedAt: now + HOUR,
-      id: `physical-premium:gold:normal-elevated:${now + HOUR}`,
-    },
-  ]) {
-    assert.deepEqual(extractPhysicalPremiumRegimeTransition({
-      'market:physical-divergence:v1': {
-        readings: freshPhysicalReadings(now),
-        transitions: [transition],
-      },
-    }), []);
-  }
-});
-
-it('rejects a recent transition when the transitioning metal input clock is stale', () => {
-  const readings = freshPhysicalReadings(now);
-  readings[0].paperAsOf = new Date(now - 37 * HOUR).toISOString();
-  assert.deepEqual(extractPhysicalPremiumRegimeTransition({
-    'market:physical-divergence:v1': {
-      readings,
-      transitions: [{
-        id: `physical-premium:gold:normal-elevated:${now - HOUR}`,
-        metal: 'gold',
-        fromRegime: 'normal',
-        toRegime: 'elevated',
-        detectedAt: now - HOUR,
-        methodologyVersion: 'physical-divergence-v2',
-      }],
-    },
-  }), []);
-});
-
-// #7425: transitions are per-metal. Silver still ramping (or failing independently)
-// must not suppress a valid gold regime transition — the composite's all-or-nothing
-// rule is a separate contract and must stay untouched.
-it('still emits a gold transition when silver is insufficient_history', () => {
-  const detectedAt = now - HOUR;
-  const readings = freshPhysicalReadings(now);
-  readings[1].state = 'insufficient_history';
-  delete readings[1].physicalAsOf;
-  delete readings[1].paperAsOf;
-  delete readings[1].provenance;
-  const [signal] = extractPhysicalPremiumRegimeTransition({
-    'market:physical-divergence:v1': {
-      readings,
-      transitions: [{
-        id: `physical-premium:gold:normal-elevated:${detectedAt}`,
-        metal: 'gold',
-        fromRegime: 'normal',
-        toRegime: 'elevated',
-        detectedAt,
-        methodologyVersion: 'physical-divergence-v2',
-      }],
-    },
-  });
-  assert.equal(signal?.id, `physical-premium:gold:normal-elevated:${detectedAt}`);
-  assert.equal(signal?.type, 'CROSS_SOURCE_SIGNAL_TYPE_PHYSICAL_PREMIUM_REGIME_TRANSITION');
-});
-
-it('does not emit transitions from missing or malformed input clocks', () => {
-  const transition = {
-    id: `physical-premium:gold:normal-elevated:${now - HOUR}`,
-    metal: 'gold',
-    fromRegime: 'normal',
-    toRegime: 'elevated',
-    detectedAt: now - HOUR,
-    methodologyVersion: 'physical-divergence-v2',
-  };
-  for (const mutate of [
-    (reading) => { reading.physicalAsOf = ''; },
-    (reading) => { reading.physicalAsOf = '2026-02-31'; },
-    (reading) => { reading.paperAsOf = 'not-an-instant'; },
-    (reading) => { reading.provenance.fxAsOf = ''; },
-  ]) {
-    const readings = freshPhysicalReadings(now);
-    mutate(readings[0]);
-    assert.deepEqual(extractPhysicalPremiumRegimeTransition({
-      'market:physical-divergence:v1': { readings, transitions: [transition] },
-    }), []);
-  }
-});
-
-it('fails closed when a divergence reading has an unknown state', () => {
-  const readings = freshPhysicalReadings(now);
-  readings[0].state = 'future_state';
-  assert.throws(
-    () => extractPhysicalPremiumRegimeTransition({
-      'market:physical-divergence:v1': { readings, transitions: [] },
-    }),
-    /Unknown physical divergence state/,
-  );
-});
-
-// #6448 requires an unknown state to surface rather than silently map to "normal". Publishing
-// an aggregate that merely omits the physical signal is exactly that silent mapping: the
-// consumer cannot tell "this source reported nothing" from "this build could not read it".
-// A genuinely flaky extractor is still contained — see the warn path in the same catch.
-it('fails the production aggregate when a present divergence reading has no known state', async () => {
-  for (const state of ['future_state', undefined, null]) {
-    const readings = freshPhysicalReadings(now);
-    readings[0].state = state;
-    await assert.rejects(
-      aggregateCrossSourceSignals({
-        readSourceData: async () => ({
-          'market:physical-divergence:v1': { readings, transitions: [] },
-          'seismology:earthquakes:v1': {
-            earthquakes: [{
-              id: 'kept-quake',
-              place: '120km E of Honshu, Japan',
-              magnitude: 7.2,
-              occurredAt: now - HOUR,
-            }],
-          },
-        }),
-      }),
-      /Unknown physical divergence state/,
-    );
-  }
-});
-
-it('pins every physical premium transition severity tier', () => {
-  const expected = {
-    normal: [1.5, 'CROSS_SOURCE_SIGNAL_SEVERITY_MEDIUM'],
-    elevated: [2, 'CROSS_SOURCE_SIGNAL_SEVERITY_MEDIUM'],
-    stressed: [3, 'CROSS_SOURCE_SIGNAL_SEVERITY_HIGH'],
-    extreme: [4, 'CROSS_SOURCE_SIGNAL_SEVERITY_CRITICAL'],
-  };
-  for (const [toRegime, [severityScore, severity]] of Object.entries(expected)) {
-    const detectedAt = now - HOUR;
-    const fromRegime = toRegime === 'normal' ? 'elevated' : 'normal';
-    const [signal] = extractPhysicalPremiumRegimeTransition({
-      'market:physical-divergence:v1': {
-        readings: freshPhysicalReadings(now),
-        transitions: [{
-          id: `physical-premium:gold:${fromRegime}-${toRegime}:${detectedAt}`,
-          metal: 'gold',
-          fromRegime,
-          toRegime,
-          detectedAt,
-          methodologyVersion: 'physical-divergence-v2',
-        }],
-      },
-    });
-    assert.equal(signal.severityScore, severityScore);
-    assert.equal(signal.severity, severity);
-  }
-});
 
 describe('newly readable sources preserve semantics and time', () => {
   it('does not turn a high-probability ceasefire into forecast deterioration', () => {

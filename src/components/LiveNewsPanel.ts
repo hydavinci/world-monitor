@@ -11,8 +11,8 @@ import { subscribeLiveMediaIdle } from '@/services/live-media-idle';
 import { sourceListsChannel, type LiveVideoSource, type OfflineReason } from '@/services/live-video/model';
 import { withResolvedLiveVideos } from '@/services/live-video/resolved';
 import { createFailureMemory, openLiveVideo, type LiveVideoSession, type LiveVideoState } from '@/services/live-video/session';
-import { track } from '@/services/analytics';
-import { createLiveMediaIdleNotice, trackLiveMediaIdleStop } from './live-media-idle-notice';
+
+import { createLiveMediaIdleNotice } from './live-media-idle-notice';
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 import { OPTIONAL_LIVE_CHANNELS, getDefaultLiveChannels, hasBuiltinStreams, liveVideoSourceFor, loadChannelsFromStorage, saveChannelsToStorage, type LiveChannel } from '@/services/live-channels';
 import { declareOverlay } from '@/utils/open-modal';
@@ -206,7 +206,6 @@ export class LiveNewsPanel extends Panel {
     this.playerContainer = null;
     if (this.idleStoppedAfterMs !== null) {
       this.setContentNodes(createLiveMediaIdleNotice({
-        panel: 'live-news',
         heading: this.getChannelDisplayName(this.activeChannel),
         idleAfterMs: this.idleStoppedAfterMs,
       }));
@@ -347,7 +346,6 @@ export class LiveNewsPanel extends Panel {
   private stopForIdle(idleAfterMs: number): void {
     if (this.isFullscreen || !this.isPlaying || !getActiveLiveMedia('live-news')) return;
     this.idleStoppedAfterMs = idleAfterMs;
-    trackLiveMediaIdleStop('live-news', idleAfterMs);
     stopLiveMediaPlayback('live-news', 'idle');
   }
 
@@ -411,7 +409,7 @@ export class LiveNewsPanel extends Panel {
     setTrustedHtml(this.fullscreenBtn, trustedHtml('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>', "legacy direct innerHTML migration"));
     this.fullscreenBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      track('live-news-fullscreen', { entering: !this.isFullscreen });
+
       this.setFullscreen(!this.isFullscreen);
     });
     const header = this.element.querySelector('.panel-header');

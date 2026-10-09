@@ -34,7 +34,7 @@ import { escapeHtml } from '@/utils/sanitize';
 import { initI18n, t } from '@/services/i18n';
 import { applyStoredTheme } from '@/utils/theme-manager';
 import { applyFont } from '@/services/font-settings';
-import { trackFeatureToggle } from '@/services/analytics';
+
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 
 
@@ -406,7 +406,7 @@ function initFeatureSectionListeners(area: HTMLElement): void {
     input.addEventListener('change', () => {
       const featureId = input.dataset.toggle as RuntimeFeatureId;
       if (!featureId) return;
-      trackFeatureToggle(featureId, input.checked);
+
       setFeatureToggle(featureId, input.checked);
       renderSidebar();
     });

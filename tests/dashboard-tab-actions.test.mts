@@ -14,21 +14,20 @@ import {
   resolveSelectDashboardTab,
 } from '../src/services/dashboard-tab-actions.ts';
 import type { PanelTab, TabsState } from '../src/services/tab-store.ts';
-import type { TabCapVerdict } from '../src/services/gates/export-resolver.ts';
+import type { TabCapVerdict } from '../src/services/dashboard-tab-actions.ts';
 
 const MAIN_ID = 'tab-main01-abc123';
 const MARKETS_ID = 'tab-mrkts2-def456';
 
 function tab(id: string, name: string): PanelTab {
-  return { id, name, panelSettings: {}, panelOrder: [], bottomSet: [] };
+  return { id, name, view: id === MAIN_ID ? 'map' : 'panels', panelSettings: {}, panelOrder: [], bottomSet: [] };
 }
 
 function state(activeTabId: string, tabs: PanelTab[]): TabsState {
   return { activeTabId, tabs };
 }
 
-const uncapped: TabCapVerdict = { allowed: true, cap: null, pendingActivation: false };
-const capped: TabCapVerdict = { allowed: false, cap: 3, reason: 'free_tier' };
+const uncapped: TabCapVerdict = { allowed: true, cap: null };
 
 describe('dashboard tab name and ID rules', () => {
   it('accepts the same 1–40 trimmed names as the dashboard rename control', () => {
@@ -50,19 +49,18 @@ describe('listDashboardTabs availability', () => {
     );
     assert.equal(listed.activeTabId, MARKETS_ID);
     assert.deepEqual(listed.tabs, [
-      { id: MAIN_ID, name: 'Main', active: false, canDelete: true },
+      { id: MAIN_ID, name: 'Main', active: false, canDelete: false },
       { id: MARKETS_ID, name: 'Markets', active: true, canDelete: true },
     ]);
     assert.equal(listed.canCreate, true);
     assert.equal(listed.tabCount, 2);
   });
 
-  it('locks the last required tab and surfaces a create cap', () => {
-    const listed = describeDashboardTabs(state(MAIN_ID, [tab(MAIN_ID, 'Main')]), capped);
+  it('retains the last required tab without capping additional tabs', () => {
+    const listed = describeDashboardTabs(state(MAIN_ID, [tab(MAIN_ID, 'Main')]), uncapped);
     assert.equal(listed.tabs[0]?.canDelete, false);
-    assert.equal(listed.canCreate, false);
-    assert.equal(listed.createBlockReason, 'free_tier');
-    assert.equal(listed.cap, 3);
+    assert.equal(listed.canCreate, true);
+    assert.equal(listed.cap, null);
   });
 });
 
@@ -88,7 +86,7 @@ describe('selectDashboardTab', () => {
 describe('createDashboardTab', () => {
   it('returns the existing named tab instead of creating a duplicate', () => {
     const current = state(MAIN_ID, [tab(MAIN_ID, 'Main'), tab(MARKETS_ID, 'Markets')]);
-    const result = resolveCreateDashboardTab(current, uncapped, 'Markets');
+    const result = resolveCreateDashboardTab(current, 'Markets');
     assert.deepEqual(result, {
       ok: true,
       unchanged: false,
@@ -97,7 +95,6 @@ describe('createDashboardTab', () => {
     });
     const alreadyActive = resolveCreateDashboardTab(
       state(MARKETS_ID, current.tabs),
-      uncapped,
       'Markets',
     );
     assert.deepEqual(alreadyActive, {
@@ -108,14 +105,13 @@ describe('createDashboardTab', () => {
     });
   });
 
-  it('allows an unnamed create under the cap and denies over-cap and invalid names', () => {
+  it('allows unnamed and named creates without a tier cap and rejects invalid names', () => {
     const current = state(MAIN_ID, [tab(MAIN_ID, 'Main')]);
-    const created = resolveCreateDashboardTab(current, uncapped, undefined);
+    const created = resolveCreateDashboardTab(current, undefined);
     assert.deepEqual(created, { ok: true, unchanged: false, name: '' });
-    const named = resolveCreateDashboardTab(current, uncapped, ' Watchlist ');
+    const named = resolveCreateDashboardTab(current, ' Watchlist ');
     assert.deepEqual(named, { ok: true, unchanged: false, name: 'Watchlist' });
-    assert.equal(resolveCreateDashboardTab(current, capped, undefined).reason, 'tab_cap');
-    assert.equal(resolveCreateDashboardTab(current, uncapped, '   ').reason, 'invalid_name');
+    assert.equal(resolveCreateDashboardTab(current, '   ').reason, 'invalid_name');
   });
 });
 
@@ -172,6 +168,16 @@ describe('persist receipt', () => {
 });
 
 describe('deleteDashboardTab', () => {
+  it('protects Main by its map role even when renamed or inactive', () => {
+    for (const activeTabId of [MAIN_ID, MARKETS_ID]) {
+      const current = state(activeTabId, [tab(MAIN_ID, 'Situation'), tab(MARKETS_ID, 'Main')]);
+      assert.equal(resolveDeleteDashboardTab(current, MAIN_ID, true).reason, 'main_tab');
+      assert.equal(resolveDeleteDashboardTab(current, MARKETS_ID, true).ok, true);
+      assert.equal(current.tabs.length, 2);
+      assert.equal(describeDashboardTabs(current, uncapped).tabs[0]?.canDelete, false);
+    }
+  });
+
   it('requires confirm=true and refuses the last required tab', () => {
     const single = state(MAIN_ID, [tab(MAIN_ID, 'Main')]);
     assert.equal(resolveDeleteDashboardTab(single, MAIN_ID, true).reason, 'last_tab');

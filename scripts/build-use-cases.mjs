@@ -34,11 +34,6 @@ export const USE_CASE_PAGES = [
       'Define exposure, baseline routes and risk, detect disruption signals, test transmission paths, record uncertainty, and escalate into an exact product state.',
   },
 ];
-const UMAMI_SCRIPT_TAG =
-  '<script async defer src="https://abacus.worldmonitor.app/script.js" '
-  + 'data-website-id="e8800335-16bc-4241-a133-0eb28c07c832" '
-  + 'data-domains="worldmonitor.app,www.worldmonitor.app,happy.worldmonitor.app" '
-  + 'nonce="wm-static-bootstrap"></script>';
 
 export const HANDOFF_PRESERVE_SCRIPT = `(() => {
   const PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'];
@@ -210,7 +205,7 @@ ${cards}
       { name: 'Use cases', path },
     ]),
     body,
-    footerBody: `${UMAMI_SCRIPT_TAG}World Monitor use-case corpus. Evergreen workflows use committed product evidence; live API results belong on dashboard and country pages.`,
+    footerBody: `World Monitor use-case corpus. Evergreen workflows use committed product evidence; live API results belong on dashboard and country pages.`,
   });
 }
 
@@ -380,7 +375,7 @@ function renderCountryRiskUseCase({ tpl, baseUrl, lastmod }) {
     ]),
     body,
     inlineScript: HANDOFF_PRESERVE_SCRIPT,
-    footerBody: `${UMAMI_SCRIPT_TAG}World Monitor use-case corpus. Evergreen workflows use committed product evidence; live API results belong on dashboard and country pages.`,
+    footerBody: `World Monitor use-case corpus. Evergreen workflows use committed product evidence; live API results belong on dashboard and country pages.`,
   });
 }
 
@@ -559,7 +554,7 @@ function renderVerifyBreakingNewsUseCase({ tpl, baseUrl, lastmod }) {
     ]),
     body,
     inlineScript: HANDOFF_PRESERVE_SCRIPT,
-    footerBody: `${UMAMI_SCRIPT_TAG}World Monitor use-case corpus. Evergreen workflows use committed product evidence; live API results belong on dashboard and country pages.`,
+    footerBody: `World Monitor use-case corpus. Evergreen workflows use committed product evidence; live API results belong on dashboard and country pages.`,
   });
 }
 
@@ -759,7 +754,7 @@ function renderSupplyChainDisruptionsUseCase({ tpl, baseUrl, lastmod }) {
     ]),
     body,
     inlineScript: HANDOFF_PRESERVE_SCRIPT,
-    footerBody: `${UMAMI_SCRIPT_TAG}World Monitor use-case corpus. Evergreen workflows use committed product evidence; live API results belong on dashboard and country pages.`,
+    footerBody: `World Monitor use-case corpus. Evergreen workflows use committed product evidence; live API results belong on dashboard and country pages.`,
   });
 }
 

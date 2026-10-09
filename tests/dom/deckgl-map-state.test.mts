@@ -278,7 +278,7 @@ async function mapWith(state?: DeckMapState): Promise<{ map: DeckGLMap; fake: In
 }
 
 describe('DeckGLMap Taiwan country clicks', () => {
-  it.each(['cii-choropleth-layer', 'resilience-choropleth-layer', 'happiness-choropleth-layer', null])(
+  it.each(['cii-choropleth-layer', 'happiness-choropleth-layer', null])(
     'emits TW from legacy CN-TW in %s', async (layerId) => {
       const { map } = await mapWith();
       const openBrief = vi.fn();

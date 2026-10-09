@@ -20,6 +20,12 @@ describe('getEnergyImportDependencyObservedSources', () => {
 });
 
 describe('resolveEnergyImportDependency', () => {
+  it('publishes the audited Eurostat observation with provenance', () => {
+    assert.deepEqual(resolveEnergyImportDependency({
+      iea: { energyImportDependency: { value: 25, year: 2024, source: 'eurostat' } },
+    }), { available: true, value: 25, year: 2024, source: 'Eurostat' });
+  });
+
   it('publishes the audited World Bank observation with provenance', () => {
     const result = resolveEnergyImportDependency({
       iea: {

@@ -253,7 +253,7 @@ describe('resilience runtime manifest', () => {
 });
 
 describe('resilience runtime manifest gateway auth', () => {
-  it('allows no-key manifest access while score and ranking remain premium gated', async () => {
+  it('allows no-key manifest access while retired score and ranking reject data', async () => {
     const [{ createDomainGateway, PUBLIC_NO_AUTH_RPC_PATHS, serverOptions }, generated, { resilienceHandler }, { PREMIUM_RPC_PATHS }] = await Promise.all([
       import('../server/gateway.ts'),
       import('../src/generated/server/worldmonitor/resilience/v1/service_server.ts'),
@@ -300,9 +300,11 @@ describe('resilience runtime manifest gateway auth', () => {
     });
 
     const score = await gateway(new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-score?countryCode=US'));
-    assert.equal(score.status, 401);
+    assert.equal(score.status, 403);
+    assert.equal((await score.json()).error, 'feature_removed');
 
     const ranking = await gateway(new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-ranking'));
-    assert.equal(ranking.status, 401);
+    assert.equal(ranking.status, 403);
+    assert.equal((await ranking.json()).error, 'feature_removed');
   });
 });

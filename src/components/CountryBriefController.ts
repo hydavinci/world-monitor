@@ -1,15 +1,13 @@
+import { CountrySectionError } from '@/services/country-brief-error';
+import type { CountryBriefSource } from '@/services/country-brief-source';
+import { buildImfEconomicIndicators,getImfCountryBundle,type ImfCountryBundle,type ImfExternalEntry,type ImfGrowthEntry,type ImfLaborEntry,type ImfMacroEntry } from '@/services/imf-country-data';
+import { fetchCountryMarkets,protoToMarket } from '@/services/prediction';
+import { toApiUrl } from '@/services/runtime';
+import { combineAbortSignals } from '@/services/timeout-signal';
 import { IS_EMBEDDED_PREVIEW } from '@/utils/embedded-preview';
 import type { ChinaDecisionSignalSnapshot } from '../../shared/china-decision-signals';
-import type { ChinaCountrySummaryData, CountryBriefPanel, StockIndexData } from './CountryBriefPanel';
 import type { BriefSectionId } from '../../shared/country-brief-sections';
-import type { CountryBriefSource } from '@/services/country-brief-source';
-import { CountrySectionError } from '@/services/country-brief-error';
-import { combineAbortSignals } from '@/services/timeout-signal';
-import { getImfCountryBundle, buildImfEconomicIndicators, type ImfCountryBundle, type ImfMacroEntry, type ImfGrowthEntry, type ImfLaborEntry, type ImfExternalEntry } from '@/services/imf-country-data';
-import { getCountryDefenseIndustrialBase } from '@/services/defense-industrial';
-import { fetchCountryMarkets, protoToMarket } from '@/services/prediction';
-import { iso2ToIso3, iso2ToUnCode, iso2ToComtradeReporterCode } from '@/utils/country-codes';
-import { toApiUrl } from '@/services/runtime';
+import type { ChinaCountrySummaryData,CountryBriefPanel,StockIndexData } from './CountryBriefPanel';
 
 export type CountrySectionStatus =
   | { state: 'loading' }
@@ -100,45 +98,7 @@ export class CountryBriefController {
       const body = await response.json() as HousingPayload & { missing?: string[] };
       return { ...projectCountryHousing(body, code), missing: body.missing ?? [] };
     }, housing => { this.panel.updateHousingCycle?.(housing); this.panel.setSectionCoverage?.('housing', housing.missing); });
-    this.refreshPremium();
     return { stockPromise, imfPromise };
-  }
-
-  refreshPremium(): void {
-    this.premiumRequest.abort();
-    this.premiumRequest = new AbortController();
-    if (!this.source.canRequestPremium()) {
-      this.panel.setSectionFailure?.('trade', 'locked', 'Upgrade to PRO for trade exposure');
-      return;
-    }
-    const code = this.snapshot.countryCode.toUpperCase();
-    if (!code) return;
-    void this.read('military', signal => getCountryDefenseIndustrialBase(code, this.source.military, signal), value => this.panel.updateDefenseIndustrialBase?.(value.available ? value : null), true);
-    void this.read('commodities', signal => this.source.supply.getCountryVulnerabilities({ iso2: code }, { signal }), value => this.panel.updateCommodityVulnerabilities?.(value), true);
-    void this.read('products', signal => this.source.supply.getCountryProducts({ iso2: code }, { signal }), value => this.panel.updateProductImports?.(value.products.length ? value : null), true);
-    void this.read('trade', signal => this.source.exposure(code, signal), sectors => {
-      const top = sectors[0];
-      this.panel.updateTradeExposure?.(top ? { iso2: code, hs2: top.hs2, exposures: sectors.slice(0, 3).map(s => ({ chokepointId: s.primaryChokepointId, chokepointName: s.primaryChokepointName, exposureScore: s.exposureScore, coastSide: '', shockSupported: s.hs2 === '27' })), primaryChokepointId: top.primaryChokepointId, vulnerabilityIndex: top.vulnerabilityIndex, fetchedAt: top.fetchedAt ?? '' } : null, sectors);
-    }, true);
-    void this.read('debt', signal => this.source.economic.getNationalDebt({}, { signal }), response => {
-      const entry = response.entries.find(entry => entry.iso3 === iso2ToIso3(code));
-      this.panel.updateNationalDebt?.(entry ? { debtToGdp: entry.debtToGdp, debtUsd: entry.debtUsd, annualGrowth: entry.annualGrowth, source: entry.source } : null);
-    }, true);
-    void this.read('sanctions', signal => this.source.intelligence.getCountryRisk({ countryCode: code }, { signal }), response => {
-      if (response.upstreamUnavailable) throw new Error('Sanctions unavailable');
-      this.panel.updateSanctionsPressure?.({ entryCount: response.sanctionsCount, sanctionsActive: response.sanctionsActive });
-    }, true);
-    const reporterCode = iso2ToComtradeReporterCode(code);
-    const reportingCountry = iso2ToUnCode(code);
-    if (reporterCode) void this.read('flows', signal => this.source.trade.listComtradeFlows({ reporterCode, cmdCode: '', anomaliesOnly: false }, { signal }), response => this.panel.updateComtradeFlows?.(response.flows.slice().sort((a, b) => b.tradeValueUsd - a.tradeValueUsd).slice(0, 5)), true);
-    else this.panel.updateComtradeFlows?.(null);
-    if (reportingCountry) void this.read('tariffs', signal => this.source.trade.getTariffTrends({ reportingCountry, productSector: '', years: 10, partnerCountry: '' }, { signal }), response => {
-      const points = response.datapoints;
-      const latest = points[points.length - 1];
-      const previous = points[points.length - 2];
-      this.panel.updateTariffTrends?.(latest ? { currentRate: response.effectiveTariffRate?.tariffRate ?? latest.tariffRate, trend: !previous ? 'unknown' : latest.tariffRate > previous.tariffRate ? 'rising' : latest.tariffRate < previous.tariffRate ? 'falling' : 'stable', datapoints: points.map(p => ({ year: p.year, tariffRate: p.tariffRate })) } : null);
-    }, true);
-    else this.panel.updateTariffTrends?.(null);
   }
 }
 

@@ -1,155 +1,114 @@
+import { sanitizePublicLayers } from '@/services/public-preferences';
+import { sanitizePublicPanelSettings } from '@/services/public-preferences';
 import type {
-  AppContext,
-  AppModule,
-  UnifiedSettingsController,
-  UnifiedSettingsTabId,
+AppContext,
+AppModule,
+UnifiedSettingsController,
+UnifiedSettingsTabId,
 } from '@/app/app-context';
 import { applyVisibleMapDimension } from '@/app/map-dimension-control';
-import type { UnifiedSettingsConfig } from '@/components/UnifiedSettings';
-import type { AirlineIntelPanel } from '@/components/AirlineIntelPanel';
-import type { CustomWidgetPanel } from '@/components/CustomWidgetPanel';
-import { deleteWidget, getWidget, saveWidget, isProUser, isProTierResolved } from '@/services/widget-store';
-import { hasPremiumAccess } from '@/services/panel-gating';
-import {
-  sanitizeLockedLayers,
-  shouldSanitizeLockedLayers,
-} from '@/config/map-layer-definitions';
-import {
-  FREE_MAX_PANELS,
-  FREE_MAX_SOURCES,
-  countFreePanelCapUsage,
-  enforceFreePanelLimit,
-  isFreePanelCapCounted,
-  isPanelEntitled,
-  userSetPanelEnabled,
-} from '@/config/panels';
+import { MobilePrimaryNav } from '@/app/mobile-primary-nav';
 import { applySetPanelEnabled } from '@/app/panel-enablement';
-import type { SetPanelEnabledResult } from '@/config/panel-enablement';
-import type { McpDataPanel } from '@/components/McpDataPanel';
-import { deleteMcpPanel, getMcpPanel, saveMcpPanel } from '@/services/mcp-store';
-import type { PanelConfig, MapLayers, MilitaryFlight } from '@/types';
-import type { MapView } from '@/components/MapContainer';
-import type { PositionSample } from '@/services/aviation';
-import type { ClusteredEvent } from '@/types';
-import type { DashboardSnapshot } from '@/services/storage';
-import { PlaybackControl } from '@/components/PlaybackControl';
-import { PizzIntIndicator } from '@/components/PizzIntIndicator';
+import {
+addResponsiveZoneListener,
+removeResponsiveZoneListener,
+type ResponsiveZoneListener,
+} from '@/app/responsive-zone-listener';
+import {
+LEGACY_WEB_SPLIT_LAYOUT_MIN_WIDTH,
+MAP_COL_DEFAULT_PERCENT,
+SPLIT_LAYOUT_MIN_WIDTH,
+clampMapColWidthPercent,
+getMapColWidthBounds,
+getVisualMapSide,
+mapRightClassForVisualSide,
+type MapVisualSide,
+} from '@/app/split-layout';
+import type { AirlineIntelPanel } from '@/components/AirlineIntelPanel';
+
+
 import { LlmStatusIndicator } from '@/components/LlmStatusIndicator';
+import type { MapView } from '@/components/MapContainer';
+import { PizzIntIndicator } from '@/components/PizzIntIndicator';
+import { PlaybackControl } from '@/components/PlaybackControl';
 import type { PredictionPanel } from '@/components/PredictionPanel';
+import { createSettingsButton } from '@/components/settings-button';
+import type { UnifiedSettingsConfig } from '@/components/UnifiedSettings';
 import {
-  buildMapUrl,
-  withUrlFragment,
-  debounce,
-  loadFromStorage,
-  saveToStorage,
-  getCurrentTheme,
-  showToast,
-  urlHasAsyncFlyTo,
-} from '@/utils';
-import { clearPanelColSpans, clearPanelSpans } from '@/utils/panel-storage';
-import {
-  IDLE_PAUSE_MS,
-  DEFAULT_MAP_LAYERS,
-  MOBILE_DEFAULT_MAP_LAYERS,
-  STORAGE_KEYS,
-  SITE_VARIANT,
-  LAYER_TO_SOURCE,
-  FEEDS,
-  CANONICAL_FEEDS,
-  INTEL_SOURCES,
+CANONICAL_FEEDS,
+DEFAULT_MAP_LAYERS,
+FEEDS,
+IDLE_PAUSE_MS,
+INTEL_SOURCES,
+LAYER_TO_SOURCE,
+MOBILE_DEFAULT_MAP_LAYERS,
+SITE_VARIANT,
+STORAGE_KEYS,
 } from '@/config';
-import { resolveNewsCategories, enabledNewsCategoryKeys } from '@/config/feed-resolution';
+import { enabledNewsCategoryKeys,resolveNewsCategories } from '@/config/feed-resolution';
+import {
+} from '@/config/map-layer-definitions';
+import type { SetPanelEnabledResult } from '@/config/panel-enablement';
+import {
+isPublicPanel,
+userSetPanelEnabled,
+} from '@/config/panels';
 import { VARIANT_META } from '@/config/variant-meta';
-import { isDesktopRuntime } from '@/services/runtime';
 import {
-  getMissionPresetsForVariant,
-  applyMissionPresetToState,
-  clearMissionPreset,
-  dismissMissionPresetPrompt,
-  filterMissionLayersForRenderer,
-  isMissionPresetPromptDismissed,
-  loadStoredMissionPreset,
-  resetMissionPresetState,
-  saveMissionPreset,
-  type MissionPreset,
-  type MissionPresetId,
-} from '@/services/mission-presets';
+buildEmbedIframeSnippet,
+buildEmbedMapUrl,
+type EmbedVariant,
+} from '@/embed/embed-url';
 import {
-  saveSnapshot,
-  initAisStream,
-  disconnectAisStream,
-  isAisConfigured,
+disconnectAisStream,
+initAisStream,
+isAisConfigured,
+saveSnapshot,
 } from '@/services';
 import {
-  track,
-  trackMissionPickerShown,
-  type MissionPickerTrigger,
-  trackMissionSelected,
-  trackPanelView,
-  trackVariantSwitch,
-  trackMapViewChange,
-  trackMapLayerToggle,
-  trackPanelToggled,
-  trackDownloadClicked,
-  trackGateHit,
-  trackLayoutCustomized,
-} from '@/services/analytics';
-import { detectPlatform, allButtons, buttonsForPlatform } from '@/components/DownloadBanner';
-import type { Platform } from '@/components/DownloadBanner';
-import { isOpenableExternalUrl, openExternalUrl } from '@/services/external-navigation';
-import { getCachedGpsInterference } from '@/services/gps-interference';
-import { dataFreshness } from '@/services/data-freshness';
-import { mlWorker } from '@/services/ml-worker';
-import { WM_OPEN_NOTIFICATIONS_FOR_COUNTRY } from '@/utils/notify-country-link';
-import { AuthLauncher } from '@/components/AuthLauncher';
-import { AuthHeaderWidget } from '@/components/AuthHeaderWidget';
-import { t } from '@/services/i18n';
-import { TvModeController } from '@/services/tv-mode';
-import { getAuthState, subscribeAuthState } from '@/services/auth-state';
-import { hasEmbedAccessForAccount, onEntitlementChange } from '@/services/entitlements';
-import { evaluateAvailableExportFormats, evaluateExportGate, exportLockToGateReason } from '@/services/gates/export';
-import { primeExportGateActivation } from '@/services/gates/export-resolver';
-import type { DataExportFormat } from '@/services/gates/export-resolver';
-import { evaluatePlaybackGate } from '@/services/gates/playback';
-import { resolveGateAction, type PanelGateReason } from '@/services/panel-gating';
-import { ExportGateControl } from '@/components/ExportGateControl';
-import { h, setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
-import { scheduleAfterFirstPaint } from '@/utils/after-paint';
-import { declareOverlay, isModalOpen } from '@/utils/open-modal';
-import {
-  isAgentAnalyticsSuppressed,
-  isAgentPanelViewSuppressed,
-  suppressNextAgentPanelView,
+suppressNextAgentPanelView,
 } from '@/services/agent-analytics-privacy';
-import { escapeHtml } from '@/utils/sanitize';
+import type { PositionSample } from '@/services/aviation';
+import { dataFreshness } from '@/services/data-freshness';
+import type { DataExportFormat } from '@/services/export-formats';
+import { isOpenableExternalUrl,openExternalUrl } from '@/services/external-navigation';
+import { getCachedGpsInterference } from '@/services/gps-interference';
+import { t } from '@/services/i18n';
 import {
-  buildEmbedIframeSnippet,
-  buildEmbedLoaderSnippet,
-  buildEmbedMapUrl,
-  embedLayerIdsFromMapLayers,
-  EMBED_KEY_PLACEHOLDER,
-  type EmbedVariant,
-} from '@/embed/embed-url';
-import { createSettingsButton } from '@/components/settings-button';
-import { overlayHistory, type OverlayId } from '@/utils/overlay-history';
-import { MobilePrimaryNav } from '@/app/mobile-primary-nav';
-import {
-  SPLIT_LAYOUT_MIN_WIDTH,
-  LEGACY_WEB_SPLIT_LAYOUT_MIN_WIDTH,
-  MAP_COL_DEFAULT_PERCENT,
-  clampMapColWidthPercent,
-  getVisualMapSide,
-  getMapColWidthBounds,
-  mapRightClassForVisualSide,
-  type MapVisualSide,
-} from '@/app/split-layout';
-import {
-  addResponsiveZoneListener,
-  removeResponsiveZoneListener,
-  type ResponsiveZoneListener,
-} from '@/app/responsive-zone-listener';
+applyMissionPresetToState,
+clearMissionPreset,
+dismissMissionPresetPrompt,
+filterMissionLayersForRenderer,
+getMissionPresetsForVariant,
+isMissionPresetPromptDismissed,
+loadStoredMissionPreset,
+resetMissionPresetState,
+saveMissionPreset,
+type MissionPreset,
+type MissionPresetId,
+} from '@/services/mission-presets';
+import { mlWorker } from '@/services/ml-worker';
+import { isDesktopRuntime } from '@/services/runtime';
+import type { DashboardSnapshot } from '@/services/storage';
+import { TvModeController } from '@/services/tv-mode';
 import { stageVariantSelection } from '@/services/variant-panel-ownership';
-import { transferSourceGateOwnershipToUser as releaseSourceGateOwnership } from '@/services/source-cap';
+import { deleteWidget } from '@/services/widget-store';
+import type { ClusteredEvent,MapLayers,MilitaryFlight,PanelConfig } from '@/types';
+import {
+buildMapUrl,
+debounce,
+getCurrentTheme,
+saveToStorage,
+showToast,
+urlHasAsyncFlyTo,
+withUrlFragment,
+} from '@/utils';
+import { scheduleAfterFirstPaint } from '@/utils/after-paint';
+import { setTrustedHtml,trustedHtml } from '@/utils/dom-utils';
+import { declareOverlay,isModalOpen } from '@/utils/open-modal';
+import { overlayHistory,type OverlayId } from '@/utils/overlay-history';
+import { clearPanelColSpans,clearPanelSpans } from '@/utils/panel-storage';
+import { escapeHtml } from '@/utils/sanitize';
 
 function readStorageValue(key: string): string | null {
   try {
@@ -293,7 +252,6 @@ export interface EventHandlerCallbacks {
   applySavedPanelOrder?: (panelOrder?: string[]) => void;
   stopLayerActivity?: (layer: keyof MapLayers) => void;
   mountLiveNewsIfReady?: () => void;
-  isFreeTierFallbackActive?: () => boolean;
 }
 
 export class EventHandlerManager implements AppModule {
@@ -308,8 +266,8 @@ export class EventHandlerManager implements AppModule {
   private boundStorageHandler: ((e: StorageEvent) => void) | null = null;
   private boundTvKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
   private boundThemeChangedHandler: (() => void) | null = null;
-  private boundDropdownClickHandler: ((e: MouseEvent) => void) | null = null;
-  private boundDropdownKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
+
+
   private boundMapResizeMoveHandler: ((e: MouseEvent) => void) | null = null;
   private boundMapEndResizeHandler: (() => void) | null = null;
   private boundMapResizeVisChangeHandler: (() => void) | null = null;
@@ -326,9 +284,7 @@ export class EventHandlerManager implements AppModule {
   private boundSearchKeyHandler: ((e: KeyboardEvent) => void) | null = null;
   private readonly mobilePrimaryNav: MobilePrimaryNav;
   private boundPanelCloseHandler: ((e: Event) => void) | null = null;
-  private boundWidgetModifyHandler: ((e: Event) => void) | null = null;
   private boundUndoHandler: ((e: KeyboardEvent) => void) | null = null;
-  private boundNotifyForCountryHandler: ((e: Event) => void) | null = null;
   private boundMissionOutsideHandler: ((e: MouseEvent) => void) | null = null;
   private boundMissionKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
   private boundEmbedModalKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
@@ -393,22 +349,12 @@ export class EventHandlerManager implements AppModule {
    * WebMCP catalog toggles use `applySetPanelEnabled`, which also enforces
    * monitor compatibility and entitlements on enable.
    */
-  enablePanelById(panelId: string, options?: { trackAnalytics?: boolean }): boolean {
+  enablePanelById(panelId: string): boolean {
     const config = this.ctx.panelSettings[panelId];
     if (!config) return false;
     if (config.enabled) return true;
-    if (!hasPremiumAccess(getAuthState()) && isFreePanelCapCounted(panelId)) {
-      const enabledCount = countFreePanelCapUsage(this.ctx.panelSettings);
-      if (enabledCount >= FREE_MAX_PANELS) {
-        // Tell the user why nothing happened instead of failing silently.
-        // (Undo-restore can't reach this branch — closing a panel frees a
-        // slot first — so only the CMD+K "Add" path surfaces the toast.)
-        showToast(t('modals.settingsWindow.freePanelLimit', { max: String(FREE_MAX_PANELS) }));
-        return false;
-      }
-    }
     userSetPanelEnabled(config, true);
-    if (options?.trackAnalytics !== false) trackPanelToggled(panelId, true);
+
     saveToStorage(STORAGE_KEYS.panels, this.ctx.panelSettings);
     this.applyPanelSettings();
     this.ctx.unifiedSettings?.refreshPanelToggles();
@@ -427,7 +373,6 @@ export class EventHandlerManager implements AppModule {
    * closing those panels still uses the dedicated confirm-and-delete handlers.
    */
   setPanelEnabledById(panelId: unknown, enabled: unknown): SetPanelEnabledResult {
-    const isPro = hasPremiumAccess(getAuthState());
     return applySetPanelEnabled(
       {
         panelSettings: this.ctx.panelSettings,
@@ -438,17 +383,12 @@ export class EventHandlerManager implements AppModule {
       enabled,
       {
         variant: SITE_VARIANT,
-        isPro,
         persist: (settings) => saveToStorage(STORAGE_KEYS.panels, settings),
         applyPanelSettings: () => this.applyPanelSettings(),
-        trackToggle: trackPanelToggled,
         beforeApply: (committedPanelId, committedEnabled) => {
           if (committedEnabled) suppressNextAgentPanelView(committedPanelId);
         },
-        showCapToast: () => showToast(
-          t('modals.settingsWindow.freePanelLimit', { max: String(FREE_MAX_PANELS) }),
-        ),
-        isPanelAllowed: (id, config) => isPanelEntitled(id, config, hasPremiumAccess(getAuthState())),
+        isPanelAllowed: (id) => isPublicPanel(id),
       },
     );
   }
@@ -545,14 +485,8 @@ export class EventHandlerManager implements AppModule {
       window.removeEventListener('theme-changed', this.boundThemeChangedHandler);
       this.boundThemeChangedHandler = null;
     }
-    if (this.boundDropdownClickHandler) {
-      document.removeEventListener('click', this.boundDropdownClickHandler);
-      this.boundDropdownClickHandler = null;
-    }
-    if (this.boundDropdownKeydownHandler) {
-      document.removeEventListener('keydown', this.boundDropdownKeydownHandler);
-      this.boundDropdownKeydownHandler = null;
-    }
+
+
     if (this.boundMapResizeMoveHandler) {
       document.removeEventListener('mousemove', this.boundMapResizeMoveHandler);
       this.boundMapResizeMoveHandler = null;
@@ -611,20 +545,9 @@ export class EventHandlerManager implements AppModule {
       this.ctx.container.removeEventListener('wm:panel-close', this.boundPanelCloseHandler);
       this.boundPanelCloseHandler = null;
     }
-    if (this.boundWidgetModifyHandler) {
-      this.ctx.container.removeEventListener('wm:widget-modify', this.boundWidgetModifyHandler);
-      this.boundWidgetModifyHandler = null;
-    }
     if (this.boundUndoHandler) {
       document.removeEventListener('keydown', this.boundUndoHandler);
       this.boundUndoHandler = null;
-    }
-    if (this.boundNotifyForCountryHandler) {
-      window.removeEventListener(
-        WM_OPEN_NOTIFICATIONS_FOR_COUNTRY,
-        this.boundNotifyForCountryHandler,
-      );
-      this.boundNotifyForCountryHandler = null;
     }
     this.closeMissionPresetPopover();
     if (this.missionDataRefreshTimer) {
@@ -632,17 +555,12 @@ export class EventHandlerManager implements AppModule {
       this.missionDataRefreshTimer = null;
     }
     for (const unsub of this.authStateUnsubscribers) unsub();
-    this.authStateUnsubscribers = [];
     for (const unsub of this.proGateUnsubscribers) unsub();
     this.proGateUnsubscribers = [];
     this.ctx.tvMode?.destroy();
     this.ctx.tvMode = null;
     this.ctx.unifiedSettings?.destroy();
     this.ctx.unifiedSettings = null;
-    this.ctx.authHeaderWidget?.destroy();
-    this.ctx.authHeaderWidget = null;
-    this.ctx.authModal?.destroy();
-    this.ctx.authModal = null;
     overlayHistory.reset();
   }
 
@@ -652,18 +570,18 @@ export class EventHandlerManager implements AppModule {
     // times); tracking registered IDs in a Set means a button absent at an
     // early call still gets wired when it appears, instead of being permanently
     // skipped by a single latched boolean. (#4403 review)
-    const wireSearchButton = (id: string, source: string) => {
+    const wireSearchButton = (id: string) => {
       if (this.registeredSearchButtons.has(id)) return;
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('click', () => {
-        track('search-open', { source });
+
         this.callbacks.openSearch();
       });
       this.registeredSearchButtons.add(id);
     };
-    wireSearchButton('searchBtn', 'desktop');
-    wireSearchButton('mobileSearchBtn', 'mobile');
+    wireSearchButton('searchBtn');
+    wireSearchButton('mobileSearchBtn');
     if (!this.boundSearchKeyHandler) {
       this.boundSearchKeyHandler = (e: KeyboardEvent) => {
         // !e.shiftKey so Cmd/Ctrl+Shift+K (e.g. Firefox web console) doesn't
@@ -701,8 +619,7 @@ export class EventHandlerManager implements AppModule {
       this.openEmbedDialog();
     });
 
-    this.initDownloadDropdown();
-    this.initFooterDownload();
+
 
     this.boundStorageHandler = (e: StorageEvent) => {
       if (e.key === STORAGE_KEYS.panels && e.newValue) {
@@ -741,25 +658,13 @@ export class EventHandlerManager implements AppModule {
         return;
       }
 
-      if (panelId.startsWith('mcp-')) {
-        if (!window.confirm(t('mcp.confirmDelete'))) return;
-        deleteMcpPanel(panelId);
-        const panel = this.ctx.panels[panelId];
-        panel?.destroy();
-        delete this.ctx.panels[panelId];
-        delete this.ctx.panelSettings[panelId];
-        saveToStorage(STORAGE_KEYS.panels, this.ctx.panelSettings);
-        panel?.getElement()?.remove();
-        return;
-      }
-
       const config = this.ctx.panelSettings[panelId];
       if (!config) return;
       userSetPanelEnabled(config, false);
       // Live-media teardown is handled centrally by applyPanelSettings() below, which
       // calls stopLiveMediaForClose() on every now-disabled panel. Calling it here too
       // double-fired the lifecycle hook for live-news / live-webcams.
-      trackPanelToggled(panelId, false);
+
       saveToStorage(STORAGE_KEYS.panels, this.ctx.panelSettings);
       this.applyPanelSettings();
       this.ctx.unifiedSettings?.refreshPanelToggles();
@@ -768,36 +673,6 @@ export class EventHandlerManager implements AppModule {
       if (this.closedPanelStack.length > 20) this.closedPanelStack.shift();
     }) as EventListener;
     this.ctx.container.addEventListener('wm:panel-close', this.boundPanelCloseHandler);
-
-    this.boundWidgetModifyHandler = ((e: CustomEvent<{ widgetId: string }>) => {
-      const spec = getWidget(e.detail.widgetId);
-      if (!spec) return;
-      void import('@/components/WidgetChatModal').then((m) => m.openWidgetChatModal({
-        mode: 'modify',
-        existingSpec: spec,
-        onComplete: (updated) => {
-          void saveWidget(updated).then(() => {
-            (this.ctx.panels[updated.id] as CustomWidgetPanel | undefined)?.updateSpec(updated);
-          }).catch((error) => {
-            console.error('[widget-chat] failed to save widget', error);
-            showToast(t('widgets.saveFailed'));
-          });
-        },
-      })).catch((err) => console.error('[widget-chat] failed to lazy-load WidgetChatModal', err));
-    }) as EventListener;
-    this.ctx.container.addEventListener('wm:widget-modify', this.boundWidgetModifyHandler);
-
-    this.ctx.container.addEventListener('wm:mcp-configure', ((e: CustomEvent<{ panelId: string }>) => {
-      const spec = getMcpPanel(e.detail.panelId);
-      if (!spec) return;
-      void import('@/components/McpConnectModal').then((m) => m.openMcpConnectModal({
-        existingSpec: spec,
-        onComplete: (updated) => {
-          saveMcpPanel(updated);
-          (this.ctx.panels[updated.id] as McpDataPanel | undefined)?.updateSpec(updated);
-        },
-      })).catch((err) => console.error('[mcp-connect] failed to lazy-load McpConnectModal', err));
-    }) as EventListener);
 
     // undo via Ctrl/Cmd+Z
     this.boundUndoHandler = (e: KeyboardEvent) => {
@@ -837,7 +712,7 @@ export class EventHandlerManager implements AppModule {
     const regionSelect = document.getElementById('regionSelect') as HTMLSelectElement;
     regionSelect?.addEventListener('change', () => {
       this.ctx.map?.setView(regionSelect.value as MapView);
-      trackMapViewChange(regionSelect.value);
+
     });
 
     this.boundResizeHandler = debounce(() => {
@@ -932,7 +807,7 @@ export class EventHandlerManager implements AppModule {
         if (this.ctx.isDestroyed) return;
         if (this.missionPresetPopover || loadStoredMissionPreset() || isMissionPresetPromptDismissed()) return;
         if (isModalOpen(document)) return;
-        this.openMissionPresetPopover(document.getElementById('missionPresetBtn'), false, 'auto');
+        this.openMissionPresetPopover(document.getElementById('missionPresetBtn'), false);
       });
     }
   }
@@ -985,13 +860,8 @@ export class EventHandlerManager implements AppModule {
   private openMissionPresetPopover(
     anchor: HTMLElement | null,
     mobile: boolean,
-    trigger: MissionPickerTrigger = 'manual',
   ): void {
     this.closeMissionPresetPopover();
-    // One emission site covers every path onto the picker: the desktop button,
-    // the mobile menu item, the deferred auto-open, and the WebMCP entry
-    // (tagged 'agent' so the human funnel reads clean).
-    trackMissionPickerShown(trigger, mobile ? 'mobile' : 'desktop');
     // The desktop trigger (#missionPresetBtn) is display:none on mobile, where the
     // popover opens from the menu item instead, so remember the real opener.
     this.missionPresetReturnFocus = anchor ?? document.getElementById('missionPresetBtn');
@@ -1137,12 +1007,8 @@ export class EventHandlerManager implements AppModule {
     );
     // #6045 — mission presets (e.g. Supply-Chain Risk) include resilienceScore.
     // Free users must not persist or apply locked layers through this path.
-    if (shouldSanitizeLockedLayers(
-      hasPremiumAccess(),
-      isProTierResolved(),
-      this.callbacks.isFreeTierFallbackActive?.() === true,
-    )) {
-      filtered = sanitizeLockedLayers(filtered, false);
+    if (true) {
+      filtered = sanitizePublicLayers(filtered);
     }
     return filtered;
   }
@@ -1232,16 +1098,13 @@ export class EventHandlerManager implements AppModule {
     for (const layer of layerKeys) {
       const enabled = !!nextLayers[layer];
       if (!!previousLayers[layer] === enabled) continue;
-      trackMapLayerToggle(layer, enabled, 'programmatic');
+
       this.runMapLayerSideEffects(layer, enabled);
     }
   }
 
   private limitMissionPanels(panelSettings: Record<string, PanelConfig>): Record<string, PanelConfig> {
-    if (isProUser() || (!isProTierResolved() && this.callbacks.isFreeTierFallbackActive?.() !== true)) {
-      return panelSettings;
-    }
-    return enforceFreePanelLimit(panelSettings, false);
+    return sanitizePublicPanelSettings(panelSettings);
   }
 
   private applyMissionPreset(presetId: MissionPresetId, source: 'user' | 'agent' = 'user'): void {
@@ -1267,7 +1130,7 @@ export class EventHandlerManager implements AppModule {
     saveToStorage(STORAGE_KEYS.mapLayers, mapLayers);
     this.persistMissionPanelOrder(applied.panelOrder);
     saveMissionPreset(applied.preset.id);
-    trackMissionSelected(applied.preset.id, source);
+
     if (source === 'agent') {
       // An agent-applied preset mounts panels the user never asked to see.
       // Suppress the panel-view records those mounts trigger (same rule the
@@ -1302,7 +1165,7 @@ export class EventHandlerManager implements AppModule {
     if (this.ctx.isDestroyed) return false;
     const mobile = this.ctx.isMobile;
     const anchor = document.getElementById(mobile ? 'mobileMenuMission' : 'missionPresetBtn');
-    this.openMissionPresetPopover(anchor, mobile, 'agent');
+    this.openMissionPresetPopover(anchor, mobile);
     return this.missionPresetPopover !== null;
   }
 
@@ -1495,7 +1358,7 @@ export class EventHandlerManager implements AppModule {
 
   applyMapLayerChange(layer: keyof MapLayers, enabled: boolean, source: 'user' | 'programmatic'): void {
     console.log(`[App.onLayerChange] ${layer}: ${enabled} (${source})`);
-    if (!isAgentAnalyticsSuppressed()) trackMapLayerToggle(layer, enabled, source);
+
     this.ctx.mapLayers[layer] = enabled;
     saveToStorage(STORAGE_KEYS.mapLayers, this.ctx.mapLayers);
     this.syncUrlState();
@@ -1614,29 +1477,6 @@ export class EventHandlerManager implements AppModule {
       snippet,
     }));
 
-    // The keyed tier is offered only to an account that can actually mint a
-    // key. Showing it to everyone else would be an upsell wearing a snippet.
-    if (hasEmbedAccessForAccount(getAuthState().user?.role)) {
-      const state = this.ctx.map?.getState();
-      tiers.appendChild(this.buildEmbedTier({
-        id: 'embedKeyedSnippetTextarea',
-        title: 'With your embed key',
-        detail: 'All fourteen layers at this exact view, refreshed every 10 minutes instead of '
-          + `hourly. Replace ${EMBED_KEY_PLACEHOLDER} with a key from Settings → Embeds; it is `
-          + 'meant to sit in your page HTML, unlike an API key.',
-        snippet: buildEmbedLoaderSnippet({
-          src: `${window.location.origin}/embed.js`,
-          panel: 'map',
-          layerIds: state ? embedLayerIdsFromMapLayers(state.layers) : undefined,
-          center: this.ctx.map?.getCenter(),
-          zoom: state?.zoom,
-          theme: getCurrentTheme(),
-          variant: SITE_VARIANT as EmbedVariant,
-        }),
-        manageKeysLabel: 'Manage embed keys',
-      }));
-    }
-
     dialog.append(header, preview, tiers);
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
@@ -1668,7 +1508,6 @@ export class EventHandlerManager implements AppModule {
     title: string;
     detail: string;
     snippet: string;
-    manageKeysLabel?: string;
   }): HTMLElement {
     const section = document.createElement('section');
     section.className = 'embed-modal-tier';
@@ -1690,20 +1529,6 @@ export class EventHandlerManager implements AppModule {
 
     const actions = document.createElement('div');
     actions.className = 'embed-modal-actions';
-
-    if (options.manageKeysLabel) {
-      const manageButton = document.createElement('button');
-      manageButton.className = 'embed-manage-keys-btn';
-      manageButton.type = 'button';
-      manageButton.textContent = options.manageKeysLabel;
-      manageButton.addEventListener('click', () => {
-        // Closing first keeps two overlays off the screen at once, and the
-        // settings modal owns its own history entry on mobile.
-        this.closeEmbedDialog();
-        void this.ctx.unifiedSettings?.open('embeds');
-      });
-      actions.appendChild(manageButton);
-    }
 
     const copyButton = document.createElement('button');
     copyButton.className = 'embed-copy-btn';
@@ -1747,119 +1572,9 @@ export class EventHandlerManager implements AppModule {
     document.body.removeChild(textarea);
   }
 
-  private platformLabel(p: Platform): string {
-    switch (p) {
-      case 'macos-arm64': return '\uF8FF Silicon';
-      case 'macos-x64': return '\uF8FF Intel';
-      case 'macos': return '\uF8FF macOS';
-      case 'windows': return 'Windows';
-      case 'linux': return 'Linux';
-      default: return t('header.downloadApp');
-    }
-  }
 
-  private initDownloadDropdown(): void {
-    const btn = document.getElementById('downloadBtn');
-    const dropdown = document.getElementById('downloadDropdown');
-    const label = document.getElementById('downloadBtnLabel');
-    if (!btn || !dropdown) return;
 
-    const platform = detectPlatform();
-    if (label) label.textContent = this.platformLabel(platform);
 
-    const primary = buttonsForPlatform(platform);
-    const all = allButtons();
-    const others = all.filter(b => !primary.some(p => p.href === b.href));
-
-    const renderDropdown = () => {
-      const primaryHtml = primary.map(b =>
-        `<a class="dl-dd-btn ${b.cls} primary" href="${b.href}">${b.label}</a>`
-      ).join('');
-      const othersHtml = others.map(b =>
-        `<a class="dl-dd-btn ${b.cls}" href="${b.href}">${b.label}</a>`
-      ).join('');
-
-      setTrustedHtml(dropdown, trustedHtml(`
-        <div class="dl-dd-tagline">${t('modals.downloadBanner.description')}</div>
-        <div class="dl-dd-buttons">${primaryHtml}</div>
-        ${others.length ? `<button class="dl-dd-toggle" id="dlDdToggle">${t('modals.downloadBanner.showAllPlatforms')}</button>
-        <div class="dl-dd-others" id="dlDdOthers">${othersHtml}</div>` : ''}
-      `, "legacy direct innerHTML migration"));
-
-      dropdown.querySelectorAll<HTMLAnchorElement>('.dl-dd-btn').forEach(a => {
-        a.addEventListener('click', (e) => {
-          e.preventDefault();
-          const plat = new URL(a.href, location.origin).searchParams.get('platform') || 'unknown';
-          trackDownloadClicked(plat);
-          window.open(a.href, '_blank', 'noopener,noreferrer');
-          dropdown.classList.remove('open');
-        });
-      });
-
-      const toggle = dropdown.querySelector('#dlDdToggle');
-      const othersEl = dropdown.querySelector('#dlDdOthers') as HTMLElement | null;
-      if (toggle && othersEl) {
-        toggle.addEventListener('click', () => {
-          const showing = othersEl.classList.toggle('show');
-          toggle.textContent = showing
-            ? t('modals.downloadBanner.showLess')
-            : t('modals.downloadBanner.showAllPlatforms');
-        });
-      }
-    };
-
-    renderDropdown();
-
-    // Keep the trigger's aria-expanded in sync however the dropdown closes
-    // (toggle click, outside click, Escape).
-    btn.setAttribute('aria-haspopup', 'true');
-    btn.setAttribute('aria-expanded', 'false');
-    const syncExpanded = () => btn.setAttribute('aria-expanded', String(dropdown.classList.contains('open')));
-
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      dropdown.classList.toggle('open');
-      syncExpanded();
-    });
-
-    this.boundDropdownClickHandler = (e: MouseEvent) => {
-      if (!dropdown.contains(e.target as Node) && !btn.contains(e.target as Node)) {
-        dropdown.classList.remove('open');
-        syncExpanded();
-      }
-    };
-    document.addEventListener('click', this.boundDropdownClickHandler);
-
-    this.boundDropdownKeydownHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        dropdown.classList.remove('open');
-        syncExpanded();
-      }
-    };
-    document.addEventListener('keydown', this.boundDropdownKeydownHandler);
-  }
-
-  private initFooterDownload(): void {
-    const mount = document.getElementById('footerDownloadMount');
-    if (!mount) return;
-    const platform = detectPlatform();
-    const primary = buttonsForPlatform(platform);
-    const btn = primary[0];
-    if (!btn) return;
-    const a = document.createElement('a');
-    a.href = btn.href;
-    a.textContent = t('header.downloadApp');
-    a.className = 'site-footer-download-link';
-    a.target = '_blank';
-    a.rel = 'noopener';
-    a.addEventListener('click', (e) => {
-      e.preventDefault();
-      const plat = new URL(btn.href, location.origin).searchParams.get('platform') || 'unknown';
-      trackDownloadClicked(plat);
-      window.open(btn.href, '_blank', 'noopener,noreferrer');
-    });
-    mount.replaceWith(a);
-  }
 
   private setCopyLinkFeedback(button: HTMLElement | null, message: string): void {
     if (!button) return;
@@ -1908,7 +1623,7 @@ export class EventHandlerManager implements AppModule {
     variant: string,
     options: { href?: string; isLocalDev: boolean },
   ): Promise<'reload' | 'assign' | 'blocked'> {
-    trackVariantSwitch(SITE_VARIANT, variant);
+
     await this.exitFullscreenForNavigation();
 
     if (this.ctx.isDesktopApp || options.isLocalDev) {
@@ -2067,112 +1782,10 @@ export class EventHandlerManager implements AppModule {
       return this.exportPanelLoad;
     };
 
-    // --- Data-export gate (plan 2026-07-25-001, U5) -------------------------
-    // Replaces the old Clerk-role check plus display:none toggle. The `role`
-    // field is written by nothing in our webhook pipeline, so that check hid
-    // the export button from every paying subscriber. The control is now
-    // visible to everyone and only its MENU changes: format rows when
-    // entitled, a single locked row (reason + CTA) otherwise.
-    let lockedControl: ExportGateControl | null = null;
-    let lockedReason: PanelGateReason | null = null;
-    let isUnlocked = false;
+    currentExportFormats = ['csv', 'json', 'pdf'];
+    void ensureExportPanel().then(panel => panel.setAvailableFormats(currentExportFormats))
+      .catch(error => console.warn('[export-panel]', error));
 
-    // Created up front and empty: an aria-live region only announces content
-    // injected AFTER it is in the accessibility tree.
-    const liveRegion = h('span', { className: 'wm-visually-hidden', role: 'status' });
-    liveRegion.setAttribute('aria-live', 'polite');
-    const initialHeaderRight = this.ctx.container.querySelector('.header-right');
-    initialHeaderRight?.appendChild(liveRegion);
-
-    const removeLockedControl = (): void => {
-      lockedControl?.destroy();
-      lockedControl = null;
-      lockedReason = null;
-    };
-
-    const showLocked = (reason: PanelGateReason): void => {
-      isUnlocked = false;
-      const panelEl = this.ctx.exportPanel?.getElement();
-      if (panelEl) panelEl.style.display = 'none';
-      lockedReason = reason;
-      if (lockedControl) {
-        lockedControl.update(reason);
-        return;
-      }
-      lockedControl = new ExportGateControl({
-        reason,
-        onOpen: () => trackGateHit('export'),
-        onAction: () => {
-          if (lockedReason === null) return;
-          resolveGateAction(lockedReason, { openAuthModal: () => this.ctx.authModal?.open() })();
-        },
-      });
-      const headerRight = this.ctx.container.querySelector('.header-right');
-      headerRight?.insertBefore(lockedControl.getElement(), headerRight.firstChild);
-    };
-
-    const unlock = (formats: readonly DataExportFormat[]): void => {
-      currentExportFormats = formats;
-      const wasLocked = lockedControl !== null;
-      // Change-detection guard: gating re-fires on every auth AND entitlement
-      // emission, most with an unchanged verdict — skip the re-import/DOM
-      // write when already unlocked (same pattern as Panel.showGatedCta's
-      // repeat-verdict skip).
-      if (!wasLocked && isUnlocked) {
-        this.ctx.exportPanel?.setAvailableFormats(currentExportFormats);
-        return;
-      }
-      isUnlocked = true;
-      removeLockedControl();
-      void ensureExportPanel()
-        .then((panel) => {
-          if (this.ctx.isDestroyed) return;
-          // The verdict can flip back while the chunk is in flight (sign-out
-          // mid-load); the locked control winning is the safe resolution.
-          if (lockedControl) {
-            panel.getElement().style.display = 'none';
-            return;
-          }
-          panel.setAvailableFormats(currentExportFormats);
-          panel.getElement().style.display = '';
-          if (wasLocked) liveRegion.textContent = t('components.exportGate.unlockedAnnouncement');
-        })
-        .catch((err) => {
-          // Allow the next emission to retry the import — the guard above
-          // must not latch an unlocked state the chunk never delivered.
-          isUnlocked = false;
-          console.warn('[export-panel] Failed to lazy-load ExportPanel:', err);
-        });
-    };
-    const applyGate = (): void => {
-      if (this.ctx.isDestroyed) return;
-      const authState = getAuthState();
-      const verdict = evaluateExportGate(authState);
-      if (verdict.locked) {
-        showLocked(exportLockToGateReason(verdict.reason));
-        return;
-      }
-      // Only a would-be-locked user pays for the catalog probe; the gate stays
-      // inactive (export available) until it proves Pro Business is
-      // purchasable, so the takeaway and the tier flip together (R10).
-      if (verdict.pendingActivation) {
-        void primeExportGateActivation().then((active) => {
-          if (active) applyGate();
-        });
-      }
-      unlock(evaluateAvailableExportFormats(authState));
-    };
-
-    applyGate();
-    // BOTH subscriptions: auth alone misses the entitlement snapshot landing
-    // after sign-in (documented at src/app/panel-layout.ts:2470-2485), which is
-    // exactly the post-checkout unlock path.
-    this.proGateUnsubscribers.push(subscribeAuthState(() => applyGate()));
-    this.proGateUnsubscribers.push(onEntitlementChange(() => applyGate()));
-    this.proGateUnsubscribers.push(() => {
-      removeLockedControl();
-      liveRegion.remove();
-    });
   }
 
   setupUnifiedSettings(): void {
@@ -2183,12 +1796,12 @@ export class EventHandlerManager implements AppModule {
           const current = this.ctx.panelSettings[key];
           if (!current) {
             this.ctx.panelSettings[key] = { ...nextConfig };
-            trackPanelToggled(key, nextConfig.enabled);
+
             return;
           }
           const enabledChanged = current.enabled !== nextConfig.enabled;
           if (enabledChanged) {
-            trackPanelToggled(key, nextConfig.enabled);
+
           }
           Object.assign(current, nextConfig);
           if (nextConfig.fontScale === undefined) delete current.fontScale;
@@ -2203,40 +1816,19 @@ export class EventHandlerManager implements AppModule {
       getDisabledSources: () => this.ctx.disabledSources,
       toggleSource: (name: string) => {
         const reenabling = this.ctx.disabledSources.has(name);
-        if (reenabling && !isProUser()) {
-          const allSources = this.getAllSourceNames();
-          const currentlyEnabled = allSources.filter(n => !this.ctx.disabledSources.has(n)).length;
-          if (currentlyEnabled + 1 > FREE_MAX_SOURCES) {
-            showToast(t('modals.settingsWindow.freeSourceLimit', { max: String(FREE_MAX_SOURCES) }), 3000);
-            return;
-          }
-        }
         if (reenabling) {
           this.ctx.disabledSources.delete(name);
         } else {
           this.ctx.disabledSources.add(name);
         }
-        if (this.transferSourceGateOwnershipToUser([name])) {
-          saveToStorage(STORAGE_KEYS.disabledFeeds, Array.from(this.ctx.disabledSources));
-        }
+        saveToStorage(STORAGE_KEYS.disabledFeeds, Array.from(this.ctx.disabledSources));
       },
       setSourcesEnabled: (names: string[], enabled: boolean) => {
-        if (enabled && !isProUser()) {
-          const allSources = this.getAllSourceNames();
-          const currentlyEnabled = allSources.filter(n => !this.ctx.disabledSources.has(n)).length;
-          const wouldEnable = names.filter(n => this.ctx.disabledSources.has(n) && allSources.includes(n)).length;
-          if (currentlyEnabled + wouldEnable > FREE_MAX_SOURCES) {
-            showToast(t('modals.settingsWindow.freeSourceLimit', { max: String(FREE_MAX_SOURCES) }), 3000);
-            return;
-          }
-        }
         for (const name of names) {
           if (enabled) this.ctx.disabledSources.delete(name);
           else this.ctx.disabledSources.add(name);
         }
-        if (this.transferSourceGateOwnershipToUser(names)) {
-          saveToStorage(STORAGE_KEYS.disabledFeeds, Array.from(this.ctx.disabledSources));
-        }
+        saveToStorage(STORAGE_KEYS.disabledFeeds, Array.from(this.ctx.disabledSources));
       },
       getAllSourceNames: () => this.getAllSourceNames(),
       // Sources are applied to ctx.disabledSources on click, but DataLoader
@@ -2283,46 +1875,6 @@ export class EventHandlerManager implements AppModule {
     if (mobileBtn) {
       mobileBtn.addEventListener('click', () => this.ctx.unifiedSettings?.open());
     }
-
-    // U8 (degraded path) — listen for the deep-dive "Notify me about this
-    // country" sub-action and open the notifications tab. Today the
-    // event detail.country is informational only; when the alertRules
-    // schema PR lands, the future PR will read it here and forward to
-    // a pre-filled create-form open. See plan U8 R9 + the TODO inside
-    // src/utils/notify-country-link.ts.
-    //
-    // Stored on a bound handler field so `destroy()` can remove it.
-    // Same-document reinit (HMR, test harnesses, multiple App instances)
-    // would otherwise accumulate anonymous listeners that retain the
-    // stale AppContext closure — every click would fire all of them.
-    this.boundNotifyForCountryHandler = (_e: Event) => {
-      this.ctx.unifiedSettings?.open('notifications');
-    };
-    window.addEventListener(
-      WM_OPEN_NOTIFICATIONS_FOR_COUNTRY,
-      this.boundNotifyForCountryHandler,
-    );
-  }
-
-  setupAuthWidget(): void {
-    const modal = new AuthLauncher();
-    this.ctx.authModal = modal;
-
-    // The standalone gear remains available to every user. Signed-in users
-    // also get explicit Settings and Plan & billing destinations inside the
-    // avatar menu, keeping account and subscription actions in one place.
-    const widget = new AuthHeaderWidget(
-      () => modal.open(),
-      () => this.ctx.unifiedSettings?.open('settings'),
-      () => this.ctx.unifiedSettings?.open('billing'),
-    );
-    this.ctx.authHeaderWidget = widget;
-    const mount = document.getElementById('authWidgetMount');
-    if (mount) {
-      mount.appendChild(widget.getElement());
-    }
-
-    this.mobilePrimaryNav.setupAuth(modal);
   }
 
   setupPlaybackControl(): void {
@@ -2344,34 +1896,7 @@ export class EventHandlerManager implements AppModule {
       headerRight.insertBefore(el, headerRight.firstChild);
     }
 
-    // #5632: gate on the entitlement chain, NOT `user.role === 'pro'` — nothing
-    // writes Clerk publicMetadata, so that field read 'free' for paying
-    // subscribers and the control rendered for nobody.
-    let gateHitTracked = false;
-    const applyGate = (): void => {
-      if (this.ctx.isDestroyed) return;
-      const verdict = evaluatePlaybackGate(getAuthState());
-      const visible = verdict === 'visible';
-      el.style.display = visible ? '' : 'none';
-      // Losing access mid-replay must also LEAVE playback. `display: none`
-      // alone strands the dashboard on historical data — the "Live" button is
-      // inside the element we just hid. No-ops unless playback is active.
-      if (!visible) this.ctx.playbackControl?.exitPlayback();
-      // Affirmative denials only, once per session. 'pending' also hides, but
-      // counting it would tick the funnel on every page load — including for
-      // subscribers whose control appears a moment later.
-      if (verdict === 'denied' && !gateHitTracked) {
-        gateHitTracked = true;
-        trackGateHit('playback');
-      }
-    };
-    applyGate();
-    // BOTH subscriptions, same as setupExportPanel above: the Convex
-    // entitlement watcher (services/entitlements.ts) is a separate emitter from
-    // Clerk's, so an auth-only subscription never re-runs when a snapshot lands
-    // after sign-in — exactly the post-checkout unlock path.
-    this.proGateUnsubscribers.push(subscribeAuthState(() => applyGate()));
-    this.proGateUnsubscribers.push(onEntitlementChange(() => applyGate()));
+
   }
 
   setupSnapshotSaving(): void {
@@ -2441,38 +1966,7 @@ export class EventHandlerManager implements AppModule {
     });
   }
 
-  setupPanelViewTracking(): void {
-    const viewedPanels = new Set<string>();
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting && entry.intersectionRatio >= 0.3) {
-          const id = (entry.target as HTMLElement).dataset.panel;
-          if (id && !viewedPanels.has(id)) {
-            if (isAgentPanelViewSuppressed(id)) continue;
-            viewedPanels.add(id);
-            trackPanelView(id);
-          }
-        }
-      }
-    }, { threshold: 0.3 });
 
-    const grid = document.getElementById('panelsGrid');
-    if (grid) {
-      const observeGridPanels = () => {
-        for (const child of Array.from(grid.children)) {
-          if ((child as HTMLElement).dataset.panel) {
-            observer.observe(child);
-          }
-        }
-      };
-      observeGridPanels();
-      // Panels mounted after boot (mission apply, add-panel, tab switch) must
-      // join the funnel denominator too; observe() is idempotent, so a bulk
-      // re-scan per childList change is cheap and cannot double-count.
-      const lateMounts = new MutationObserver(() => observeGridPanels());
-      lateMounts.observe(grid, { childList: true });
-    }
-  }
 
   shouldShowIntelligenceNotifications(): boolean {
     return !this.ctx.isMobile && !!this.ctx.findingsBadge?.isPopupEnabled();
@@ -2767,7 +2261,7 @@ export class EventHandlerManager implements AppModule {
       const current = mainContent.style.getPropertyValue('--map-col-width');
       if (current && dragMoved) {
         writeStorageValue('map-col-width', current);
-        if (Number.parseFloat(current).toFixed(1) !== dragStartPct) trackLayoutCustomized('map-divider');
+
       }
       dragMoved = false;
       syncMapColNarrowState();
@@ -2824,7 +2318,7 @@ export class EventHandlerManager implements AppModule {
       mainContent.style.setProperty('--map-col-width', value);
       this.ctx.map?.resize();
       writeStorageValue('map-col-width', value);
-      if (newPct.toFixed(1) !== currentPct.toFixed(1)) trackLayoutCustomized('map-divider');
+
       syncMapColNarrowState();
       syncWidthSeparatorAria();
     });
@@ -2972,21 +2466,6 @@ export class EventHandlerManager implements AppModule {
     const lookup = `panels.${key}`;
     const localized = t(lookup);
     return localized === lookup ? fallback : localized;
-  }
-
-  private transferSourceGateOwnershipToUser(names: Iterable<string>): boolean {
-    const gateOwned = new Set(
-      loadFromStorage<string[]>(STORAGE_KEYS.sourceGateOwnership, []),
-    );
-    const nextGateOwned = releaseSourceGateOwnership(gateOwned, names);
-    if (nextGateOwned.size === gateOwned.size) return true;
-    // A deliberate source preference can only outlive the gate safely after
-    // ownership transfers. If this sidecar write fails, keep the live toggle
-    // for the session but do not persist a preference Pro could later undo.
-    return writeStorageValue(
-      STORAGE_KEYS.sourceGateOwnership,
-      JSON.stringify([...nextGateOwned]),
-    );
   }
 
   getAllSourceNames(): string[] {

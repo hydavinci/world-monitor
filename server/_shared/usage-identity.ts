@@ -8,16 +8,7 @@
  * endpoints the gateway never resolves it, so we accept null/undefined and report 0.
  */
 
-export type AuthKind =
-  | 'clerk_jwt'
-  | 'user_api_key'
-  | 'enterprise_api_key'
-  | 'widget_key'
-  // #4866 — MCP OAuth bearer (the `kind: 'pro'` context on /mcp). Distinct
-  // from clerk_jwt so MCP-connector traffic never conflates with dashboard
-  // JWT traffic in Axiom; customer_id carries the same Clerk userId.
-  | 'mcp_oauth'
-  | 'anon';
+export type AuthKind = 'enterprise_api_key' | 'anon';
 
 export interface UsageIdentity {
   auth_kind: AuthKind;
@@ -50,26 +41,6 @@ const ENTERPRISE_KEY_TO_CUSTOMER: Record<string, string> = {
 export function buildUsageIdentity(input: UsageIdentityInput): UsageIdentity {
   const tier = input.tier ?? 0;
 
-  if (input.isUserApiKey) {
-    return {
-      auth_kind: 'user_api_key',
-      principal_id: input.sessionUserId,
-      customer_id: input.userApiKeyCustomerRef ?? input.sessionUserId,
-      tier,
-      plan_key: input.planKey,
-    };
-  }
-
-  if (input.sessionUserId) {
-    return {
-      auth_kind: 'clerk_jwt',
-      principal_id: input.sessionUserId,
-      customer_id: input.clerkOrgId ?? input.sessionUserId,
-      tier,
-      plan_key: input.planKey,
-    };
-  }
-
   if (input.enterpriseApiKey) {
     const customer = ENTERPRISE_KEY_TO_CUSTOMER[input.enterpriseApiKey] ?? 'enterprise-unmapped';
     return {
@@ -78,16 +49,6 @@ export function buildUsageIdentity(input: UsageIdentityInput): UsageIdentity {
       customer_id: customer,
       tier,
       plan_key: input.planKey ?? 'enterprise',
-    };
-  }
-
-  if (input.widgetKey) {
-    return {
-      auth_kind: 'widget_key',
-      principal_id: hashKeySync(input.widgetKey),
-      customer_id: 'widget',
-      tier,
-      plan_key: null,
     };
   }
 

@@ -2501,18 +2501,9 @@ describe('CII scoring', () => {
       { relPath: 'shared/bootstrap-tier-keys.js', expectedKeys: [expectedStaleKey] },
       { relPath: 'api/bootstrap.js', expectedRefs: ['BOOTSTRAP_CACHE_KEYS'] },
       { relPath: 'api/health.js', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.stale', 'CII_RISK_SCORE_CACHE_KEYS.live'] },
-      { relPath: 'api/mcp/registry/cache-tools.ts', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.stale'] },
-      { relPath: 'server/worldmonitor/intelligence/v1/brief-story-context.ts', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.stale'] },
-      { relPath: 'server/worldmonitor/intelligence/v1/chat-analyst-context.ts', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.stale'] },
       { relPath: 'server/worldmonitor/intelligence/v1/get-country-risk.ts', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.stale'] },
       { relPath: 'scripts/seed-cross-source-signals.mjs', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.stale'] },
       { relPath: 'scripts/seed-forecasts.mjs', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.stale'] },
-      { relPath: 'scripts/regional-snapshot/balance-vector.mjs', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.stale'] },
-      { relPath: 'scripts/regional-snapshot/evidence-collector.mjs', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.stale'] },
-      { relPath: 'scripts/regional-snapshot/freshness.mjs', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.stale'] },
-      { relPath: 'scripts/regional-snapshot/trigger-evaluator.mjs', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.stale'] },
-      { relPath: 'api/mcp/registry/analysis-tools.ts', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.live'] },
-      { relPath: 'tests/regional-snapshot.test.mjs', expectedRefs: ['CII_RISK_SCORE_CACHE_KEYS.stale'] },
     ];
 
     const violations: string[] = [];

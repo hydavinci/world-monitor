@@ -275,18 +275,15 @@ describe('gateway CDN origin policy', () => {
     assert.equal(res.status, 403);
   });
 
-  it('preserves premium auth behavior', async () => {
+  it('keeps retired routes unavailable even with a valid operator key', async () => {
     process.env.WORLDMONITOR_VALID_KEYS = 'real-key-123';
     const handler = createHandler();
 
-    // Use a premium route without its own fail-closed provider budget. The
-    // analyze-stock limiter is covered separately by the rate-limit contract;
-    // this test is scoped to premium auth and CDN behavior with Redis absent.
     const noCreds = await handler(new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-score?countryCode=US', {
       headers: { Origin: 'https://worldmonitor.app' },
     }));
-    assert.equal(noCreds.status, 401);
-    assert.equal(noCreds.headers.get('Cache-Control'), 'no-store');
+    assert.equal(noCreds.status, 403);
+    assert.equal(noCreds.headers.get('Cache-Control'), 'private, no-store');
 
     const withKey = await handler(new Request('https://worldmonitor.app/api/resilience/v1/get-resilience-score?countryCode=US', {
       headers: {
@@ -294,13 +291,14 @@ describe('gateway CDN origin policy', () => {
         'X-WorldMonitor-Key': 'real-key-123',
       },
     }));
-    assert.equal(withKey.status, 200);
+    assert.equal(withKey.status, 403);
     assert.equal(withKey.headers.get('Access-Control-Allow-Origin'), 'https://worldmonitor.app');
     assert.equal(withKey.headers.get('Vary'), 'Origin');
-    assert.equal(withKey.headers.get('CDN-Cache-Control'), null, 'premium endpoints must NOT have CDN caching');
+    assert.equal(withKey.headers.get('CDN-Cache-Control'), 'no-store');
+    assert.equal((await withKey.json()).error, 'feature_removed');
   });
 
-  it('fails closed before unknown wm_ validation when the pre-auth limiter is unavailable', async () => {
+  it('rejects unknown wm_ keys without account validation', async () => {
     const handler = createHandler();
     const res = await handler(new Request('https://worldmonitor.app/api/market/v1/list-gulf-quotes', {
       headers: {
@@ -310,14 +308,14 @@ describe('gateway CDN origin policy', () => {
     }));
     const body = await res.json();
 
-    assert.equal(res.status, 503);
-    assert.equal(res.headers.get('X-RateLimit-Mode'), 'degraded');
+    assert.equal(res.status, 401);
+    assert.equal(res.headers.get('X-RateLimit-Mode'), null);
     assertNoSharedCacheHeaders(res);
-    assert.equal(body.error, 'Rate-limit service temporarily unavailable');
+    assert.equal(body.error, 'Invalid API key');
     assert.doesNotMatch(JSON.stringify(body), /gateway validation|Convex|keyHash/i);
   });
 
-  it('fails closed before unknown wm_ validation on premium RPCs when the limiter is unavailable', async () => {
+  it('retires protected RPCs before unknown-key and limiter validation', async () => {
     const handler = createHandler();
     const res = await handler(new Request('https://worldmonitor.app/api/market/v1/analyze-stock?symbol=AAPL', {
       headers: {
@@ -327,10 +325,10 @@ describe('gateway CDN origin policy', () => {
     }));
     const body = await res.json();
 
-    assert.equal(res.status, 503);
-    assert.equal(res.headers.get('X-RateLimit-Mode'), 'degraded');
-    assertNoSharedCacheHeaders(res);
-    assert.equal(body.error, 'Rate-limit service temporarily unavailable');
+    assert.equal(res.status, 403);
+    assert.equal(res.headers.get('X-RateLimit-Mode'), null);
+    assert.equal(res.headers.get('CDN-Cache-Control'), 'no-store');
+    assert.equal(body.error, 'feature_removed');
     assert.doesNotMatch(JSON.stringify(body), /gateway validation|Convex|keyHash/i);
   });
 });

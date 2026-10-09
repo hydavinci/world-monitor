@@ -1,3 +1,4 @@
+import { assertPublicRpc } from '@/services/public-rpc-policy';
 import { getConfiguredWebApiBaseUrl } from '@/services/runtime';
 
 export function getRpcBaseUrl(): string {
@@ -7,6 +8,7 @@ export function getRpcBaseUrl(): string {
 }
 
 export function rpcFetch(...args: Parameters<typeof fetch>): ReturnType<typeof fetch> {
+  assertPublicRpc(args[0]);
   return globalThis.fetch(...args);
 }
 

@@ -1,6 +1,6 @@
 import type { PanelConfig } from '@/types';
 import { SITE_VARIANT } from '@/config/variant';
-import { resetMissionPresetState } from '@/services/mission-presets';
+import { sanitizePublicPanelSettings } from '@/services/public-preferences';
 
 /**
  * Dashboard tabs — named, persistent panel workspaces.
@@ -14,6 +14,7 @@ import { resetMissionPresetState } from '@/services/mission-presets';
 export interface PanelTab {
   id: string;
   name: string;
+  view?: 'map' | 'panels';
   panelSettings: Record<string, PanelConfig>;
   panelOrder: string[];
   bottomSet: string[];
@@ -55,7 +56,15 @@ export function loadTabsState(): TabsState | null {
     const tabs = parsed.tabs.filter((t): t is PanelTab =>
       !!t && typeof t.id === 'string' && typeof t.name === 'string'
       && !!t.panelSettings && typeof t.panelSettings === 'object'
-      && Array.isArray(t.panelOrder) && Array.isArray(t.bottomSet));
+      && Array.isArray(t.panelOrder) && Array.isArray(t.bottomSet))
+      .map((tab, index) => {
+        const panelSettings = sanitizePublicPanelSettings(tab.panelSettings);
+        const keep = (id: string): boolean => id in panelSettings;
+        const view = tab.view === 'map' || tab.view === 'panels'
+          ? tab.view
+          : index === 0 ? 'map' : 'panels';
+        return { ...tab, view, panelSettings, panelOrder: tab.panelOrder.filter(keep), bottomSet: tab.bottomSet.filter(keep) };
+      });
     if (tabs.length === 0) return null;
     const activeTabId = tabs.some((t) => t.id === parsed.activeTabId)
       ? parsed.activeTabId
@@ -81,13 +90,14 @@ export function saveTabsState(state: TabsState): TabsPersistReceipt {
 }
 
 /**
- * Panel selection for a fresh tab: the variant's default panels.
- * Reuses the mission-preset reset path so dynamic panels (custom widgets,
- * MCP panels, desktop runtime-config) survive with their current config.
+ * Keep panel definitions available for selection, but start every fresh
+ * workspace empty, including its map and dynamic widgets.
  */
 export function buildDefaultTabPanels(
   currentPanelSettings: Record<string, PanelConfig>,
 ): { panelSettings: Record<string, PanelConfig>; panelOrder: string[] } {
-  const reset = resetMissionPresetState(currentPanelSettings);
-  return { panelSettings: reset.panelSettings, panelOrder: reset.panelOrder };
+  const panelSettings = Object.fromEntries(
+    Object.entries(currentPanelSettings).map(([key, config]) => [key, { ...config, enabled: false }]),
+  );
+  return { panelSettings, panelOrder: [] };
 }

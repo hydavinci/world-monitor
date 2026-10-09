@@ -4,7 +4,7 @@ import { WEBCAM_GRID_PRIORITY, WEBCAM_SOURCES, type WebcamSlotId } from '@/confi
 import { isDesktopRuntime } from '@/services/runtime';
 import { escapeHtml } from '@/utils/sanitize';
 import { t } from '../services/i18n';
-import { track, trackWebcamSelected, trackWebcamRegionFiltered } from '@/services/analytics';
+
 import { subscribeStreamQualityChange } from '@/services/ai-flow-settings';
 import { isMobileDevice, loadFromStorage, saveToStorage } from '@/utils';
 import { playAllLiveMedia, registerLiveMediaStarter, unregisterLiveMediaStarter } from '@/services/live-media-controller';
@@ -13,7 +13,7 @@ import { subscribeLiveMediaIdle } from '@/services/live-media-idle';
 import { sourceListsChannel, type LiveVideoSource } from '@/services/live-video/model';
 import { withResolvedLiveVideos } from '@/services/live-video/resolved';
 import { createFailureMemory, openLiveVideo, type LiveVideoSession, type LiveVideoState } from '@/services/live-video/session';
-import { createLiveMediaIdleNotice, trackLiveMediaIdleStop } from './live-media-idle-notice';
+import { createLiveMediaIdleNotice } from './live-media-idle-notice';
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 
 
@@ -180,7 +180,7 @@ export class LiveWebcamsPanel extends Panel {
     setTrustedHtml(this.fullscreenBtn, trustedHtml('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>', "legacy direct innerHTML migration"));
     this.fullscreenBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      track('webcam-fullscreen', { entering: !this.isFullscreen });
+
       this.setFullscreen(!this.isFullscreen);
     });
     const header = this.element.querySelector('.panel-header');
@@ -303,7 +303,7 @@ export class LiveWebcamsPanel extends Panel {
 
   private setRegionFilter(filter: RegionFilter): void {
     if (filter === this.regionFilter) return;
-    trackWebcamRegionFiltered(filter);
+
     this.regionFilter = filter;
     this.toolbar?.querySelectorAll('.webcam-region-btn').forEach(btn => {
       (btn as HTMLElement).classList.toggle('active', (btn as HTMLElement).dataset.region === filter);
@@ -478,7 +478,7 @@ export class LiveWebcamsPanel extends Panel {
 
   private playFeed(feed: WebcamFeed, source: 'grid' | 'single' | 'settings'): void {
     if (source !== 'settings') {
-      trackWebcamSelected(feed.id, feed.city, source);
+
     }
     this.activeFeed = feed;
     this.idleStopped = null;
@@ -579,12 +579,11 @@ export class LiveWebcamsPanel extends Panel {
   private stopForIdle(idleAfterMs: number): void {
     if (this.isFullscreen || this.activeIframeFeedIds.size === 0) return;
     this.idleStopped = { feedIds: Array.from(this.activeIframeFeedIds), idleAfterMs };
-    trackLiveMediaIdleStop('live-webcams', idleAfterMs);
     this.clearActivePlayback();
     if (this.element.isConnected) this.render();
   }
 
-  private renderPreviewTile(container: HTMLElement, feed: WebcamFeed, source: 'grid' | 'single'): void {
+  private renderPreviewTile(container: HTMLElement, feed: WebcamFeed): void {
     const preview = document.createElement('div');
     preview.className = 'webcam-preview-tile';
     preview.dataset.feedId = feed.id;
@@ -608,7 +607,7 @@ export class LiveWebcamsPanel extends Panel {
     playBtn.textContent = t('components.webcams.play') || 'Play';
     // First play intent lights up everything (the wall + Live News), not just this tile.
     const playAll = () => {
-      trackWebcamSelected(feed.id, feed.city, source);
+
       this.activeFeed = feed;
       this.savePrefs();
       playAllLiveMedia();
@@ -634,7 +633,6 @@ export class LiveWebcamsPanel extends Panel {
 
     if (this.idleStopped) {
       const notice = createLiveMediaIdleNotice({
-        panel: 'live-webcams',
         heading: t('panels.liveWebcams'),
         idleAfterMs: this.idleStopped.idleAfterMs,
       });
@@ -682,7 +680,7 @@ export class LiveWebcamsPanel extends Panel {
       if (this.activeIframeFeedIds.has(feed.id)) {
         this.mountTile(cell, feed);
       } else {
-        this.renderPreviewTile(cell, feed, 'grid');
+        this.renderPreviewTile(cell, feed);
       }
 
       grid.appendChild(cell);
@@ -707,7 +705,7 @@ export class LiveWebcamsPanel extends Panel {
     if (this.activeIframeFeedIds.has(this.activeFeed.id)) {
       this.mountTile(wrapper, this.activeFeed);
     } else {
-      this.renderPreviewTile(wrapper, this.activeFeed, 'single');
+      this.renderPreviewTile(wrapper, this.activeFeed);
     }
 
     const switcher = document.createElement('div');

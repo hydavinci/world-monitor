@@ -21,7 +21,6 @@ export const HEALTH_CHECK_SOURCE_MAP: Record<string, readonly DataSourceId[]> = 
   pizzint: ['pizzint'],
   gpsjam: ['gpsjam'],
   securityAdvisories: ['security_advisories'],
-  sanctionsPressure: ['sanctions_pressure'],
   radiationWatch: ['radiation'],
   customsRevenue: ['treasury_revenue'],
   bisPolicy: ['bis'],

@@ -4,15 +4,10 @@ import type { CorrelationSnapshotState } from '@/services/correlation-snapshots'
 
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(), hydrate: vi.fn(), slowTier: vi.fn(), read: vi.fn(), write: vi.fn(),
-  deduct: vi.fn(), premium: vi.fn(), sentry: vi.fn(),
+  deduct: vi.fn(), premium: vi.fn(), diagnostics: vi.fn(),
 }));
-vi.mock('@/bootstrap/sentry-defer', () => ({ enqueueSentryCall: mocks.sentry }));
 vi.mock('@/services/generated-rpc-clients', () => ({
   IntelligenceServiceClient: class { deductSituation = mocks.deduct; },
-}));
-vi.mock('@/services/panel-gating', async importOriginal => ({
-  ...await importOriginal<typeof import('@/services/panel-gating')>(),
-  hasPremiumAccess: mocks.premium,
 }));
 vi.mock('@/services/bootstrap', () => ({
   ensureHydrated: mocks.fetch,
@@ -84,7 +79,9 @@ beforeEach(async () => {
   vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
   vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
   vi.spyOn(Math, 'random').mockReturnValue(0.5);
-  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  vi.spyOn(console, 'warn').mockImplementation((message, ...args) => {
+    if (message === 'Correlation snapshot recovery stalled') mocks.diagnostics(message, ...args);
+  });
   service = await import('@/services/correlation-snapshots');
 });
 
@@ -285,7 +282,7 @@ describe('correlation snapshot recovery', () => {
     expect(mocks.fetch).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(3 * MINUTE);
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
-    expect(mocks.sentry).not.toHaveBeenCalled();
+    expect(mocks.diagnostics).not.toHaveBeenCalled();
     mocks.fetch.mockResolvedValue(payload());
     online.mockReturnValue(true);
     window.dispatchEvent(new Event('online'));
@@ -342,19 +339,16 @@ describe('correlation snapshot recovery', () => {
     expect(result.latest().snapshot).toBeNull();
   });
 
-  it('reports a sustained online failure once per episode and survives telemetry failure', async () => {
+  it('reports a sustained online failure locally once per episode and survives a failing logger', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     mocks.fetch.mockResolvedValue(payload(null));
-    mocks.sentry.mockImplementation(() => { throw new Error('telemetry unavailable'); });
+    mocks.diagnostics.mockImplementation(() => { throw new Error('local logger unavailable'); });
     const result = watch();
     await vi.advanceTimersByTimeAsync(40_525);
-    expect(mocks.sentry).toHaveBeenCalledTimes(1);
-    const captureMessage = vi.fn();
-    mocks.sentry.mock.calls[0]![0]({ captureMessage });
-    expect(captureMessage).toHaveBeenCalledWith('Correlation snapshot recovery stalled', {
-      level: 'warning', tags: { component: 'correlation-snapshots' }, extra: { domains: ['economic'] },
-    });
+    expect(mocks.diagnostics).toHaveBeenCalledTimes(1);
+    expect(mocks.diagnostics).toHaveBeenCalledWith('Correlation snapshot recovery stalled', { domains: ['economic'] });
     await vi.advanceTimersByTimeAsync(5 * MINUTE);
-    expect(mocks.sentry).toHaveBeenCalledTimes(1);
+    expect(mocks.diagnostics).toHaveBeenCalledTimes(1);
     mocks.fetch.mockResolvedValue(payload([], Date.now()));
     window.dispatchEvent(new Event('online'));
     await settle();
@@ -362,7 +356,8 @@ describe('correlation snapshot recovery', () => {
     mocks.fetch.mockResolvedValue(undefined);
     window.dispatchEvent(new Event('online'));
     await vi.advanceTimersByTimeAsync(40_525);
-    expect(mocks.sentry).toHaveBeenCalledTimes(2);
+    expect(mocks.diagnostics).toHaveBeenCalledTimes(2);
+    expect(errors).toHaveBeenCalledTimes(2);
   });
 
   it.each([0, 1])('bounds retry jitter with random value %s', async random => {
@@ -505,160 +500,6 @@ describe('CorrelationPanel presentation', () => {
     await vi.advanceTimersByTimeAsync(4 * MINUTE);
     expect(document.activeElement).toBe(button);
     expect(element.textContent).toContain('Last known update');
-  });
-
-  it('assesses displayed seed evidence and does not buy assessments for discarded local cards', async () => {
-    const seed = { ...card(), score: 75 };
-    mocks.fetch.mockResolvedValue(payload([seed]));
-    const result = await panel();
-    const { CorrelationEngine } = await import('@/services/correlation-engine/engine');
-    const engine = new CorrelationEngine();
-    engine.registerAdapter({
-      domain: 'economic', label: 'Fixture', clusterMode: 'country', spatialRadius: 0,
-      timeWindow: 24, threshold: 20, weights: { sanctions: 0.5, trade: 0.5 },
-      collectSignals: () => ['sanctions', 'trade'].map(type => ({
-        type, source: 'fixture', severity: 100, timestamp: NOW, country: 'US', label: 'Different local evidence',
-      })),
-      generateTitle: () => 'Local high-score card',
-    });
-    await engine.run({} as never);
-    expect(mocks.deduct).not.toHaveBeenCalled();
-    result.setAssessmentHandler(cards => engine.assessCards('economic', cards));
-    result.updateCards(engine.getCards('economic'));
-    await settle();
-    expect(mocks.deduct).toHaveBeenCalledTimes(1);
-    expect(mocks.deduct.mock.calls[0]![0].query).toContain('Test signal');
-    expect(mocks.deduct.mock.calls[0]![0].query).not.toContain('Different local evidence');
-    result.getElement().querySelector<HTMLElement>('.correlation-card-header')!.click();
-    expect(result.getElement().textContent).toContain('Premium narrative for displayed evidence');
-    expect(engine.getCards('economic')[0]?.assessment).toBeUndefined();
-    // A valid sibling update persists the retained, now-annotated economic seed.
-    mocks.fetch.mockResolvedValue({ ...payload(null, NOW), military: [card('military')] });
-    window.dispatchEvent(new Event('online'));
-    await settle();
-    expect(mocks.write).toHaveBeenCalledTimes(2);
-    expect(mocks.write.mock.calls[mocks.write.mock.calls.length - 1]![1].economic.cards[0].assessment).toBeUndefined();
-    await vi.advanceTimersByTimeAsync(MINUTE);
-    expect(mocks.deduct).toHaveBeenCalledTimes(1);
-  });
-
-  it('connects a deferred panel mounted after the engine already exists', async () => {
-    const { CorrelationEngine } = await import('@/services/correlation-engine/engine');
-    const engine = new CorrelationEngine();
-    mocks.fetch.mockResolvedValue(payload([{ ...card(), score: 75 }]));
-    const result = await panel();
-    expect(mocks.deduct).not.toHaveBeenCalled();
-    const { PanelLayoutManager } = await import('@/app/panel-layout');
-    // Exercise the real mount handoff without starting the unrelated billing/map constructor.
-    const mount = Reflect.get(PanelLayoutManager.prototype, 'afterPanelMounted');
-    mount.call({
-      ctx: { correlationEngine: engine, panelSettings: {} },
-      observePanelForHydration: vi.fn(),
-    }, 'economic-correlation', result);
-    await settle();
-    result.getElement().querySelector<HTMLElement>('.correlation-card-header')!.click();
-    expect(result.getElement().textContent).toContain('Premium narrative for displayed evidence');
-    expect(mocks.deduct).toHaveBeenCalledTimes(1);
-  });
-
-  it('shares an in-flight assessment only across identical evidence and respects premium access', async () => {
-    const { CorrelationEngine } = await import('@/services/correlation-engine/engine');
-    const engine = new CorrelationEngine();
-    const first = { ...card(), score: 75, countries: ['US', 'CA'] };
-    const next = structuredClone(first);
-    mocks.premium.mockReturnValue(false);
-    engine.assessCards('economic', [first]);
-    expect(mocks.deduct).not.toHaveBeenCalled();
-    mocks.premium.mockReturnValue(true);
-    const response = deferred<{ analysis: string }>();
-    mocks.deduct.mockReturnValueOnce(response.promise);
-    engine.assessCards('economic', [first]);
-    engine.assessCards('economic', [next]);
-    expect(mocks.deduct).toHaveBeenCalledTimes(1);
-    response.resolve({ analysis: 'Shared evidence narrative' });
-    await settle();
-    expect(first.assessment).toBeUndefined();
-    expect(next.assessment).toBe('Shared evidence narrative');
-    expect(first.countries).toEqual(['US', 'CA']);
-    const cached = structuredClone(first);
-    delete cached.assessment;
-    engine.assessCards('economic', [cached]);
-    expect(cached.assessment).toBe('Shared evidence narrative');
-    expect(mocks.deduct).toHaveBeenCalledTimes(1);
-    const changed = structuredClone(first);
-    changed.signals[0]!.label = 'New evidence in same cluster';
-    delete changed.assessment;
-    engine.assessCards('economic', [changed]);
-    await settle();
-    expect(mocks.deduct).toHaveBeenCalledTimes(2);
-    expect(changed.assessment).toBe('Premium narrative for displayed evidence');
-  });
-
-  it('drains all selected cards through the concurrency cap without looping on a failed assessment', async () => {
-    const { CorrelationEngine } = await import('@/services/correlation-engine/engine');
-    const engine = new CorrelationEngine();
-    const cards = Array.from({ length: 5 }, (_, index) => ({ ...card(), score: 70 + index }));
-    const responses: Array<ReturnType<typeof deferred<{ analysis: string }>>> = [];
-    mocks.deduct.mockImplementation(() => {
-      const response = deferred<{ analysis: string }>();
-      responses.push(response);
-      return response.promise;
-    });
-    engine.assessCards('economic', cards);
-    expect(mocks.deduct).toHaveBeenCalledTimes(3);
-    responses[0]!.resolve({ analysis: '' });
-    await settle();
-    expect(mocks.deduct).toHaveBeenCalledTimes(4);
-    responses[1]!.resolve({ analysis: 'Second' });
-    await settle();
-    expect(mocks.deduct).toHaveBeenCalledTimes(5);
-    for (const response of responses.slice(2)) response.resolve({ analysis: 'Completed' });
-    await settle();
-    expect(cards[0]!.assessment).toBeUndefined();
-    expect(cards.slice(1).every(card => !!card.assessment)).toBe(true);
-    expect(mocks.deduct).toHaveBeenCalledTimes(5);
-  });
-
-  it('drops queued work when a panel stops displaying its cards', async () => {
-    const { CorrelationEngine } = await import('@/services/correlation-engine/engine');
-    const engine = new CorrelationEngine();
-    const response = deferred<{ analysis: string }>();
-    mocks.deduct.mockReturnValue(response.promise);
-    engine.assessCards('economic', Array.from({ length: 4 }, (_, index) => ({ ...card(), score: 70 + index })));
-    expect(mocks.deduct).toHaveBeenCalledTimes(3);
-    engine.assessCards('economic', []);
-    response.resolve({ analysis: 'Old work' });
-    await settle();
-    expect(mocks.deduct).toHaveBeenCalledTimes(3);
-  });
-
-  it('clears visible premium assessments on access loss and rejects an old in-flight result', async () => {
-    const seed = { ...card(), score: 75 };
-    mocks.fetch.mockResolvedValue(payload([seed]));
-    const result = await panel();
-    const { CorrelationEngine } = await import('@/services/correlation-engine/engine');
-    const engine = new CorrelationEngine();
-    result.setAssessmentHandler(cards => engine.assessCards('economic', cards));
-    await settle();
-    result.getElement().querySelector<HTMLElement>('.correlation-card-header')!.click();
-    expect(result.getElement().textContent).toContain('Premium narrative for displayed evidence');
-    mocks.premium.mockReturnValue(false);
-    engine.clearAssessments();
-    await settle();
-    expect(seed.assessment).toBeUndefined();
-    expect(result.getElement().textContent).not.toContain('Premium narrative for displayed evidence');
-
-    const old = deferred<{ analysis: string }>();
-    mocks.deduct.mockReturnValueOnce(old.promise);
-    mocks.premium.mockReturnValue(true);
-    result.setAssessmentHandler(cards => engine.assessCards('economic', cards));
-    engine.clearAssessments();
-    result.setAssessmentHandler(cards => engine.assessCards('economic', cards));
-    old.resolve({ analysis: 'Previous entitlement generation' });
-    await settle();
-    expect(result.getElement().textContent).not.toContain('Previous entitlement generation');
-    expect(result.getElement().textContent).toContain('Premium narrative for displayed evidence');
-    expect(mocks.deduct).toHaveBeenCalledTimes(3);
   });
 
   it('renders confirmed empty as content, with a known count', async () => {

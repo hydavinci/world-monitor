@@ -1,3 +1,4 @@
+import { rpcFetch } from '@/services/rpc-client';
 /**
  * Wingbits Aircraft Enrichment Service
  * Provides detailed aircraft information (owner, operator, type) for military classification
@@ -6,14 +7,13 @@
  * instead of the legacy /api/wingbits proxy.
  */
 
-import { createCircuitBreaker, toUniqueSortedLowercase } from '@/utils';
-import { AIRCRAFT_DETAILS_BATCH_LIMIT } from '../../server/_shared/aircraft-details-batch';
+import type { AircraftDetails,WingbitsLiveFlight } from '@/generated/client/worldmonitor/military/v1/service_client';
+import { MilitaryServiceClient } from '@/services/generated-rpc-clients';
 import { getRpcBaseUrl } from '@/services/rpc-client';
+import { toUniqueSortedLowercase } from '@/utils';
+import { AIRCRAFT_DETAILS_BATCH_LIMIT } from '../../server/_shared/aircraft-details-batch';
 import { dataFreshness } from './data-freshness';
 import { isFeatureAvailable } from './runtime-config';
-import type { AircraftDetails, WingbitsLiveFlight } from '@/generated/client/worldmonitor/military/v1/service_client';
-import { MilitaryServiceClient } from '@/services/generated-rpc-clients';
-import { premiumFetch } from '@/services/premium-fetch';
 
 export type { WingbitsLiveFlight };
 
@@ -51,7 +51,7 @@ export interface EnrichedAircraftInfo {
 
 // ---- Sebuf client ----
 
-const client = new MilitaryServiceClient(getRpcBaseUrl(), { fetch: premiumFetch });
+const client = new MilitaryServiceClient(getRpcBaseUrl(), { fetch: rpcFetch });
 
 // Two different bounds apply, and this cap is set by the tighter one:
 //   - generated request validation rejects the call outright above 20 keys
@@ -144,11 +144,6 @@ function setLocalCache(key: string, data: WingbitsAircraftDetails): void {
 let wingbitsConfigured: boolean | null = null;
 
 // Circuit breaker for API calls
-const breaker = createCircuitBreaker<WingbitsAircraftDetails | null>({
-  name: 'Wingbits Enrichment',
-  maxFailures: 5,
-  cooldownMs: 5 * 60 * 1000,
-});
 
 // Military keywords for classification
 const MILITARY_OPERATORS = [
@@ -239,40 +234,6 @@ export async function checkWingbitsStatus(): Promise<boolean> {
     dataFreshness.setEnabled('wingbits', false);
     return false;
   }
-}
-
-/**
- * Fetch aircraft details from Wingbits
- */
-export async function getAircraftDetails(icao24: string): Promise<WingbitsAircraftDetails | null> {
-  if (!isFeatureAvailable('wingbitsEnrichment')) return null;
-  const key = icao24.toLowerCase();
-
-  // Check local cache first
-  const cached = getFromLocalCache(key);
-  if (cached) return cached;
-
-  return breaker.execute(async () => {
-    // Check if configured
-    if (wingbitsConfigured === false) return null;
-
-    const resp = await client.getAircraftDetails({ icao24: key });
-
-    if (resp.configured === false) {
-      wingbitsConfigured = false;
-      throw new Error('Wingbits not configured');
-    }
-
-    if (!resp.details) {
-      // Cache negative result
-      setLocalCache(key, createNegativeDetailsEntry(key));
-      return null;
-    }
-
-    const details = toWingbitsDetails(resp.details);
-    setLocalCache(key, details);
-    return details;
-  }, null);
 }
 
 /**
@@ -435,15 +396,6 @@ function extractMilitaryBranch(text: string): string | null {
   if (text.includes('national guard')) return 'National Guard';
   if (text.includes('nato')) return 'NATO';
   return null;
-}
-
-/**
- * Enrich a single aircraft and determine military status
- */
-export async function enrichAircraft(icao24: string): Promise<EnrichedAircraftInfo | null> {
-  const details = await getAircraftDetails(icao24);
-  if (!details || !details.registration) return null;
-  return analyzeAircraftDetails(details);
 }
 
 /**

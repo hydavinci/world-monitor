@@ -16,12 +16,9 @@ export interface SetPanelEnabledContext {
 
 export interface SetPanelEnabledDeps {
   variant: string;
-  isPro: boolean;
   persist: (settings: Record<string, PanelConfig>) => boolean | void;
   applyPanelSettings: () => void;
-  trackToggle: (panelId: string, enabled: boolean) => void;
   beforeApply?: (panelId: string, enabled: boolean) => void;
-  showCapToast?: () => void;
   isPanelAllowed?: (panelId: string, config: PanelConfig) => boolean;
 }
 
@@ -41,12 +38,10 @@ export function applySetPanelEnabled(
     enabled,
     panelSettings: ctx.panelSettings,
     variant: deps.variant,
-    isPro: deps.isPro,
     isPanelAllowed: deps.isPanelAllowed,
   });
 
   if (!decision.ok) {
-    if (decision.reason === 'panel_cap_exceeded') deps.showCapToast?.();
     return decision;
   }
   if (!decision.changed || typeof panelId !== 'string' || typeof enabled !== 'boolean') {
@@ -72,7 +67,6 @@ export function applySetPanelEnabled(
     };
   }
   ctx.panelSettings[panelId] = nextConfig;
-  deps.trackToggle(panelId, enabled);
   deps.beforeApply?.(panelId, enabled);
   deps.applyPanelSettings();
   ctx.unifiedSettings?.refreshPanelToggles?.();

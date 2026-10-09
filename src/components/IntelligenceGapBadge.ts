@@ -5,7 +5,7 @@ import { getAlertSettings, updateAlertSettings } from '@/services/breaking-news-
 import { t } from '@/services/i18n';
 import { getSignalContext } from '@/utils/analysis-constants';
 import { escapeHtml } from '@/utils/sanitize';
-import { trackFindingClicked } from '@/services/analytics';
+
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 import { createFocusTrap, type FocusTrap } from '@/utils/focus-trap';
 import { bindActivationKeys } from '@/utils/activation';
@@ -141,7 +141,7 @@ export class IntelligenceFindingsBadge {
       const finding = this.findings.find(f => f.id === id);
       if (!finding) return;
 
-      trackFindingClicked(finding.id, finding.source, finding.type, finding.priority);
+
       if (finding.source === 'signal' && this.onSignalClick) {
         this.onSignalClick(finding.original as CorrelationSignal);
       } else if (finding.source === 'alert' && this.onAlertClick) {
@@ -588,7 +588,7 @@ export class IntelligenceFindingsBadge {
         const finding = this.findings.find(f => f.id === id);
         if (!finding) return;
 
-        trackFindingClicked(finding.id, finding.source, finding.type, finding.priority);
+
         if (finding.source === 'signal' && this.onSignalClick) {
           this.onSignalClick(finding.original as CorrelationSignal);
           closeOverlay();

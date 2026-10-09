@@ -1,18 +1,15 @@
 import type { AppContext } from '@/app/app-context';
-import type { MapView } from '@/components/MapContainer';
-import type { AuthLauncher } from '@/components/AuthLauncher';
-import { AuthHeaderWidget } from '@/components/AuthHeaderWidget';
-import { SITE_VARIANT } from '@/config';
-import { getAuthState, subscribeAuthState } from '@/services/auth-state';
-import { track, trackMapViewChange, trackThemeChanged } from '@/services/analytics';
-import { getCurrentTheme, setTheme, showToast } from '@/utils';
-import { createFocusTrap, type FocusTrap } from '@/utils/focus-trap';
-import {
-  overlayHistory,
-  type OverlayCloseOrigin,
-  type OverlayId,
-} from '@/utils/overlay-history';
 import { reconcileOverlayForTab } from '@/app/mobile-overlay-reconcile';
+import type { MapView } from '@/components/MapContainer';
+import { SITE_VARIANT } from '@/config';
+
+import { getCurrentTheme,setTheme,showToast } from '@/utils';
+import { createFocusTrap,type FocusTrap } from '@/utils/focus-trap';
+import {
+overlayHistory,
+type OverlayCloseOrigin,
+type OverlayId,
+} from '@/utils/overlay-history';
 
 type MobilePrimaryNavCallbacks = {
   openSearch(options: { replaceOverlayId?: OverlayId; historyPending: true }): void;
@@ -27,8 +24,6 @@ export class MobilePrimaryNav {
   private regionTrap: FocusTrap | null = null;
   private regionOpenFrame: number | null = null;
   private alertScrollFrame: number | null = null;
-  private authWidget: AuthHeaderWidget | null = null;
-  private unsubscribeAuth: (() => void) | null = null;
   private unsubscribeHistory: (() => void) | null = null;
   private activeTab = 'today';
 
@@ -45,26 +40,6 @@ export class MobilePrimaryNav {
       else if (top === 'menu' || top === 'region' || top === 'settings' || top === 'settings-pending') this.setActive('more');
       else if (!top && (this.activeTab === 'search' || this.activeTab === 'more')) this.setActive('today');
     });
-  }
-
-  setupAuth(modal: AuthLauncher): void {
-    const mobileMount = document.getElementById('mobileAuthWidgetMount');
-    const fallback = document.getElementById('mobileAuthFallback') as HTMLButtonElement | null;
-    const openAuth = () => {
-      this.closeMenu();
-      modal.open();
-    };
-    fallback?.addEventListener('click', openAuth, { signal: this.listeners.signal });
-    if (!mobileMount) return;
-
-    this.authWidget = new AuthHeaderWidget(openAuth);
-    mobileMount.appendChild(this.authWidget.getElement());
-    const renderPending = (pending: boolean) => {
-      mobileMount.hidden = pending;
-      if (fallback) fallback.hidden = !pending;
-    };
-    renderPending(getAuthState().isPending);
-    this.unsubscribeAuth = subscribeAuthState((state) => renderPending(state.isPending));
   }
 
   updateThemeItem(): void {
@@ -93,12 +68,8 @@ export class MobilePrimaryNav {
 
   destroy(): void {
     this.listeners.abort();
-    this.unsubscribeAuth?.();
-    this.unsubscribeAuth = null;
     this.unsubscribeHistory?.();
     this.unsubscribeHistory = null;
-    this.authWidget?.destroy();
-    this.authWidget = null;
     if (this.menuOpenFrame !== null) cancelAnimationFrame(this.menuOpenFrame);
     if (this.regionOpenFrame !== null) cancelAnimationFrame(this.regionOpenFrame);
     if (this.alertScrollFrame !== null) cancelAnimationFrame(this.alertScrollFrame);
@@ -142,7 +113,7 @@ export class MobilePrimaryNav {
         }
         case 'search': {
           this.exitMap();
-          track('search-open', { source: 'mobile-tab' });
+
           this.callbacks.openSearch({
             replaceOverlayId,
             historyPending: true,
@@ -206,7 +177,7 @@ export class MobilePrimaryNav {
       this.closeMenu();
       const next = getCurrentTheme() === 'dark' ? 'light' : 'dark';
       setTheme(next);
-      trackThemeChanged(next);
+
     }, options);
     document.getElementById('mobileMenuMission')?.addEventListener('click', (event) => {
       this.closeMenu();
@@ -227,7 +198,7 @@ export class MobilePrimaryNav {
     const region = option.dataset.region;
     if (!region) return;
     this.ctx.map?.setView(region as MapView);
-    trackMapViewChange(region);
+
     const select = document.getElementById('regionSelect') as HTMLSelectElement | null;
     if (select) select.value = region;
     sheet.querySelectorAll('.region-sheet-option').forEach((item) => {

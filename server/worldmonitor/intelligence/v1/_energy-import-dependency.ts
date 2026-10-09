@@ -1,5 +1,4 @@
 import { getEnergyImportDependencyObservedSources } from '../../resilience/v1/_energy-import-dependency-source';
-import { decideIndicatorRawRedistribution } from '../../resilience/v1/_indicator-source-policy';
 
 export interface ResolvedEnergyImportDependency {
   available: boolean;
@@ -41,12 +40,7 @@ export function resolveEnergyImportDependency(
   }
 
   const observedSources = getEnergyImportDependencyObservedSources(observation.source);
-  const decision = decideIndicatorRawRedistribution({
-    indicatorId: 'energyImportDependency',
-    observationState: 'observed',
-    sources: observedSources,
-  });
-  if (!decision.expose) return UNAVAILABLE_ENERGY_IMPORT_DEPENDENCY;
+  if (observedSources.length === 0) return UNAVAILABLE_ENERGY_IMPORT_DEPENDENCY;
 
   return {
     available: true,

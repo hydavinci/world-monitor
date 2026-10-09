@@ -1,3 +1,4 @@
+import { rpcFetch } from '@/services/rpc-client';
 /**
  * Unified market service module -- replaces legacy service:
  *   - src/services/markets.ts (Finnhub + Yahoo + CoinGecko)
@@ -5,22 +6,19 @@
  * All data now flows through the MarketServiceClient RPCs.
  */
 
-import { getRpcBaseUrl } from '@/services/rpc-client';
-import type { ListMarketQuotesResponse, ListCommodityQuotesResponse, GetPhysicalDivergenceIndexResponse, GetPhysicalPremiumsResponse, GetSectorSummaryResponse, ListCryptoQuotesResponse, ListCryptoSectorsResponse, CryptoSector, ListDefiTokensResponse, ListAiTokensResponse, ListOtherTokensResponse, MarketQuote as ProtoMarketQuote, MarketQuoteUnavailable, CryptoQuote as ProtoCryptoQuote } from '@/generated/client/worldmonitor/market/v1/service_client';
-import type { MarketData, CryptoData, TokenData } from '@/types';
-import { createCircuitBreaker } from '@/utils/circuit-breaker';
+import type { CryptoSector,GetSectorSummaryResponse,ListAiTokensResponse,ListCommodityQuotesResponse,ListCryptoQuotesResponse,ListCryptoSectorsResponse,ListDefiTokensResponse,ListMarketQuotesResponse,ListOtherTokensResponse,MarketQuoteUnavailable,CryptoQuote as ProtoCryptoQuote,MarketQuote as ProtoMarketQuote } from '@/generated/client/worldmonitor/market/v1/service_client';
 import { getHydratedData } from '@/services/bootstrap';
 import { MarketServiceClient } from '@/services/generated-rpc-clients';
-import { proFreshRpcFetch } from '@/services/premium-fetch';
-import { combineAbortSignals, createTimeoutSignal } from '@/services/timeout-signal';
+import { getRpcBaseUrl } from '@/services/rpc-client';
+import type { CryptoData,MarketData,TokenData } from '@/types';
+import { createCircuitBreaker } from '@/utils/circuit-breaker';
 
 // ---- Client + Circuit Breakers ----
 
-const client = new MarketServiceClient(getRpcBaseUrl(), { fetch: proFreshRpcFetch });
+const client = new MarketServiceClient(getRpcBaseUrl(), { fetch: rpcFetch });
 const MARKET_QUOTES_CACHE_TTL_MS = 5 * 60 * 1000;
 const stockBreaker = createCircuitBreaker<ListMarketQuotesResponse>({ name: 'Market Quotes', cacheTtlMs: MARKET_QUOTES_CACHE_TTL_MS, persistCache: true });
 const commodityBreaker = createCircuitBreaker<ListCommodityQuotesResponse>({ name: 'Commodity Quotes', cacheTtlMs: MARKET_QUOTES_CACHE_TTL_MS, persistCache: true });
-const physicalPremiumBreaker = createCircuitBreaker<GetPhysicalPremiumsResponse>({ name: 'Physical Premiums', cacheTtlMs: 0 });
 const sectorBreaker = createCircuitBreaker<GetSectorSummaryResponse>({ name: 'Sector Summary v2', cacheTtlMs: MARKET_QUOTES_CACHE_TTL_MS, persistCache: true });
 const cryptoBreaker = createCircuitBreaker<ListCryptoQuotesResponse>({ name: 'Crypto Quotes', persistCache: true });
 const cryptoSectorsBreaker = createCircuitBreaker<ListCryptoSectorsResponse>({ name: 'Crypto Sectors', persistCache: true });
@@ -30,7 +28,6 @@ const otherBreaker = createCircuitBreaker<ListOtherTokensResponse>({ name: 'Othe
 
 const emptyStockFallback: ListMarketQuotesResponse = { quotes: [], finnhubSkipped: false, skipReason: '', rateLimited: false, unavailableSymbols: [], asOf: '' };
 const emptyCommodityFallback: ListCommodityQuotesResponse = { quotes: [] };
-const emptyPhysicalPremiumFallback: GetPhysicalPremiumsResponse = { premiums: [] };
 const emptySectorFallback: GetSectorSummaryResponse = { sectors: [] };
 const EMPTY_CRYPTO_FALLBACK: ListCryptoQuotesResponse = {
   quotes: [],
@@ -234,29 +231,6 @@ export async function fetchCommodityQuotes(
 // sibling breaker in this file keeps a `lastSuccessful*` so one failed poll cannot blank a
 // panel, and without it a single blip returns the empty fallback, overwrites good premiums,
 // and hides the Physical tab until the next markets cycle (12 min, viewport-gated).
-let lastSuccessfulPhysicalPremiums: GetPhysicalPremiumsResponse | null = null;
-
-export async function fetchPhysicalPremiums(signal?: AbortSignal): Promise<GetPhysicalPremiumsResponse> {
-  const timeoutSignal = createTimeoutSignal(15_000);
-  const requestSignal = signal ? combineAbortSignals([signal, timeoutSignal]) : timeoutSignal;
-  const response = await physicalPremiumBreaker.execute(async () => {
-    return client.getPhysicalPremiums({ metals: [] }, { signal: requestSignal });
-  }, emptyPhysicalPremiumFallback, {
-    shouldCache: () => false,
-    ignoreError: () => signal?.aborted === true,
-  });
-  if (response.premiums.length > 0) {
-    lastSuccessfulPhysicalPremiums = response;
-    return response;
-  }
-  return lastSuccessfulPhysicalPremiums ?? response;
-}
-
-export async function fetchPhysicalDivergence(signal?: AbortSignal): Promise<GetPhysicalDivergenceIndexResponse> {
-  const timeoutSignal = createTimeoutSignal(15_000);
-  const requestSignal = signal ? combineAbortSignals([signal, timeoutSignal]) : timeoutSignal;
-  return client.getPhysicalDivergenceIndex({ metals: [] }, { signal: requestSignal });
-}
 
 // ========================================================================
 // Sectors -- uses getSectorSummary (reads market:sectors:v2)

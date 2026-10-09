@@ -47,18 +47,6 @@ const railwaySrc = readFileSync(
 );
 const healthSrc = readFileSync(new URL('../api/health.js', import.meta.url), 'utf8');
 const seedHealthSrc = readFileSync(new URL('../api/seed-health.js', import.meta.url), 'utf8');
-const panelSrc = readFileSync(
-  new URL('../src/components/SanctionsPressurePanel.ts', import.meta.url),
-  'utf8',
-);
-const localeEn = readFileSync(
-  new URL('../src/locales/en.json', import.meta.url),
-  'utf8',
-);
-const serviceSrc = readFileSync(
-  new URL('../src/services/sanctions-pressure.ts', import.meta.url),
-  'utf8',
-);
 
 // Global Affairs Canada renamed every SEMA field tag to a bilingual hyphenated
 // form. `<record>` still matches, so parseSemaXml finds 5,690 blocks and returns
@@ -579,9 +567,9 @@ describe('seeder merge, health, railway, no new surface', () => {
   });
 
   it('reuses the existing sanctions health probe', () => {
-    assert.match(healthSrc, /sanctionsPressure:\s*'sanctions:pressure:v1'/);
+    assert.match(healthSrc, /sanctionsEntities:\s*'sanctions:entities:v1'/);
     assert.doesNotMatch(healthSrc, /sema-ca:pressure/);
-    assert.match(seedHealthSrc, /'sanctions:pressure'/);
+    assert.match(seedHealthSrc, /'sanctions:entities'/);
   });
 
   it('extends the sanctions Railway service watchPatterns', () => {
@@ -702,22 +690,12 @@ describe('SEMA Country is regulation, not nationality', () => {
   });
 });
 
-describe('UI and seed surface SEMA beside OFAC', () => {
+describe('public ingestion retains SEMA beside OFAC', () => {
   it('publishes semaCount on the seed payload', () => {
     assert.match(seedSrc, /semaCount/);
     assert.match(seedSrc, /semaCount: semaEntries\.length|const semaCount = semaEntries\.length/);
   });
 
-  it('shows semaCount and a GAC SEMA source in the panel', () => {
-    assert.match(panelSrc, /semaCount/);
-    assert.match(panelSrc, /semaError/);
-    assert.match(panelSrc, /summary\.sema/);
-    assert.match(panelSrc, /sourceLists/);
-    assert.match(localeEn, /Source: OFAC · GAC SEMA/);
-    assert.match(localeEn, /"sema": "SEMA"/);
-    assert.match(serviceSrc, /semaCount/);
-    assert.match(serviceSrc, /semaError/);
-  });
 });
 
 describe('SEMA failure stays visible when OFAC succeeds', () => {
@@ -795,7 +773,6 @@ describe('SEMA failure stays visible when OFAC succeeds', () => {
     assert.match(seedSrc, /freshnessMetaPatch/);
     assert.match(healthSrc, /sourceDegraded/);
     assert.match(seedHealthSrc, /sourceError/);
-    assert.match(panelSrc, /semaError/);
   });
 });
 

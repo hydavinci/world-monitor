@@ -1,13 +1,12 @@
+import { setTrustedHtml,trustedHtml } from '@/utils/dom-utils';
 import {
-  type AnalysisPanelId,
-  loadFrameworkLibrary,
-  getActiveFrameworkForPanel,
-  setActiveFrameworkForPanel,
+type AnalysisPanelId,
+getActiveFrameworkForPanel,
+loadFrameworkLibrary,
+setActiveFrameworkForPanel,
 } from '../services/analysis-framework-store';
-import { PanelGateReason } from '../services/panel-gating';
-import type { Panel } from './Panel';
 import { t } from '../services/i18n';
-import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
+import type { Panel } from './Panel';
 
 
 interface FrameworkSelectorOptions {
@@ -57,10 +56,6 @@ export class FrameworkSelector {
       });
     } else {
       btn.classList.add('framework-settings-btn--locked');
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        opts.panel?.showGatedCta(PanelGateReason.FREE_TIER, () => {});
-      });
     }
 
     this.updateBtnTitle();

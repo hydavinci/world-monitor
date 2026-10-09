@@ -1,24 +1,16 @@
-import { track } from '@/services/analytics';
+
 import { getCurrentLanguageTag, t } from '@/services/i18n';
 import { playAllLiveMedia } from '@/services/live-media-controller';
 import { formatIdleStopMinutes, setLiveMediaIdleStop } from '@/services/live-stream-settings';
 import { showToast } from '@/utils/toast';
 
-export type LiveMediaIdlePanelId = 'live-news' | 'live-webcams';
-
 export interface LiveMediaIdleNoticeOptions {
-  readonly panel: LiveMediaIdlePanelId;
   readonly heading: string;
   readonly idleAfterMs: number;
 }
 
 function toIdleMinutes(idleAfterMs: number): number {
   return Math.round(idleAfterMs / 60_000);
-}
-
-/** Records an idle stop for one panel, with the duration that elapsed in minutes. */
-export function trackLiveMediaIdleStop(panel: LiveMediaIdlePanelId, idleAfterMs: number): void {
-  track('live-media-idle-stopped', { panel, idleMinutes: toIdleMinutes(idleAfterMs) });
 }
 
 function actionButton(label: string, onClick: () => void): HTMLButtonElement {
@@ -35,7 +27,7 @@ function actionButton(label: string, onClick: () => void): HTMLButtonElement {
  * stop. Resume restarts through the play-all cascade; "Keep playing when idle" saves `never`,
  * confirms with a toast, and then resumes.
  */
-export function createLiveMediaIdleNotice({ panel, heading, idleAfterMs }: LiveMediaIdleNoticeOptions): HTMLElement {
+export function createLiveMediaIdleNotice({ heading, idleAfterMs }: LiveMediaIdleNoticeOptions): HTMLElement {
   const idleMinutes = toIdleMinutes(idleAfterMs);
 
   const status = document.createElement('div');
@@ -57,11 +49,11 @@ export function createLiveMediaIdleNotice({ panel, heading, idleAfterMs }: LiveM
   });
 
   const resume = actionButton(t('components.liveMedia.idleResume'), () => {
-    track('live-media-idle-notice-action', { panel, action: 'resume', idleMinutes });
+
     playAllLiveMedia();
   });
   const keepPlaying = actionButton(t('components.liveMedia.idleKeepPlaying'), () => {
-    track('live-media-idle-notice-action', { panel, action: 'keep-playing', idleMinutes });
+
     setLiveMediaIdleStop('never');
     showToast(t('components.liveMedia.idleKeepPlayingToast'));
     playAllLiveMedia();

@@ -2,7 +2,7 @@ import { SITE_VARIANT } from '@/config/variant';
 import { normalizeExclusiveChoropleths } from '@/components/resilience-choropleth-utils';
 import {
   getAllowedLayerKeys,
-  isLayerEntitled,
+  isPublicLayer,
   isLayerExecutable,
   LAYER_REGISTRY,
   type RendererKind,
@@ -71,7 +71,6 @@ export interface AgentBusApplyResult {
 export interface AgentBusApplierOptions {
   getPanelConfig?: (panelId: string) => PanelConfig;
   isPanelAllowed?: (panelId: string, config: PanelConfig) => boolean;
-  hasPremiumAccess?: () => boolean;
   getRenderer?: (ctx: AppContext) => RendererKind;
   getVariant?: () => MapVariant;
   applyViewChange?: (
@@ -148,18 +147,7 @@ function getPanelConfig(
 }
 
 function isPanelAllowed(panelId: string, config: PanelConfig, options: AgentBusApplierOptions): boolean {
-  // User-created widget and MCP panels are dynamic, so they have no canonical
-  // ALL_PANELS entry carrying premium metadata. Enforce their product rule here
-  // instead of trusting persisted config, which can predate or be tampered
-  // around the free-tier clamp.
-  if ((panelId.startsWith('cw-') || panelId.startsWith('mcp-')) && !premiumAccess(options)) {
-    return false;
-  }
   return options.isPanelAllowed?.(panelId, config) ?? defaultPanelAllowed(panelId, config);
-}
-
-function premiumAccess(options: AgentBusApplierOptions): boolean {
-  return options.hasPremiumAccess?.() ?? false;
 }
 
 function currentRendererKind(ctx: AppContext, options: AgentBusApplierOptions): RendererKind {
@@ -249,8 +237,6 @@ function applySetLayers(ctx: AppContext, action: Extract<AgentBusAction, { type:
 
   const allowed = getAllowedLayerKeys(currentMapVariant(options));
   const kind = currentRendererKind(ctx, options);
-  const isDeckGLActive = Boolean(ctx.map.isDeckGLActive?.());
-  const isPremium = premiumAccess(options);
   const runtimeAvailability = options.getMapLayerRuntimeAvailability?.()
     ?? ALL_MAP_LAYERS_RUNTIME_AVAILABLE;
   const nextLayers = { ...ctx.mapLayers };
@@ -276,12 +262,8 @@ function applySetLayers(ctx: AppContext, action: Extract<AgentBusAction, { type:
       continue;
     }
 
-    if (enabled && !isLayerEntitled(rawKey, isPremium)) {
+    if (enabled && !isPublicLayer(rawKey)) {
       targets.push({ target: rawKey, status: 'denied', reason: 'layer_not_entitled' });
-      continue;
-    }
-    if (enabled && rawKey === 'resilienceScore' && !isDeckGLActive) {
-      targets.push({ target: rawKey, status: 'denied', reason: 'layer_not_executable' });
       continue;
     }
     if (enabled && !isLayerExecutable(rawKey, kind)) {

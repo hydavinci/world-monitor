@@ -1,16 +1,16 @@
-import { Panel } from './Panel';
-import { createLazyClient, getRpcBaseUrl } from '@/services/rpc-client';
-import { proFreshRpcFetch } from '@/services/premium-fetch';
+import { rpcFetch } from '@/services/rpc-client';
 import { t } from '@/services/i18n';
-import { escapeHtml, unsafeRawHtml } from '@/utils/sanitize';
-import { formatPrice, formatChange, getChangeClass } from '@/utils';
+import { createLazyClient,getRpcBaseUrl } from '@/services/rpc-client';
+import { formatChange,formatPrice,getChangeClass } from '@/utils';
+import { escapeHtml,unsafeRawHtml } from '@/utils/sanitize';
 import { miniSparkline } from '@/utils/sparkline';
+import { Panel } from './Panel';
 
-import type { ListGulfQuotesResponse, GulfQuote } from '@/generated/client/worldmonitor/market/v1/service_client';
+import type { GulfQuote,ListGulfQuotesResponse } from '@/generated/client/worldmonitor/market/v1/service_client';
 import { getHydratedData } from '@/services/bootstrap';
 import { MarketServiceClient } from '@/services/generated-rpc-clients';
 
-const getMarketClient = createLazyClient(() => new MarketServiceClient(getRpcBaseUrl(), { fetch: proFreshRpcFetch }));
+const getMarketClient = createLazyClient(() => new MarketServiceClient(getRpcBaseUrl(), { fetch: rpcFetch }));
 
 function renderSection(title: string, quotes: GulfQuote[]): string {
   if (quotes.length === 0) return '';

@@ -23,10 +23,9 @@ export {
 } from '../cached-risk-scores';
 export type { CachedCIIScore, CachedStrategicRisk, CachedRiskScores } from '../cached-risk-scores';
 
-// Threat classification (keyword + AI)
+// Local threat classification
 export {
   classifyByKeyword,
-  classifyWithAI,
   aggregateThreats,
   THREAT_PRIORITY,
 } from '../threat-classifier';

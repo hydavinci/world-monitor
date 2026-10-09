@@ -289,7 +289,7 @@ function createRegistrationRuntime(provider) {
   const runtime = {
     document,
     window,
-    track: (event, data) => events.push({ event, data }),
+    onDiagnostic: (event, data) => events.push({ event, data }),
   };
   return { runtime, document, events, listeners, windowListeners };
 }
@@ -2656,7 +2656,7 @@ describe('webmcp.ts: promise registration lifecycle', () => {
       controller = registerWebMcpTools(createBindings(), {
         document: runtimeDocument,
         window: { addEventListener: (type) => listeners.push(type) },
-        track: () => {},
+        onDiagnostic: () => {},
       });
     });
     assert.ok(controller);

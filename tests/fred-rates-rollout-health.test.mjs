@@ -188,7 +188,6 @@ function installHealthPipelineMock(recordCount, {
       fetchedAt: DEPLOYED_AT,
       recordCount: Math.max(10_000, ...configs.map((config) => config.minRecordCount ?? 0)),
     };
-    if (key === SEED_META.globalTendersContractsFinder.key) meta.sourceState = 'ok';
     for (const config of configs) {
       if (config.requiredRedistributionPolicyVersion != null) {
         meta.redistributionPolicyVersion = config.requiredRedistributionPolicyVersion;
@@ -254,7 +253,6 @@ function installHealthPipelineMock(recordCount, {
       if (op === 'STRLEN') return { result: key === KEY && recordCount == null ? 0 : 128 };
       if (op === 'LLEN') return { result: 1 };
       if (op === 'EXISTS') return { result: key === ACTIVATION_MARKERS[NAME] ? 0 : 1 };
-      if (op === 'HEXISTS') return { result: 1 };
       if (op === 'GET' && key === FRED_RATES_ROLLOUT_DEADLINE_KEY) return { result: String(UNTIL) };
       if (op === 'GET' && key === SEED_META[NAME].key) {
         return {

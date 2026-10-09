@@ -183,33 +183,6 @@ describe('publisher roster renders identically on every surface (#6419 step 3)',
     expect(url.hash).toBe('#source-credibility-%26-feed-tiering');
   });
 
-  it('keeps the roster on headlines frozen into the Deep Dive story', async () => {
-    const panel = new CountryDeepDivePanel(null);
-    const internals = panel as unknown as {
-      newsBody: HTMLElement;
-      content: HTMLElement;
-      panel: HTMLElement;
-      currentCode: string;
-      currentName: string;
-      sections: unknown[];
-      openOutput(kind: 'story' | 'report', trigger: HTMLButtonElement): Promise<void>;
-    };
-    internals.newsBody = document.createElement('div');
-    panel.updateNews(LABELS.map((source) => newsItem(source)));
-    internals.currentCode = 'NL';
-    internals.currentName = 'Netherlands';
-    internals.sections = [];
-    internals.panel.classList.add('active');
-    internals.content.replaceChildren(Object.assign(document.createElement('div'), { className: 'cdp-shell' }));
-    await internals.openOutput('story', document.createElement('button'));
-    internals.content.querySelector<HTMLButtonElement>('button[aria-label="Previous story slide"]')!.click();
-
-    const slide = internals.content.querySelector('.cdp-output-story-slide')!;
-    expect(slide.querySelector('h2')?.textContent).toBe('Top country headlines');
-    expect(slide.querySelectorAll('.cdp-news-item')).toHaveLength(1);
-    expect(readRoster(slide)?.summary).toBe(EXPECTED.summary);
-  });
-
   it('shows each publisher\'s feeds as text in its row, escaped, not only on hover', () => {
     const hostile = '<img src=x onerror=alert(1)> Desk';
     const host = insightsStory(['Reuters World', hostile]);

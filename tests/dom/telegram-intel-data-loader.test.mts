@@ -11,12 +11,6 @@ vi.mock('@/services/runtime', async () => ({
   )),
   isDesktopRuntime: () => state.desktop,
 }));
-vi.mock('@/services/panel-gating', async () => ({
-  ...(await vi.importActual<typeof import('@/services/panel-gating')>(
-    '@/services/panel-gating',
-  )),
-  hasPremiumAccess: () => state.premium,
-}));
 vi.mock('@/services/telegram-intel', async () => ({
   ...(await vi.importActual<typeof import('@/services/telegram-intel')>(
     '@/services/telegram-intel',
@@ -63,33 +57,6 @@ describe('Telegram loader access', () => {
       getTelegramIntelGeneration(),
     );
   });
-  it.each(['success', 'error'] as const)(
-    'drops late %s across revoke and recovery',
-    async (outcome) => {
-      state.desktop = true;
-      state.premium = true;
-      let resolve!: (value: unknown) => void;
-      let reject!: (error: Error) => void;
-      state.fetch.mockReturnValue(
-        new Promise((ok, fail) => {
-          resolve = ok;
-          reject = fail;
-        }),
-      );
-      const { loader, panel } = create();
-      const load = loader.loadTelegramIntel();
-      state.premium = false;
-      clearTelegramIntelCache();
-      state.premium = true;
-      if (outcome === 'success') resolve(feed);
-      else reject(new Error('old failure'));
-      await load;
-      expect(panel.setData).not.toHaveBeenCalled();
-      state.fetch.mockResolvedValue(feed);
-      await loader.loadTelegramIntel();
-      expect(panel.setData).toHaveBeenCalledOnce();
-    },
-  );
   it('drops completion after teardown', async () => {
     let resolve!: (value: unknown) => void;
     state.fetch.mockReturnValue(

@@ -43,11 +43,6 @@ const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 
 vi.mock('hls.js', () => ({ default: hlsjs.FakeHls }));
 
-vi.mock('@/services/analytics', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/analytics')>()),
-  track: analytics.track,
-}));
-
 const STREAM = 'https://live-hls-apps-aje-fa.getaj.net/AJE/index.m3u8';
 const LIVE: LiveVideoState = { phase: 'live', via: 'hls', title: null, author: null, watchUrl: null };
 
@@ -109,12 +104,14 @@ beforeEach(() => {
   vi.useFakeTimers();
   hlsjs.instances.length = 0;
   analytics.track.mockClear();
+  vi.stubGlobal('umami', { track: analytics.track });
 });
 
 afterEach(() => {
   session?.destroy();
   session = undefined;
   document.body.innerHTML = '';
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -131,7 +128,7 @@ describe('live video HLS transport', () => {
     expect(everShownLive(tile)).toBe(false);
     expect(lastState(tile)).toEqual({ phase: 'offline', reason: 'not-live', watchUrl: null });
     expect(tile.container.querySelector('video')).toBeNull();
-    expect(analytics.track).toHaveBeenCalledWith('live-video-attempt-failed', { slot: 'webcams/hls-test', kind: 'hls', outcome: 'not-started' });
+    expect(analytics.track).not.toHaveBeenCalled();
   });
 
   it('goes live only once the media clock has advanced a full second while playing', async () => {

@@ -10,7 +10,7 @@ import {
   parseLiveMediaIdleStop,
 } from '../src/services/live-stream-settings.ts';
 import { __testing__ as settingsPersistenceTesting } from '../src/utils/settings-persistence.ts';
-import { CLOUD_SYNC_KEYS, resolveCloudBlobKeyAction } from '../src/utils/sync-keys.ts';
+import { LOCAL_PREFERENCE_KEYS } from '../src/utils/local-preference-keys.ts';
 
 describe('live media idle-stop preference', () => {
   it('offers bounded durations plus never, defaulting to one hour', () => {
@@ -37,16 +37,8 @@ describe('live media idle-stop preference', () => {
     assert.equal(formatIdleStopMinutes(60, 'fr'), '1 heure');
   });
 
-  it('syncs across devices and survives a cloud row written by an older client', () => {
-    assert.ok(CLOUD_SYNC_KEYS.includes(LIVE_MEDIA_IDLE_STOP_STORAGE_KEY));
+  it('retains the local setting in export/import filtering', () => {
+    assert.ok(LOCAL_PREFERENCE_KEYS.includes(LIVE_MEDIA_IDLE_STOP_STORAGE_KEY));
     assert.equal(settingsPersistenceTesting.isSettingsKey(LIVE_MEDIA_IDLE_STOP_STORAGE_KEY), true);
-    assert.deepEqual(
-      resolveCloudBlobKeyAction(LIVE_MEDIA_IDLE_STOP_STORAGE_KEY, { 'worldmonitor-theme': 'dark' }),
-      { kind: 'keep' },
-    );
-    assert.deepEqual(
-      resolveCloudBlobKeyAction(LIVE_MEDIA_IDLE_STOP_STORAGE_KEY, { [LIVE_MEDIA_IDLE_STOP_STORAGE_KEY]: 'never' }),
-      { kind: 'set', value: 'never' },
-    );
   });
 });

@@ -12,13 +12,11 @@
 //      every call to our API origin includes credentials. Avoids touching
 //      ~50 fetch sites individually.
 
-import { getCanonicalApiOrigin, toApiUrl } from './runtime';
-import { PREMIUM_RPC_PATHS } from '@/shared/premium-paths';
-import { hasPremiumIntent } from './premium-intent';
-import type { WmSessionDeadReason } from './wm-session-copy';
+import { assertPublicRpc } from '@/services/public-rpc-policy';
 import { isPublicSharedRpcRequest } from '@/shared/public-rpc-cache';
-import { enqueueSentryCall } from '@/bootstrap/sentry-defer';
-import { PUBLIC_WEATHER_BOOTSTRAP_KEY, bootstrapTierKeyNames } from '../../shared/bootstrap-tier-keys.js';
+import { PUBLIC_WEATHER_BOOTSTRAP_KEY,bootstrapTierKeyNames } from '../../shared/bootstrap-tier-keys.js';
+import { getCanonicalApiOrigin,toApiUrl } from './runtime';
+import type { WmSessionDeadReason } from './wm-session-copy';
 
 const STORAGE_KEY = 'wm-session-exp';
 // Refresh well before expiry so a half-loaded page doesn't fail mid-flight.
@@ -100,7 +98,31 @@ let interceptorInstalled = false;
 let nativeSessionFetch: typeof fetch | null = null;
 let sessionDeadUntil = 0;
 let sessionDeadReason: WmSessionDeadReason | null = null;
-let sentryEnqueue: typeof enqueueSentryCall = enqueueSentryCall;
+export type WmSessionDiagnostic =
+  | { type: 'message'; message: string; context: { level: 'warning' | 'info'; tags: Record<string, string> } }
+  | { type: 'breadcrumb'; message: string; data: Record<string, string> }
+  | { type: 'exception'; error: unknown };
+
+function reportLocalSessionDiagnostic(diagnostic: WmSessionDiagnostic): void {
+  if (diagnostic.type === 'exception') {
+    console.error('[wm-session] Unexpected session failure', diagnostic.error);
+  } else if (diagnostic.type === 'breadcrumb') {
+    console.debug(`[wm-session] ${diagnostic.message}`, diagnostic.data);
+  } else {
+    const log = diagnostic.context.level === 'info' ? console.info : console.warn;
+    log(diagnostic.message, diagnostic.context.tags);
+  }
+}
+
+let diagnosticReporter = reportLocalSessionDiagnostic;
+
+function emitSessionDiagnostic(diagnostic: WmSessionDiagnostic): void {
+  try {
+    diagnosticReporter(diagnostic);
+  } catch (error) {
+    console.warn('[wm-session] Local diagnostic reporter failed', error);
+  }
+}
 // Two pieces of state with deliberately different lifetimes. Collapsing them
 // into one map conflates "stop spending mints on this endpoint" with "the whole
 // session looks broken", and those need opposite clearing rules: a sibling's 200
@@ -286,20 +308,7 @@ function noteRouteSuccess(rawPath: string): void {
 }
 
 function addSessionBreadcrumb(message: string, data: Record<string, string>): void {
-  // Sentry's automatic fetch instrumentation cannot see these requests: the
-  // interceptor captured `window.fetch` before the deferred Sentry.init wrapped
-  // it, so every retry it issues bypasses the SDK. The outer call DOES get a
-  // breadcrumb, but only once its promise settles — which is after this
-  // episode's captureMessage has already been sent. Without a manual crumb the
-  // 401 is invisible in the event that exists to explain it (#5674).
-  try {
-    sentryEnqueue((s) => s.addBreadcrumb({
-      category: 'wm-session',
-      level: 'warning',
-      message,
-      data,
-    }));
-  } catch { /* best-effort telemetry */ }
+  emitSessionDiagnostic({ type: 'breadcrumb', message, data });
 }
 
 function markWmSessionDead(
@@ -368,12 +377,11 @@ function markWmSessionDead(
     reason,
     mint_cause: mintCause,
   });
-  try {
-    sentryEnqueue((s) => s.captureMessage(
-      'wm-session dead: anonymous API calls suppressed',
-      { level: 'warning', tags },
-    ));
-  } catch { /* best-effort telemetry */ }
+  emitSessionDiagnostic({
+    type: 'message',
+    message: 'wm-session dead: anonymous API calls suppressed',
+    context: { level: 'warning', tags },
+  });
   if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
     // The reason rides the event so the toast can name the right remedy. A
     // plain `Event` forced one blanket message, which told the majority of
@@ -395,12 +403,11 @@ function markWmSessionDead(
 function reportRouteRecoveryFailure(rawPath: string): void {
   const routeTag = toRouteTag(rawPath);
   addSessionBreadcrumb('wm-session route denied after fresh mint', { route: routeTag });
-  try {
-    sentryEnqueue((s) => s.captureMessage(
-      'wm-session route rejected after fresh mint',
-      { level: 'info', tags: { kind: 'wm_session_route_401', route: routeTag } },
-    ));
-  } catch { /* best-effort telemetry */ }
+  emitSessionDiagnostic({
+    type: 'message',
+    message: 'wm-session route rejected after fresh mint',
+    context: { level: 'info', tags: { kind: 'wm_session_route_401', route: routeTag } },
+  });
 }
 
 /**
@@ -713,7 +720,7 @@ const SESSION_ATTEMPT_THREW: SessionAttempt = { ok: false, kind: 'mint_failed', 
  * three on exactly the old WebView / Smart-TV engines that comment names.
  */
 function reportUnknownMintThrow(error: unknown): SessionAttempt {
-  try { sentryEnqueue((s) => s.captureException(error)); } catch { /* best-effort telemetry */ }
+  emitSessionDiagnostic({ type: 'exception', error });
   return SESSION_ATTEMPT_THREW;
 }
 
@@ -832,7 +839,7 @@ export function __resetWmSessionForTests(): void {
   cookieIssuedThisSession = false;
   cookiePersistenceBroken = false;
   anonymousSessionHeaderToken = null;
-  sentryEnqueue = enqueueSentryCall;
+  diagnosticReporter = reportLocalSessionDiagnostic;
   fetchNewSessionTimeoutMs = 10_000;
 }
 
@@ -842,10 +849,9 @@ export function __setWmSessionFetchTimeoutForTests(ms: number): void {
   fetchNewSessionTimeoutMs = ms;
 }
 
-// Test-only: observe the once-per-episode dead-session Sentry capture without
-// loading the SDK. Reset back to the real enqueue by __resetWmSessionForTests.
-export function __setWmSessionSentryEnqueueForTests(fn: typeof enqueueSentryCall): void {
-  sentryEnqueue = fn;
+// Reset to local console diagnostics in __resetWmSessionForTests.
+export function __setWmSessionDiagnosticReporterForTests(fn: typeof diagnosticReporter): void {
+  diagnosticReporter = fn;
 }
 
 // Install a one-shot fetch wrapper that includes HttpOnly session cookies on
@@ -972,6 +978,7 @@ export function installWmSessionFetchInterceptor(): void {
     })();
 
     if (!isApiCallTarget(url, apiOrigin)) return original(input, init);
+    assertPublicRpc(input);
 
     // Public tier hydration is intentionally credential-less and does not rely
     // on the anonymous wm-session cookie. Let this exact request shape reach
@@ -995,7 +1002,6 @@ export function installWmSessionFetchInterceptor(): void {
         return url.split('?')[0] ?? url;
       }
     })();
-    if (PREMIUM_RPC_PATHS.has(path)) return original(input, withCredentials(init));
 
     const headers = new Headers(
       init?.headers ?? (input instanceof Request ? input.headers : undefined),
@@ -1093,25 +1099,6 @@ export function installWmSessionFetchInterceptor(): void {
       if (isCurrentSessionIdentity()) noteRouteSuccess(path);
       return resp;
     }
-
-    // #5674 — premiumFetch marked this as a premium call it could not
-    // authenticate, so the 401 is the expected auth denial, not a rejected
-    // cookie. Hand it back untouched: reminting and replaying would produce the
-    // identical 401 and then suppress every anonymous API call for 15 minutes.
-    //
-    // This is the SECOND of the two bypasses in this function, and the only one
-    // that can fire here — path-listed premium routes already returned far
-    // above, before any session work. The two are not interchangeable:
-    //
-    //   - PREMIUM_RPC_PATHS steps aside entirely (a dedicated auth-injection
-    //     layer owns those credentials; PR #3557 review).
-    //   - This one suppresses ONLY the recovery. The request must already have
-    //     minted a session and travelled with credentials, because
-    //     `forcePremium` also covers routes anonymous callers legitimately use
-    //     — the market-quote tape via proFreshRpcFetch — which 401 when no
-    //     cookie is sent at all. premiumFetch keeps that tape unmarked for the
-    //     same reason.
-    if (hasPremiumIntent(init)) return resp;
 
     // A slower initial request can report the old cookie after another caller
     // already recovered it. Replay with the newer cookie instead of clearing

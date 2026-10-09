@@ -25,8 +25,29 @@
 
 import assert from 'node:assert/strict';
 import { describe, it, before, beforeEach, after } from 'node:test';
+import type { WmSessionDiagnostic } from '../src/services/wm-session';
 
-import { withPremiumIntent } from '../src/services/premium-intent.ts';
+interface DiagnosticRecorder {
+  captureMessage?: (message: string, context: { level?: string; tags?: Record<string, string> }) => void;
+  addBreadcrumb?: (breadcrumb: { category?: string; level?: string; message?: string; data?: Record<string, string> }) => void;
+  captureException?: (error: unknown) => void;
+}
+
+function adaptDiagnosticRecorder(record: (deliver: (sink: DiagnosticRecorder) => void) => void) {
+  return (diagnostic: WmSessionDiagnostic): void => {
+    record(sink => {
+      if (diagnostic.type === 'message') sink.captureMessage?.(diagnostic.message, diagnostic.context);
+      else if (diagnostic.type === 'exception') sink.captureException?.(diagnostic.error);
+      else sink.addBreadcrumb?.({
+        category: 'wm-session',
+        level: 'warning',
+        message: diagnostic.message,
+        data: diagnostic.data,
+      });
+    });
+  };
+}
+
 
 // ---------------------------------------------------------------------------
 // Stub browser globals BEFORE the wm-session module is imported. The module
@@ -220,9 +241,8 @@ describe('wm-session first RPC after mint (WORLDMONITOR-XP)', () => {
     assert.equal(firstRpcKey, mintedToken, 'first non-premium RPC must carry X-WorldMonitor-Key: wms_…');
     assert.equal(firstRpcCredentials, 'include', 'cookie remains primary via credentials: include');
 
-    const premium = await wrappedFetch('https://api.worldmonitor.app/api/market/v1/analyze-stock');
-    assert.equal(premium.status, 200);
-    assert.equal(premiumKey, null, 'premium paths must not receive the anonymous wms_ header');
+    await assert.rejects(wrappedFetch('https://api.worldmonitor.app/api/market/v1/analyze-stock'), /Retired RPC/);
+    assert.equal(premiumKey, 'unset', 'retired paths must never reach the network');
   });
 
   it('reload with only sessionStorage exp remints and attaches wms_ on first RPC', async () => {
@@ -426,13 +446,12 @@ describe('wm-session refresh-on-401 (Layer 2)', () => {
     };
 
     // Pick any premium path — analyze-stock is one.
-    const resp = await wrappedFetch('https://api.worldmonitor.app/api/market/v1/analyze-stock');
-    assert.equal(resp.status, 401);
-    assert.equal(attempts, 1, 'premium path must NOT trigger a retry inside this interceptor');
-    assert.equal(mintCalls, 0, 'premium path must NOT mint a wms_ token (the dedicated injector handles it)');
+    await assert.rejects(wrappedFetch('https://api.worldmonitor.app/api/market/v1/analyze-stock'), /Retired RPC/);
+    assert.equal(attempts, 0, 'retired path must never reach the network');
+    assert.equal(mintCalls, 0, 'retired path must never mint a session');
   });
 
-  it('does NOT retry a premium-intent request whose path is outside PREMIUM_RPC_PATHS', async () => {
+  it('preserves explicit operator authorization for public translation', async () => {
     // #5674 root cause. `/api/news/v1/summarize-article` is conditionally
     // premium: the gateway charges Pro auth for spend-bearing summarize calls
     // but keeps `mode: 'translate'` free — and translate NEEDS the anonymous
@@ -464,7 +483,7 @@ describe('wm-session refresh-on-401 (Layer 2)', () => {
     try {
       resp = await wrappedFetch(
         'https://api.worldmonitor.app/api/news/v1/summarize-article',
-        withPremiumIntent({ method: 'POST', body: JSON.stringify({ mode: 'summarize' }) }),
+        { method: 'POST', body: JSON.stringify({ mode: 'translate' }), headers: { Authorization: 'Bearer operator-key' } },
       );
     } finally {
       console.warn = originalWarn;
@@ -521,7 +540,7 @@ describe('wm-session refresh-on-401 (Layer 2)', () => {
     assert.equal(mod.isWmSessionDead(), false);
   });
 
-  it('still mints a session for a premium-intent request that has none', async () => {
+  it('mints a session for a public market quote request that has none', async () => {
     // The marker suppresses RECOVERY, not the session machinery. proFreshRpcFetch
     // sets forcePremium on the market-quote tape, whose paths are not Pro-only —
     // anonymous callers use them and they 401 with no cookie at all. Skipping the
@@ -546,7 +565,7 @@ describe('wm-session refresh-on-401 (Layer 2)', () => {
 
     const resp = await wrappedFetch(
       'https://api.worldmonitor.app/api/market/v1/list-market-quotes?symbols=AAPL',
-      withPremiumIntent({}),
+      {},
     );
 
     assert.equal(resp.status, 200);
@@ -650,7 +669,7 @@ describe('wm-session refresh-on-401 (Layer 2)', () => {
 
     const warnings: string[] = [];
     const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
+    console.warn = (...args: unknown[]) => { warnings.push(String(args[0])); };
     try {
       const resp = await wrappedFetch('https://api.worldmonitor.app/api/bootstrap');
       assert.equal(resp.status, 401, 'the failed recovery returns the server response');
@@ -668,6 +687,7 @@ describe('wm-session refresh-on-401 (Layer 2)', () => {
     assert.equal(mintCalls, 3, 'initial preflight mint plus one recovery mint per route; no later remints');
     assert.deepEqual(warnings, [
       '[wm-session] refreshed HttpOnly session cookie was still rejected; suppressing anonymous API calls briefly',
+      'wm-session dead: anonymous API calls suppressed',
     ]);
   });
 
@@ -822,9 +842,9 @@ describe('wm-session refresh-on-401 (Layer 2)', () => {
     memoryStorage.clear();
 
     const captures: Array<{ msg: string; ctx: { level?: string; tags?: Record<string, string> } }> = [];
-    mod.__setWmSessionSentryEnqueueForTests(((fn: (s: unknown) => void) => {
+    mod.__setWmSessionDiagnosticReporterForTests(adaptDiagnosticRecorder((fn: (s: unknown) => void) => {
       fn({ captureMessage: (msg: string, ctx: { level?: string; tags?: Record<string, string> }) => { captures.push({ msg, ctx }); } });
-    }) as Parameters<typeof mod.__setWmSessionSentryEnqueueForTests>[0]);
+    }));
 
     let mintCalls = 0;
     currentFetchHandler = (input) => {
@@ -865,12 +885,12 @@ describe('wm-session refresh-on-401 (Layer 2)', () => {
     memoryStorage.clear();
 
     const captures: Array<{ ctx: { tags?: Record<string, string> } }> = [];
-    mod.__setWmSessionSentryEnqueueForTests(((fn: (s: unknown) => void) => {
+    mod.__setWmSessionDiagnosticReporterForTests(adaptDiagnosticRecorder((fn: (s: unknown) => void) => {
       fn({
         addBreadcrumb: () => { throw new Error('breadcrumb exploded'); },
         captureMessage: (_m: string, ctx: { tags?: Record<string, string> }) => { captures.push({ ctx }); },
       });
-    }) as Parameters<typeof mod.__setWmSessionSentryEnqueueForTests>[0]);
+    }));
 
     currentFetchHandler = (input) => {
       const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : input.url);
@@ -905,12 +925,12 @@ describe('wm-session refresh-on-401 (Layer 2)', () => {
     memoryStorage.clear();
 
     const captures: Array<{ ctx: { tags?: Record<string, string> } }> = [];
-    mod.__setWmSessionSentryEnqueueForTests(((fn: (s: unknown) => void) => {
+    mod.__setWmSessionDiagnosticReporterForTests(adaptDiagnosticRecorder((fn: (s: unknown) => void) => {
       fn({
         captureMessage: (_m: string, ctx: { tags?: Record<string, string> }) => { captures.push({ ctx }); },
         addBreadcrumb: () => {},
       });
-    }) as Parameters<typeof mod.__setWmSessionSentryEnqueueForTests>[0]);
+    }));
 
     currentFetchHandler = (input) => {
       const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : input.url);
@@ -946,12 +966,12 @@ describe('wm-session refresh-on-401 (Layer 2)', () => {
     memoryStorage.clear();
 
     const captures: Array<{ ctx: { tags?: Record<string, string> } }> = [];
-    mod.__setWmSessionSentryEnqueueForTests(((fn: (s: unknown) => void) => {
+    mod.__setWmSessionDiagnosticReporterForTests(adaptDiagnosticRecorder((fn: (s: unknown) => void) => {
       fn({
         captureMessage: (_m: string, ctx: { tags?: Record<string, string> }) => { captures.push({ ctx }); },
         addBreadcrumb: () => {},
       });
-    }) as Parameters<typeof mod.__setWmSessionSentryEnqueueForTests>[0]);
+    }));
 
     currentFetchHandler = (input) => {
       const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : input.url);
@@ -987,12 +1007,12 @@ describe('wm-session refresh-on-401 (Layer 2)', () => {
     memoryStorage.clear();
 
     const captures: Array<{ ctx: { tags?: Record<string, string> } }> = [];
-    mod.__setWmSessionSentryEnqueueForTests(((fn: (s: unknown) => void) => {
+    mod.__setWmSessionDiagnosticReporterForTests(adaptDiagnosticRecorder((fn: (s: unknown) => void) => {
       fn({
         captureMessage: (_msg: string, ctx: { tags?: Record<string, string> }) => { captures.push({ ctx }); },
         addBreadcrumb: () => {},
       });
-    }) as Parameters<typeof mod.__setWmSessionSentryEnqueueForTests>[0]);
+    }));
 
     currentFetchHandler = (input) => {
       const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : input.url);
@@ -1027,9 +1047,9 @@ describe('wm-session refresh-on-401 (Layer 2)', () => {
     // recovery path — an unguarded throw would both hide the UI toast and
     // turn the wrapped fetch into a rejection instead of returning the 401.
     memoryStorage.clear();
-    mod.__setWmSessionSentryEnqueueForTests((() => {
+    mod.__setWmSessionDiagnosticReporterForTests(adaptDiagnosticRecorder(() => {
       throw new Error('sdk exploded');
-    }) as Parameters<typeof mod.__setWmSessionSentryEnqueueForTests>[0]);
+    }));
 
     // window === globalThis in this harness, and Node's main-thread
     // globalThis is not an EventTarget — stub dispatchEvent so the module's
@@ -1373,7 +1393,7 @@ function collectSentry(): { captures: Capture[]; crumbs: Crumb[]; order: string[
   const captures: Capture[] = [];
   const crumbs: Crumb[] = [];
   const order: string[] = [];
-  mod.__setWmSessionSentryEnqueueForTests(((fn: (s: unknown) => void) => {
+  mod.__setWmSessionDiagnosticReporterForTests(adaptDiagnosticRecorder((fn: (s: unknown) => void) => {
     fn({
       captureMessage: (msg: string, ctx: Capture['ctx']) => {
         captures.push({ msg, ctx });
@@ -1384,7 +1404,7 @@ function collectSentry(): { captures: Capture[]; crumbs: Crumb[]; order: string[
         order.push(`crumb:${crumb.message ?? '?'}`);
       },
     });
-  }) as Parameters<typeof mod.__setWmSessionSentryEnqueueForTests>[0]);
+  }));
   return { captures, crumbs, order };
 }
 
@@ -2055,7 +2075,7 @@ function captureSink(onCapture?: () => void) {
   const captures: Array<{ msg: string; ctx: { level?: string; tags?: Record<string, string> } }> = [];
   capturedExceptions = [];
   capturedCrumbs = [];
-  mod.__setWmSessionSentryEnqueueForTests(((fn: (s: unknown) => void) => {
+  mod.__setWmSessionDiagnosticReporterForTests(adaptDiagnosticRecorder((fn: (s: unknown) => void) => {
     fn({
       captureMessage: (msg: string, ctx: { level?: string; tags?: Record<string, string> }) => {
         captures.push({ msg, ctx });
@@ -2066,7 +2086,7 @@ function captureSink(onCapture?: () => void) {
         capturedCrumbs.push(crumb);
       },
     });
-  }) as Parameters<typeof mod.__setWmSessionSentryEnqueueForTests>[0]);
+  }));
   return captures;
 }
 
@@ -2408,12 +2428,12 @@ describe('wm-session cookie-persistence detection (Layer 3)', () => {
     memoryStorage.clear();
 
     const captures: Array<{ ctx: { tags?: Record<string, string> } }> = [];
-    mod.__setWmSessionSentryEnqueueForTests(((fn: (s: unknown) => void) => {
+    mod.__setWmSessionDiagnosticReporterForTests(adaptDiagnosticRecorder((fn: (s: unknown) => void) => {
       fn({
         addBreadcrumb: () => {},
         captureMessage: (_m: string, ctx: { tags?: Record<string, string> }) => { captures.push({ ctx }); },
       });
-    }) as Parameters<typeof mod.__setWmSessionSentryEnqueueForTests>[0]);
+    }));
 
     let mints = 0;
     const fallbackToken = 'wms_header-fallback-token';
@@ -2464,13 +2484,8 @@ describe('wm-session cookie-persistence detection (Layer 3)', () => {
       );
       assert.equal(explicit.status, 200, 'an explicit user key must outrank the anonymous fallback');
 
-      const premium = await wrappedFetch('https://api.worldmonitor.app/api/market/v1/analyze-stock');
-      assert.equal(premium.status, 401, 'premium auth remains owned by its dedicated injector');
-      assert.equal(
-        premiumFallbackHeader,
-        null,
-        'the anonymous fallback must never be injected into a premium route',
-      );
+      await assert.rejects(wrappedFetch('https://api.worldmonitor.app/api/market/v1/analyze-stock'), /Retired RPC/);
+      assert.equal(premiumFallbackHeader, null, 'retired requests never reach the network');
     } finally {
       console.warn = originalWarn;
     }
@@ -2533,12 +2548,12 @@ describe('wm-session cookie-persistence detection (Layer 3)', () => {
     memoryStorage.clear();
 
     const captures: Array<{ ctx: { tags?: Record<string, string> } }> = [];
-    mod.__setWmSessionSentryEnqueueForTests(((fn: (s: unknown) => void) => {
+    mod.__setWmSessionDiagnosticReporterForTests(adaptDiagnosticRecorder((fn: (s: unknown) => void) => {
       fn({
         addBreadcrumb: () => {},
         captureMessage: (_m: string, ctx: { tags?: Record<string, string> }) => { captures.push({ ctx }); },
       });
-    }) as Parameters<typeof mod.__setWmSessionSentryEnqueueForTests>[0]);
+    }));
 
     currentFetchHandler = (input) => {
       const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : input.url);
@@ -2574,12 +2589,12 @@ describe('wm-session cookie-persistence detection — concurrent mints', () => {
     memoryStorage.clear();
 
     const captures: Array<{ ctx: { tags?: Record<string, string> } }> = [];
-    mod.__setWmSessionSentryEnqueueForTests(((fn: (s: unknown) => void) => {
+    mod.__setWmSessionDiagnosticReporterForTests(adaptDiagnosticRecorder((fn: (s: unknown) => void) => {
       fn({
         addBreadcrumb: () => {},
         captureMessage: (_m: string, ctx: { tags?: Record<string, string> }) => { captures.push({ ctx }); },
       });
-    }) as Parameters<typeof mod.__setWmSessionSentryEnqueueForTests>[0]);
+    }));
 
     const release: Array<() => void> = [];
     currentFetchHandler = (input) => {

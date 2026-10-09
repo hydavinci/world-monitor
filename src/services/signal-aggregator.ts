@@ -5,16 +5,15 @@
  */
 
 import type {
-  InternetOutage,
-  MilitaryFlight,
-  MilitaryVessel,
-  SocialUnrestEvent,
-  AisDisruptionEvent,
+AisDisruptionEvent,
+InternetOutage,
+MilitaryFlight,
+MilitaryVessel,
+SocialUnrestEvent,
 } from '@/types';
-import type { CountrySanctionsPressure } from './sanctions-pressure';
-import type { RadiationObservation } from './radiation';
-import { getCountryAtCoordinates, getCountryNameByCode, nameToCountryCode, ME_STRIKE_BOUNDS, resolveCountryFromBounds } from './country-geometry';
 import countryNames from '../../shared/country-names.json';
+import { getCountryAtCoordinates,getCountryNameByCode,ME_STRIKE_BOUNDS,nameToCountryCode,resolveCountryFromBounds } from './country-geometry';
+import type { RadiationObservation } from './radiation';
 
 export const SIGNAL_AGGREGATOR_MAX_SIGNALS = 1000;
 
@@ -359,35 +358,6 @@ class SignalAggregator {
       };
       this.signals.push(signal);
       this.temporalSourceMap.set(signal, a.type);
-    }
-    this.pruneOld();
-  }
-
-  ingestSanctionsPressure(countries: CountrySanctionsPressure[]): void {
-    this.clearSignalType('sanctions_pressure');
-
-    for (const country of countries) {
-      const code = normalizeCountryCode(country.countryCode) || normalizeCountryCode(country.countryName) || 'XX';
-      const severity: 'low' | 'medium' | 'high' =
-        country.newEntryCount >= 5 || country.entryCount >= 50
-          ? 'high'
-          : country.newEntryCount >= 1 || country.entryCount >= 20
-            ? 'medium'
-            : 'low';
-      if (country.newEntryCount === 0 && country.entryCount < 20) continue;
-
-      this.signals.push({
-        type: 'sanctions_pressure',
-        country: code,
-        countryName: country.countryName || getCountryName(code),
-        lat: 0,
-        lon: 0,
-        severity,
-        title: country.newEntryCount > 0
-          ? `${country.newEntryCount} new OFAC designation${country.newEntryCount === 1 ? '' : 's'} tied to ${country.countryName}`
-          : `${country.entryCount} OFAC-linked designations tied to ${country.countryName}`,
-        timestamp: new Date(),
-      });
     }
     this.pruneOld();
   }

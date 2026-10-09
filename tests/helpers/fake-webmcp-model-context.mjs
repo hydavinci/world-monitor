@@ -202,7 +202,7 @@ export class FakeWebMcpModelContext {
   }
 }
 
-export function createFakeWebMcpRuntime(modelContext, track = () => {}) {
+export function createFakeWebMcpRuntime(modelContext, onDiagnostic = () => {}) {
   const documentListeners = new Map();
   const windowListeners = new Map();
 
@@ -234,7 +234,7 @@ export function createFakeWebMcpRuntime(modelContext, track = () => {}) {
   return {
     document,
     window,
-    runtime: { document, window, track },
+    runtime: { document, window, onDiagnostic },
     documentListeners,
     windowListeners,
     dispatchDocument(type) { return dispatch(documentListeners, type); },

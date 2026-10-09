@@ -34,7 +34,7 @@ interface IssuedSearchResult {
   query: string;
   scope: DashboardSearchScope;
   identity: string;
-  authContext: string;
+  preferenceContext: string;
   securityEpoch: number;
   variant: string;
   effectClass: SearchResultEffectClass;
@@ -45,18 +45,14 @@ export interface WebMcpSearchControllerBindings {
   isDestroyed(): boolean;
   refreshIndex(): void;
   getModal(): SearchModal | null | undefined;
-  hasPremiumAccess(): boolean;
   fetchLiveFlight(callsign: string, signal?: AbortSignal): Promise<void>;
-  getAuthContext(): string;
+  getPreferenceContext(): string;
   getVariant(): string;
   isMatchExecutable(match: SearchMatch): boolean;
   isPanelCurrentlyEnabled(panelId: string): boolean;
   selectMatch(match: SearchMatch, signal?: AbortSignal): Promise<boolean>;
-  subscribeAuth(listener: () => void): () => void;
-  subscribeEntitlement(listener: () => void): () => void;
   subscribeRuntimeConfig(listener: () => void): () => void;
-  subscribeWidgetAccess(listener: () => void): () => void;
-  onPremiumAccessChanged(premium: boolean, premiumRestored: boolean): void;
+  subscribeWidgets(listener: () => void): () => void;
   cancelPendingSelection(): void;
 }
 
@@ -70,7 +66,6 @@ export class WebMcpSearchController {
   private securityEpoch = 0;
   private openOperationEpoch = 0;
   private activeOpenOperation: ActiveOpenOperation | null = null;
-  private lastPremiumAccess = false;
   private unsubscribers: Array<() => void> = [];
   private readonly resultCache = new OpaqueResultCache<IssuedSearchResult>({
     maxEntries: SEARCH_RESULT_CACHE_MAX_ENTRIES,
@@ -81,21 +76,14 @@ export class WebMcpSearchController {
 
   public observeSecurityContext(): void {
     if (this.unsubscribers.length > 0) return;
-    this.lastPremiumAccess = this.bindings.hasPremiumAccess();
     const invalidate = (): void => {
       this.securityEpoch += 1;
       this.resultCache.clear();
       this.cancelPendingOpen();
-      const premium = this.bindings.hasPremiumAccess();
-      const premiumRestored = !this.lastPremiumAccess && premium;
-      this.lastPremiumAccess = premium;
-      this.bindings.onPremiumAccessChanged(premium, premiumRestored);
     };
     this.unsubscribers = [
-      this.subscribeAfterInitial(this.bindings.subscribeAuth, invalidate),
-      this.subscribeAfterInitial(this.bindings.subscribeEntitlement, invalidate),
       this.bindings.subscribeRuntimeConfig(invalidate),
-      this.bindings.subscribeWidgetAccess(invalidate),
+      this.bindings.subscribeWidgets(invalidate),
     ];
   }
 
@@ -132,7 +120,6 @@ export class WebMcpSearchController {
     if (
       searchResult.flightCallsign
       && searchResult.orderedMatches.length === 0
-      && this.bindings.hasPremiumAccess()
     ) {
       try {
         await raceWebMcpAbort(
@@ -171,14 +158,14 @@ export class WebMcpSearchController {
       accepted.push(candidate);
     }
 
-    const authContext = this.bindings.getAuthContext();
+    const preferenceContext = this.bindings.getPreferenceContext();
     throwIfWebMcpAborted(signal);
     const results: DashboardSearchDescriptor[] = accepted.map(({ match, descriptor }) => ({
       key: this.resultCache.issue({
         query,
         scope,
         identity: searchMatchIdentity(match),
-        authContext,
+        preferenceContext,
         securityEpoch: this.securityEpoch,
         variant: this.bindings.getVariant(),
         effectClass: this.classifyMatch(match),
@@ -332,18 +319,6 @@ export class WebMcpSearchController {
       && this.activeOpenOperation?.controller === controller;
   }
 
-  private subscribeAfterInitial(
-    subscribe: (listener: () => void) => () => void,
-    listener: () => void,
-  ): () => void {
-    let subscribing = true;
-    const unsubscribe = subscribe(() => {
-      if (!subscribing) listener();
-    });
-    subscribing = false;
-    return unsubscribe;
-  }
-
   private describeMatch(
     match: SearchMatch,
     targetCancellationSupported: boolean,
@@ -412,7 +387,7 @@ export class WebMcpSearchController {
 
   private isIssuedContextCurrent(issued: IssuedSearchResult): boolean {
     return issued.variant === this.bindings.getVariant()
-      && issued.authContext === this.bindings.getAuthContext()
+      && issued.preferenceContext === this.bindings.getPreferenceContext()
       && issued.securityEpoch === this.securityEpoch;
   }
 

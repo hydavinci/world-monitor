@@ -17,7 +17,7 @@ export function countrySignalsFromMilitary(code: string, military?: CountryMilit
     displacementOutflow: null, climateStress: null, conflictEvents: null, activeStrikes: null,
     orefSirens: null, orefHistory24h: null, aviationDisruptions: null, travelAdvisories: null,
     travelAdvisoryMaxLevel: null, gpsJammingHexes: null, isTier1: !!TIER1_COUNTRIES[code],
-    thermalEscalations: null, sanctionsDesignations: null, sanctionsNewDesignations: null,
+    thermalEscalations: null,
     ...raw,
   };
 }

@@ -8,7 +8,7 @@ import { STORAGE_KEYS } from '@/config';
 import {
   getAllowedLayerKeys,
   isLayerCommandAllowed,
-  isLayerEntitled,
+  isPublicLayer,
   isLayerExecutable,
   type MapVariant,
   type RendererKind,
@@ -32,15 +32,12 @@ import { STOCK_EXCHANGES, FINANCIAL_CENTERS, CENTRAL_BANKS, COMMODITY_HUBS } fro
 export interface SearchSelectionDispatcherBindings {
   ctx: AppContext;
   getVariant(): string;
-  hasPremiumAccess(): boolean;
   openCountryBriefByCode(
     code: string,
     country: string,
     options?: { trackDetailedAnalytics?: boolean; signal?: AbortSignal },
   ): boolean | Promise<boolean>;
   enablePanel(panelId: string, options?: { trackDetailedAnalytics?: boolean }): boolean;
-  trackSearchResultSelected(type: string, options?: { includeAttribution?: boolean }): void;
-  trackCountrySelected(code: string, name: string, source: string): void;
   runWithAgentAnalyticsSuppressed<T>(callback: () => T): T;
   suppressNextAgentPanelView(panelId: string): void;
   resolveExecutableNewsPanel(
@@ -175,9 +172,6 @@ export class SearchSelectionDispatcher {
     const trackDetailedAnalytics = options.trackDetailedAnalytics !== false;
     const epoch = options.programmaticEpoch;
     const ctx = this.bindings.ctx;
-    this.bindings.trackSearchResultSelected(result.type, {
-      includeAttribution: trackDetailedAnalytics,
-    });
     switch (result.type) {
       case 'news': {
         const item = result.data as NewsItem;
@@ -438,7 +432,6 @@ export class SearchSelectionDispatcher {
       }
       case 'country': {
         const { code, name } = result.data as { code: string; name: string };
-        if (trackDetailedAnalytics) this.bindings.trackCountrySelected(code, name, 'search');
         return this.bindings.openCountryBriefByCode(code, name, {
           trackDetailedAnalytics,
           ...(options.signal ? { signal: options.signal } : {}),
@@ -502,7 +495,7 @@ export class SearchSelectionDispatcher {
           : (ctx.map?.isDeckGLActive?.() ? 'deck' : 'svg');
         const executable = (key: keyof MapLayers): boolean => allowed.has(key)
           && isLayerExecutable(key, renderer)
-          && isLayerEntitled(key, this.bindings.hasPremiumAccess());
+          && isPublicLayer(key);
         if (action === 'all') {
           for (const key of Object.keys(ctx.mapLayers)) {
             ctx.mapLayers[key as keyof MapLayers] = executable(key as keyof MapLayers);
@@ -528,7 +521,7 @@ export class SearchSelectionDispatcher {
           : (ctx.map?.isDeckGLActive?.() ? 'deck' : 'svg');
         const deckGL = ctx.map?.isDeckGLActive?.() ?? false;
         const current = ctx.mapLayers[layer];
-        if (!isLayerCommandAllowed(layer, current, renderer, this.bindings.hasPremiumAccess())) {
+        if (!isLayerCommandAllowed(layer, current, renderer)) {
           return false;
         }
         let next = !current;
@@ -584,29 +577,6 @@ export class SearchSelectionDispatcher {
           ctx.unifiedSettings?.open();
         } else if (action === 'refresh') {
           window.location.reload();
-        } else if (action === 'resilience') {
-          const layer = 'resilienceScore' as keyof MapLayers;
-          if (!getAllowedLayerKeys(this.variant()).has(layer)) return false;
-          const current = ctx.mapLayers[layer];
-          const renderer: RendererKind = ctx.map?.isGlobeMode?.()
-            ? 'globe'
-            : (ctx.map?.isDeckGLActive?.() ? 'deck' : 'svg');
-          const deckGL = ctx.map?.isDeckGLActive?.() ?? false;
-          if (!isLayerCommandAllowed(layer, current, renderer, this.bindings.hasPremiumAccess())) {
-            return false;
-          }
-          let next = !current;
-          if (next && !deckGL) next = false;
-          ctx.mapLayers[layer] = next;
-          this.bindings.saveToStorage(STORAGE_KEYS.mapLayers, ctx.mapLayers);
-          if (next) ctx.map?.enableLayer(layer);
-          else ctx.map?.setLayers(ctx.mapLayers);
-        } else if (action === 'route-explorer') {
-          void import('@/components/RouteExplorer/RouteExplorer').then((module) => {
-            const explorer = module.getRouteExplorer();
-            explorer.setMap(ctx.map);
-            explorer.open();
-          });
         }
         break;
       case 'time':
@@ -617,7 +587,6 @@ export class SearchSelectionDispatcher {
           || CURATED_COUNTRIES[action]?.name
           || new Intl.DisplayNames(['en'], { type: 'region' }).of(action)
           || action;
-        if (trackDetailedAnalytics) this.bindings.trackCountrySelected(action, name, 'command');
         return this.bindings.openCountryBriefByCode(action, name, {
           trackDetailedAnalytics,
           ...(options.signal ? { signal: options.signal } : {}),

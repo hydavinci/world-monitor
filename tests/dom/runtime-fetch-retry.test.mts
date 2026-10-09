@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const proxy = vi.hoisted(() => vi.fn());
 vi.mock('@/services/tauri-bridge', () => ({ proxyLocalApiRequest: proxy }));
-vi.mock('@/services/clerk', () => ({ getClerkToken: async () => null }));
 
 const API = 'https://api.worldmonitor.app';
 const ORIGIN = 'https://worldmonitor.app';
@@ -105,16 +104,6 @@ describe('web generic fallback', () => {
       expect(init?.credentials).toBe('omit');
       expect(new Headers(init?.headers).get('X-Test')).toBe('retained');
     }
-  });
-  it('retains explicit billing denial retry for POST', async () => {
-    vi.useFakeTimers();
-    const native = await web(503);
-    native.mockResolvedValueOnce(new Response('{}', { status: 503, headers: { 'X-Billing-Verification': 'entitlement_verification_unavailable', 'Retry-After': '1' } })).mockResolvedValueOnce(new Response('ok'));
-    const request = window.fetch(PATH, { method: 'POST', body: 'payload' });
-    await vi.runAllTimersAsync();
-    expect((await request).status).toBe(200);
-    expect(native).toHaveBeenCalledTimes(2);
-    expect(native.mock.calls.map(call => String(call[0]))).toEqual([API + PATH, API + PATH]);
   });
 });
 

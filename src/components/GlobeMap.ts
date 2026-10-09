@@ -14,77 +14,72 @@
  *  - Auto-rotate after 60 s of inactivity
  */
 
-import Globe from 'globe.gl';
-import { isDesktopRuntime } from '@/services/runtime';
-import type { NewsLocationMarker as NewsLocationInput } from '@/types';
-import type { GlobeInstance, ConfigOptions } from 'globe.gl';
-import { INTEL_HOTSPOTS, CONFLICT_ZONES, STRATEGIC_WATERWAYS } from '@/config/geo';
-import { getCachedMilitaryBases, preloadMilitaryBases } from '@/services/military-base-config';
-import { NUCLEAR_FACILITIES, SPACEPORTS, ECONOMIC_CENTERS, CRITICAL_MINERALS, UNDERSEA_CABLES } from '@/config/geo-map';
-import { PIPELINES } from '@/config/pipelines';
-import { t } from '@/services/i18n';
-import { SITE_VARIANT } from '@/config/variant';
-import { getGlobeRenderScale, resolveGlobePixelRatio, resolvePerformanceProfile, subscribeGlobeRenderScaleChange, getGlobeTexture, GLOBE_TEXTURE_URLS, subscribeGlobeTextureChange, getGlobeVisualPreset, subscribeGlobeVisualPresetChange, type GlobeRenderScale, type GlobePerformanceProfile, type GlobeVisualPreset } from '@/services/globe-render-settings';
-import {
-  getLayerExplanation,
-  getLayersForVariant,
-  hasCuratedLayerExplanation,
-  resolveLayerLabel,
-  bindLayerSearch,
-  type MapVariant,
-} from '@/config/map-layer-definitions';
-import { renderLayerExplanationCard } from '@/utils/layer-explanation-card';
-import { guardOrbitControlsPointerTracking } from '@/utils/orbit-controls-pointer-guard';
-import { getAuthState } from '@/services/auth-state';
-import { resolveTradeRouteSegments, type TradeRouteSegment } from '@/config/trade-routes';
-import { GAMMA_IRRADIATORS } from '@/config/irradiators';
-import { AI_DATA_CENTERS } from '@/config/ai-datacenters';
-import { getCountryBbox, getCountriesGeoJson, getCountryAtCoordinates, getCountryNameByCode } from '@/services/country-geometry';
-import { escapeHtml } from '@/utils/sanitize';
-import { showLayerWarning } from '@/utils/layer-warning';
-import { isMobileDevice } from '@/utils';
 import { setGlobeMarkerLoad } from '@/bootstrap/globe-marker-probe';
+import { AI_DATA_CENTERS } from '@/config/ai-datacenters';
+import { CONFLICT_ZONES,INTEL_HOTSPOTS,STRATEGIC_WATERWAYS } from '@/config/geo';
+import { CRITICAL_MINERALS,ECONOMIC_CENTERS,NUCLEAR_FACILITIES,SPACEPORTS,UNDERSEA_CABLES } from '@/config/geo-map';
+import { GAMMA_IRRADIATORS } from '@/config/irradiators';
+import { getMapMarkerSvg, type MapMarkerIconKind } from '@/config/map-marker-icons';
 import {
-  GLOBE_MARKER_BUDGET_DESKTOP,
-  GLOBE_MARKER_BUDGET_MOBILE,
-  proximityRank,
-  selectGlobeMarkers,
-  type GlobeLayerTruncation,
-  type GlobeMarkerGroup,
-} from '@/utils/globe-marker-budget';
-import { renderLayerTruncationBadges } from '@/utils/layer-truncation-badge';
-import type { FeatureCollection, Geometry } from 'geojson';
-import type { MapLayers, Hotspot, MilitaryFlight, MilitaryVessel, MilitaryVesselCluster, NaturalEvent, InternetOutage, CyberThreat, SocialUnrestEvent, UcdpGeoEvent, MilitaryBase, GammaIrradiator, Spaceport, EconomicCenter, StrategicWaterway, CriticalMineralProject, AIDataCenter, UnderseaCable, Pipeline, CableAdvisory, RepairShip, AisDisruptionEvent, AisDensityZone, AisDisruptionType } from '@/types';
-import type { Earthquake } from '@/services/earthquakes';
-import type { AirportDelayAlert } from '@/services/aviation';
-import { MapPopup } from './MapPopup';
-import type { GetChokepointStatusResponse } from '@/services/supply-chain';
-import type { MapContainerState, MapView, TimeRange } from './MapContainer';
-import type { CountryClickPayload } from './DeckGLMap';
-import type { WeatherAlert } from '@/services/weather';
-import { type IranEvent, getIranEventHexColor } from '@/services/conflict';
-import type { DisplacementFlow } from '@/services/displacement';
-import type { ClimateAnomaly } from '@/services/climate';
-import type { GpsJamHex } from '@/services/gps-interference';
-import type { SatellitePosition } from '@/services/satellites';
-import type { ImageryScene } from '@/generated/server/worldmonitor/imagery/v1/service_server';
-import { isAllowedPreviewUrl } from '@/utils/imagery-preview';
-import { getCategoryStyle } from '@/services/webcams';
-import { pinWebcam, isPinned } from '@/services/webcams/pinned-store';
-import type { WebcamEntry, WebcamCluster } from '@/generated/client/worldmonitor/webcam/v1/service_client';
-import type { TrafficAnomaly as ProtoTrafficAnomaly, DdosLocationHit } from '@/generated/client/worldmonitor/infrastructure/v1/service_client';
-import type { RadiationObservation } from '@/services/radiation';
+bindLayerSearch,
+getLayerExplanation,
+getLayersForVariant,
+hasCuratedLayerExplanation,
+resolveLayerLabel,
+resolveLayerIcon,
+type MapVariant,
+} from '@/config/map-layer-definitions';
+import { PIPELINES } from '@/config/pipelines';
 import type { ScenarioVisualState } from '@/config/scenario-templates';
-import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
-import { renderPopupSourceLinks } from './map-popup-source-links';
+import { resolveTradeRouteSegments,type TradeRouteSegment } from '@/config/trade-routes';
+import { SITE_VARIANT } from '@/config/variant';
+import type { DdosLocationHit,TrafficAnomaly as ProtoTrafficAnomaly } from '@/generated/client/worldmonitor/infrastructure/v1/service_client';
+import type { WebcamCluster,WebcamEntry } from '@/generated/client/worldmonitor/webcam/v1/service_client';
+import type { ImageryScene } from '@/generated/server/worldmonitor/imagery/v1/service_server';
+import type { AirportDelayAlert } from '@/services/aviation';
+import type { ClimateAnomaly } from '@/services/climate';
+import { getIranEventHexColor,type IranEvent } from '@/services/conflict';
+import { getCountriesGeoJson,getCountryAtCoordinates,getCountryBbox,getCountryNameByCode } from '@/services/country-geometry';
+import type { DisplacementFlow } from '@/services/displacement';
+import type { Earthquake } from '@/services/earthquakes';
+import { getGlobeRenderScale,getGlobeTexture,getGlobeVisualPreset,GLOBE_TEXTURE_URLS,resolveGlobePixelRatio,resolvePerformanceProfile,subscribeGlobeRenderScaleChange,subscribeGlobeTextureChange,subscribeGlobeVisualPresetChange,type GlobePerformanceProfile,type GlobeRenderScale,type GlobeVisualPreset } from '@/services/globe-render-settings';
+import type { GpsJamHex } from '@/services/gps-interference';
+import { t } from '@/services/i18n';
+import { getCachedMilitaryBases,preloadMilitaryBases } from '@/services/military-base-config';
+import type { RadiationObservation } from '@/services/radiation';
+import { isDesktopRuntime } from '@/services/runtime';
+import type { SatellitePosition } from '@/services/satellites';
+import type { GetChokepointStatusResponse } from '@/services/supply-chain';
+import type { WeatherAlert } from '@/services/weather';
+import { getCategoryStyle } from '@/services/webcams';
+import { isPinned,pinWebcam } from '@/services/webcams/pinned-store';
+import type { AIDataCenter,AisDensityZone,AisDisruptionEvent,AisDisruptionType,CableAdvisory,CriticalMineralProject,CyberThreat,EconomicCenter,GammaIrradiator,Hotspot,InternetOutage,MapLayers,MilitaryBase,MilitaryFlight,MilitaryVessel,MilitaryVesselCluster,NaturalEvent,NewsLocationMarker as NewsLocationInput,Pipeline,RepairShip,SocialUnrestEvent,Spaceport,StrategicWaterway,UcdpGeoEvent,UnderseaCable } from '@/types';
+import { isMobileDevice } from '@/utils';
+import { setTrustedHtml,trustedHtml } from '@/utils/dom-utils';
 import {
-  applyPremiumLayerPresentation,
-  getPremiumLayerPresentation,
-  PremiumLayerGate,
-} from './premium-layer-gate';
-import { globeAltitudeToMapZoom, mapZoomToGlobeAltitude } from '@/utils/globe-zoom';
+GLOBE_MARKER_BUDGET_DESKTOP,
+GLOBE_MARKER_BUDGET_MOBILE,
+proximityRank,
+selectGlobeMarkers,
+type GlobeLayerTruncation,
+type GlobeMarkerGroup,
+} from '@/utils/globe-marker-budget';
+import { globeAltitudeToMapZoom,mapZoomToGlobeAltitude } from '@/utils/globe-zoom';
 import { headingToCompass } from '@/utils/heading-to-compass';
+import { isAllowedPreviewUrl } from '@/utils/imagery-preview';
+import { renderLayerExplanationCard } from '@/utils/layer-explanation-card';
+import { renderLayerTruncationBadges } from '@/utils/layer-truncation-badge';
+import { showLayerWarning } from '@/utils/layer-warning';
+import { guardOrbitControlsPointerTracking } from '@/utils/orbit-controls-pointer-guard';
+import { escapeHtml } from '@/utils/sanitize';
 import { vesselTypeLabel } from '@/utils/vessel-type-label';
+import type { FeatureCollection,Geometry } from 'geojson';
+import type { ConfigOptions,GlobeInstance } from 'globe.gl';
+import Globe from 'globe.gl';
+import type { CountryClickPayload } from './DeckGLMap';
+import { renderPopupSourceLinks } from './map-popup-source-links';
+import type { MapContainerState,MapView,TimeRange } from './MapContainer';
+import { MapPopup } from './MapPopup';
 
 export interface GlobeMapOptions {
   onInitError?: (error: unknown) => void;
@@ -502,7 +497,6 @@ export class GlobeMap {
   private unsubscribeGlobeQuality: (() => void) | null = null;
   private unsubscribeGlobeTexture: (() => void) | null = null;
   private unsubscribeVisualPreset: (() => void) | null = null;
-  private premiumLayerGate: PremiumLayerGate | null = null;
   private pendingPremiumLayerChanges = new Set<keyof MapLayers>();
   private savedDefaultMaterial: any = null;
   private controls: GlobeControlsLike | null = null;
@@ -1065,6 +1059,10 @@ export class GlobeMap {
     return `<div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center">${inner}</div>`;
   }
 
+  private static markerSvg(kind: MapMarkerIconKind): string {
+    return getMapMarkerSvg(kind).replace('<svg ', `<svg data-globe-icon="${kind}" style="width:100%;height:100%;display:block;" `);
+  }
+
   private buildMarkerElement(d: GlobeMarker): HTMLElement {
     const el = document.createElement('div');
     el.style.cssText = 'pointer-events:auto;cursor:pointer;user-select:none;';
@@ -1074,11 +1072,9 @@ export class GlobeMap {
       setTrustedHtml(el, trustedHtml(GlobeMap.wrapHit(`
         <div style="position:relative;width:${size}px;height:${size}px;">
           <div style="
-            position:absolute;inset:0;border-radius:50%;
-            background:rgba(255,50,50,0.85);
-            border:1.5px solid rgba(255,120,120,0.9);
-            box-shadow:0 0 6px 2px rgba(255,50,50,0.5);
-          "></div>
+            position:absolute;inset:0;color:rgba(255,50,50,0.85);
+            filter:drop-shadow(0 0 6px rgba(255,50,50,0.5));
+          ">${GlobeMap.markerSvg('conflict')}</div>
           <div style="
             position:absolute;inset:-4px;border-radius:50%;
             background:rgba(255,50,50,0.2);
@@ -1167,7 +1163,7 @@ export class GlobeMap {
       const sc = getIranEventHexColor(d);
       setTrustedHtml(el, trustedHtml(GlobeMap.wrapHit(`
         <div style="position:relative;width:9px;height:9px;">
-          <div style="position:absolute;inset:0;border-radius:50%;background:${sc};border:1.5px solid rgba(255,255,255,0.5);box-shadow:0 0 5px 2px ${sc}88;"></div>
+          <div style="position:absolute;inset:0;color:${sc};filter:drop-shadow(0 0 5px ${sc}88);">${GlobeMap.markerSvg('strike')}</div>
           <div style="position:absolute;inset:-4px;border-radius:50%;background:${sc}33;${this.pulseStyle('2s')}"></div>
         </div>`), "legacy direct innerHTML migration"));
       el.title = d.title;
@@ -1201,7 +1197,7 @@ export class GlobeMap {
       const size = Math.min(10, 5 + (d.deaths || 0) * 0.3);
       setTrustedHtml(el, trustedHtml(GlobeMap.wrapHit(`
         <div style="position:relative;width:${size}px;height:${size}px;">
-          <div style="position:absolute;inset:0;border-radius:50%;background:rgba(255,100,0,0.85);border:1.5px solid rgba(255,160,80,0.9);box-shadow:0 0 5px 2px rgba(255,100,0,0.5);"></div>
+          <div style="position:absolute;inset:0;color:rgba(255,100,0,0.85);filter:drop-shadow(0 0 5px rgba(255,100,0,0.5));">${GlobeMap.markerSvg('conflict')}</div>
         </div>`), "legacy direct innerHTML migration"));
       el.title = `${d.sideA} vs ${d.sideB}`;
     } else if (d._kind === 'displacement') {
@@ -1263,7 +1259,7 @@ export class GlobeMap {
     } else if (d._kind === 'earthquake') {
       const mc = d.magnitude >= 6 ? '#ff2020' : d.magnitude >= 4 ? '#ff8800' : '#ffcc00';
       const sz = Math.max(8, Math.min(18, Math.round(d.magnitude * 2.5)));
-      setTrustedHtml(el, trustedHtml(GlobeMap.wrapHit(`<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:${mc}44;border:2px solid ${mc};box-shadow:0 0 6px 2px ${mc}55;"></div>`), "legacy direct innerHTML migration"));
+      setTrustedHtml(el, trustedHtml(GlobeMap.wrapHit(`<div style="width:${sz}px;height:${sz}px;color:${mc};filter:drop-shadow(0 0 6px ${mc}55);">${GlobeMap.markerSvg('earthquake')}</div>`), "legacy direct innerHTML migration"));
       el.title = `M${d.magnitude.toFixed(1)} — ${d.place}`;
     } else if (d._kind === 'economic') {
       const ec = d.type === 'exchange' ? '#ffd700' : d.type === 'central-bank' ? '#4488ff' : '#44cc88';
@@ -1306,7 +1302,7 @@ export class GlobeMap {
                : '#44aaff';
       setTrustedHtml(el, trustedHtml(`
         <div style="position:relative;width:16px;height:16px;">
-          <div style="position:absolute;inset:0;border-radius:50%;background:${tc}44;border:1.5px solid ${tc};box-shadow:0 0 5px 2px ${tc}55;"></div>
+          <div style="position:absolute;inset:0;color:${tc};filter:drop-shadow(0 0 5px ${tc}55);">${GlobeMap.markerSvg('news')}</div>
           <div style="position:absolute;inset:-5px;border-radius:50%;background:${tc}22;${this.pulseStyle('1.8s')}"></div>
         </div>`, "legacy direct innerHTML migration"));
       el.title = d.title;
@@ -1316,7 +1312,7 @@ export class GlobeMap {
       el.title = d.name;
     } else if (d._kind === 'satellite') {
       const c = SAT_COUNTRY_COLORS[(d as SatelliteMarker).country] || '#ccccff';
-      setTrustedHtml(el, trustedHtml(`<div class="sat-hit" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;margin:-8px 0 0 -8px;color:${c}"><div class="sat-dot" style="width:5px;height:5px;border-radius:50%;background:${c};box-shadow:0 0 6px 2px ${c}88;transition:transform .15s,box-shadow .15s;"></div></div>`, "legacy direct innerHTML migration"));
+      setTrustedHtml(el, trustedHtml(`<div class="sat-hit" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;margin:-8px 0 0 -8px;color:${c}"><div class="sat-dot" style="width:5px;height:5px;color:${c};box-shadow:0 0 6px 2px ${c}88;transition:transform .15s,box-shadow .15s;">${GlobeMap.markerSvg('satellite')}</div></div>`, "legacy direct innerHTML migration"));
       el.title = `${(d as SatelliteMarker).name}`;
     } else if (d._kind === 'satFootprint') {
       const colors: Record<string, string> = { CN: '#ff2020', RU: '#ff8800', US: '#4488ff', EU: '#44cc44' };
@@ -1958,7 +1954,6 @@ export class GlobeMap {
     const el = document.createElement('div');
     el.className = 'map-controls deckgl-controls';
     setTrustedHtml(el, trustedHtml(`
-      <span class="globe-beta-badge">BETA</span>
       <div class="zoom-controls">
         <button class="map-btn zoom-in"    title="Zoom in" aria-label="Zoom in">+</button>
         <button class="map-btn zoom-out"   title="Zoom out" aria-label="Zoom out">-</button>
@@ -1991,13 +1986,11 @@ export class GlobeMap {
 
   private createLayerToggles(): void {
     const layerDefs = getLayersForVariant((SITE_VARIANT || 'full') as MapVariant, 'globe');
-    const authState = getAuthState();
     const layers = layerDefs.map(def => ({
       key: def.key,
       label: resolveLayerLabel(def, t),
-      icon: def.icon,
-      premium: def.premium,
-      presentation: getPremiumLayerPresentation(def.premium, authState),
+      icon: resolveLayerIcon(def, 'globe'),
+      presentation: { locked: false, enhanced: false },
     }));
 
     const el = document.createElement('div');
@@ -2025,18 +2018,8 @@ export class GlobeMap {
           </div>`;
         }).join('')}
       </div>`, "legacy direct innerHTML migration"));
-    const authorBadge = document.createElement('div');
-    authorBadge.className = 'map-author-badge';
-    authorBadge.textContent = '© Elie Habib · Someone™';
-    el.appendChild(authorBadge);
     this.container.appendChild(el);
     this.layerTogglesEl = el;
-
-    for (const layer of layers) {
-      if (!layer.premium) continue;
-      const toggle = el.querySelector(`.layer-toggle[data-layer="${layer.key}"]`) as HTMLElement | null;
-      if (toggle) applyPremiumLayerPresentation(toggle, layer.presentation);
-    }
 
     el.querySelectorAll('.layer-toggle input').forEach(input => {
       input.addEventListener('change', () => {
@@ -2064,17 +2047,6 @@ export class GlobeMap {
         if (layer) this.showLayerExplanation(layer);
       });
     });
-
-    const lockedPremiumLayerKeys = new Set(
-      layers.filter(layer => layer.premium === 'locked').map(layer => layer.key),
-    );
-    this.premiumLayerGate?.destroy();
-    this.premiumLayerGate = lockedPremiumLayerKeys.size > 0
-      ? new PremiumLayerGate(el, lockedPremiumLayerKeys, {
-          isLayerEnabled: layer => Boolean(this.layers[layer as keyof MapLayers]),
-          onAccessLost: layer => this.handlePremiumLayerAccessLoss(layer as keyof MapLayers),
-        })
-      : null;
 
     // ── Webcam marker-mode sub-toggle ────────────────────────────────────────
     const webcamToggleEl = el.querySelector('.layer-toggle[data-layer="webcams"]') as HTMLElement | null;
@@ -2129,21 +2101,6 @@ export class GlobeMap {
 
     // The panel usually mounts after the first flush, so replay what that flush withheld.
     this.updateLayerTruncationLabels();
-  }
-
-  private handlePremiumLayerAccessLoss(layer: keyof MapLayers): void {
-    const wasEnabled = Boolean(this.layers[layer]);
-    this.layers[layer] = false;
-    this.flushLayerChannels(layer);
-    if (!wasEnabled) return;
-
-    if (this.onLayerChangeCb) {
-      this.onLayerChangeCb(layer, false, 'programmatic');
-    } else {
-      // GlobeMap builds its controls before MapContainer rehydrates the
-      // callback. Preserve an initial entitlement clamp for that short window.
-      this.pendingPremiumLayerChanges.add(layer);
-    }
   }
 
   private showLayerExplanation(layer: keyof MapLayers): void {
@@ -2869,9 +2826,9 @@ export class GlobeMap {
       if (ch.paths)    needPaths = true;
       if (ch.polygons) needPolygons = true;
     }
-    if (needMarkers)  this.flushMarkers();
-    if (needArcs)     this.flushArcs();
-    if (needPaths)    this.flushPaths();
+    if (needMarkers) this.flushMarkers();
+    if (needArcs) this.flushArcs();
+    if (needPaths) this.flushPaths();
     if (needPolygons) this.flushPolygons();
     if (prev.satellites !== layers.satellites) {
       if (this.satBeamGroup) this.satBeamGroup.visible = !!layers.satellites;
@@ -3235,7 +3192,7 @@ export class GlobeMap {
     toggle?.remove();
   }
   public setLayerLoading(layer: keyof MapLayers, loading: boolean): void {
-    this.layerTogglesEl?.querySelector(`.layer-toggle[data-layer="${layer}"]`)?.classList.toggle('loading', loading);
+    this.layerTogglesEl?.querySelector(`.layer-toggle[data-layer="${layer}"]`)?.classList.toggle('layer-loading', loading);
   }
   public setLayerReady(layer: keyof MapLayers, hasData: boolean): void {
     this.layerTogglesEl?.querySelector(`.layer-toggle[data-layer="${layer}"]`)?.classList.toggle('no-data', !hasData);
@@ -4046,8 +4003,6 @@ export class GlobeMap {
     this.unsubscribeGlobeTexture = null;
     this.unsubscribeVisualPreset?.();
     this.unsubscribeVisualPreset = null;
-    this.premiumLayerGate?.destroy();
-    this.premiumLayerGate = null;
     this.pendingPremiumLayerChanges.clear();
     // Stop attributing INP events to a globe that is no longer mounted (#5368).
     setGlobeMarkerLoad(null);

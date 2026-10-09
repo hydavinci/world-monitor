@@ -26,7 +26,6 @@ function descriptionFor(url) {
     const frontmatter = read(`${pathname.slice(1)}.mdx`).split('---')[1];
     return parse(frontmatter).description;
   }
-  if (pathname === '/pro') return JSON.parse(read('pro-test/src/locales/zh.json')).meta.description;
   if (pathname === '/dashboard') return JSON.parse(read('src/locales/zh.json')).shell.metaDescription;
   if (pathname.startsWith('/blog/glossary/')) {
     return GLOSSARY_TERMS.find((term) => pathname === `/blog/glossary/${term.slug}/`)?.metaDescription;
@@ -34,11 +33,13 @@ function descriptionFor(url) {
   return COMPARISON_PAGES.find((page) => page.path === pathname)?.metaDescription;
 }
 
-test('all 50 supplied Bing URLs have unique, complete 150–160 character descriptions', () => {
+test('all 49 public supplied Bing URLs have unique, complete 150–160 character descriptions', () => {
   assert.equal(urls.length, 50, 'The supplied export contains 50 URLs, not the reported 132');
   assert.equal(new Set(urls).size, urls.length);
+  const publicUrls = urls.filter((url) => new URL(url).pathname !== '/pro');
+  assert.equal(publicUrls.length, 49, 'Only the retired Pro URL is excluded');
   const descriptions = new Set();
-  for (const url of urls) {
+  for (const url of publicUrls) {
     const description = descriptionFor(url);
     assert.equal(typeof description, 'string', `Missing description: ${url}`);
     const length = [...description].length;

@@ -1,4 +1,5 @@
 import { sanitizeBootstrapValue } from './_bootstrap-public-payload.js';
+import { retiredRouteResponse } from './_retired-routes.js';
 import { validateImfDataset } from './_imf-dataset.js';
 import { waitUntil as vercelWaitUntil } from '@vercel/functions';
 
@@ -13,17 +14,10 @@ export {
 } from './_bootstrap-public-tier.js';
 import { getCorsHeaders, getPublicCorsHeaders, isDisallowedOrigin } from './_cors.js';
 import {
-  USER_API_KEY_GATEWAY_VALIDATION_ERROR,
   getHeaderApiKey,
   validateApiKey,
 } from './_api-key.js';
 import { jsonResponse } from './_json-response.js';
-import {
-  checkBootstrapUserApiKeyRateLimit,
-  isCanonicalUserApiKey,
-  validateBootstrapUserApiAccess,
-  validateBootstrapUserApiKey,
-} from './_user-api-key.js';
 // @ts-expect-error — JS module, no declaration file
 import { redisPipeline } from './_upstash-json.js';
 import { unwrapEnvelope } from './_seed-envelope.js';
@@ -358,72 +352,7 @@ async function validateBootstrapAuth(req, cors) {
   if (!apiKeyResult.required || apiKeyResult.valid) {
     return { ok: true, kind: apiKeyResult.kind || 'unknown' };
   }
-
-  if (apiKeyResult.error === USER_API_KEY_GATEWAY_VALIDATION_ERROR && headerKey.startsWith('wm_')) {
-    if (!isCanonicalUserApiKey(headerKey)) {
-      return {
-        ok: false,
-        response: authFailure({ error: 'Invalid API key' }, 401, cors),
-      };
-    }
-
-    const rateLimitResult = await checkBootstrapUserApiKeyRateLimit(req);
-    if (!rateLimitResult.ok) {
-      return {
-        ok: false,
-        response: authFailure(
-          { error: rateLimitResult.error },
-          rateLimitResult.status,
-          cors,
-          rateLimitResult.headers,
-        ),
-      };
-    }
-
-    // Propagate the validation result's status/error/headers (all generic,
-    // leak-free strings) rather than hardcoding 401/403: a Convex outage surfaces
-    // as a retryable 503 + Retry-After (status 503, unavailable:true) instead of
-    // a misleading "Invalid API key" 401, mirroring the rate-limit path above.
-    const userKeyResult = await validateBootstrapUserApiKey(headerKey);
-    if (!userKeyResult.ok) {
-      return {
-        ok: false,
-        response: authFailure(
-          { error: userKeyResult.error },
-          userKeyResult.status,
-          cors,
-          userKeyResult.headers,
-        ),
-      };
-    }
-
-    const entitlementResult = await validateBootstrapUserApiAccess(userKeyResult.userId);
-    if (!entitlementResult.ok) {
-      return {
-        ok: false,
-        response: authFailure(
-          {
-            error: entitlementResult.error,
-            // Billing-verification denials (#4770) expose their machine-readable
-            // code in the body, matching the {error, code} shape the REST
-            // gateway emits for the same statuses.
-            ...(entitlementResult.headers?.['X-Billing-Verification']
-              ? { code: entitlementResult.reason }
-              : {}),
-          },
-          entitlementResult.status,
-          cors,
-          entitlementResult.headers,
-        ),
-      };
-    }
-
-    return { ok: true, kind: 'user' };
-  }
-
-  const error = apiKeyResult.error === USER_API_KEY_GATEWAY_VALIDATION_ERROR
-    ? 'Invalid API key'
-    : apiKeyResult.error;
+  const error = apiKeyResult.error;
   return {
     ok: false,
     response: authFailure({ error }, 401, cors),
@@ -512,6 +441,13 @@ export default async function handler(req, ctx) {
   const cors = getCorsHeaders(req);
   if (req.method === 'OPTIONS')
     return new Response(null, { status: 204, headers: cors });
+
+  const retired = retiredRouteResponse(req, cors);
+  if (retired) return retired;
+
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return authFailure({ error: 'Method not allowed' }, 405, cors, { Allow: 'GET, HEAD, OPTIONS' });
+  }
 
   const auth = await validateBootstrapAuth(req, cors);
   if (!auth.ok) return auth.response;

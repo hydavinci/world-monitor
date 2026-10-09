@@ -101,11 +101,6 @@ vi.mock('@/services/runtime', async (importOriginal) => ({
   isDesktopRuntime: mocks.isDesktopRuntime,
 }));
 
-vi.mock('@/services/panel-gating', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/services/panel-gating')>(),
-  hasPremiumAccess: mocks.hasPremiumAccess,
-}));
-
 vi.mock('@/services/country-instability', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/services/country-instability')>(),
   isInLearningMode: mocks.isInLearningMode,

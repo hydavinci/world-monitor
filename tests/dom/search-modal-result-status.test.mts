@@ -6,7 +6,6 @@ import en from '@/locales/en.json';
 import fr from '@/locales/fr.json';
 
 vi.mock('@/config/commands', () => ({ getAllCommands: () => [] }));
-vi.mock('@/services/analytics', () => ({ trackSearchUsed: vi.fn() }));
 vi.mock('@/utils/focus-trap', () => ({
   createFocusTrap: () => ({ activate: vi.fn(), deactivate: vi.fn() }),
 }));

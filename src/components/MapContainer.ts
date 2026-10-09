@@ -1,77 +1,71 @@
+import { sanitizePublicLayers } from '@/services/public-preferences';
 /**
  * MapContainer - lightweight conditional map renderer
  * Paints a stable shell first, then lazy-loads the selected renderer.
  * Renders DeckGLMap (WebGL) on desktop, fallback to D3/SVG MapComponent on mobile.
  * Supports an optional 3D globe mode (globe.gl) selectable from Settings.
  */
-import { isMobileDevice } from '@/utils';
-import { markLcpDebug } from '@/utils/lcp-debug';
 import {
-  isLayerToggleAllowed,
-  isLayerEntitled,
-  sanitizeLockedLayers,
-  sanitizeResilienceScoreForRenderer,
-  shouldSanitizeLockedLayers,
-  type RendererKind,
+isPublicLayer,
+isLayerToggleAllowed,
+type RendererKind,
 } from '@/config/map-layer-definitions';
-import { isProTierResolved } from '@/services/widget-store';
-import { t } from '@/services/i18n';
-import type { MapComponent, MapComponentOptions } from './Map';
-import type { DeckGLMap, DeckMapView, CountryClickPayload } from './DeckGLMap';
-import type { GlobeMap } from './GlobeMap';
-import type {
-  MapLayers,
-  Hotspot,
-  NewsItem,
-  NewsLocationMarker,
-  InternetOutage,
-  RelatedAsset,
-  AssetType,
-  AisDisruptionEvent,
-  AisDensityZone,
-  CableAdvisory,
-  RepairShip,
-  SocialUnrestEvent,
-  MilitaryFlight,
-  MilitaryVessel,
-  MilitaryFlightCluster,
-  MilitaryVesselCluster,
-  NaturalEvent,
-  UcdpGeoEvent,
-  CyberThreat,
-  CableHealthRecord,
-} from '@/types';
-import type { AirportDelayAlert, PositionSample } from '@/services/aviation';
+import type { ScenarioResult,ScenarioVisualState } from '@/config/scenario-templates';
+import type { AcledConflictEvent } from '@/generated/client/worldmonitor/conflict/v1/service_client';
+import type { DdosLocationHit,TrafficAnomaly as ProtoTrafficAnomaly } from '@/generated/client/worldmonitor/infrastructure/v1/service_client';
+import type { WebcamCluster,WebcamEntry } from '@/generated/client/worldmonitor/webcam/v1/service_client';
+import type { ImageryScene } from '@/generated/server/worldmonitor/imagery/v1/service_server';
+
+import type { AirportDelayAlert,PositionSample } from '@/services/aviation';
+import type { CanadaAlert } from '@/services/canada-alerts';
+import type { CanadaRoadRecord } from '@/services/canada-roads';
+import type { ClimateAnomaly } from '@/services/climate';
+import type { IranEvent } from '@/services/conflict';
+import type { SpeciesRecovery } from '@/services/conservation-data';
+import type { DiseaseOutbreakItem } from '@/services/disease-outbreaks';
 import type { DisplacementFlow } from '@/services/displacement';
 import type { Earthquake } from '@/services/earthquakes';
-import type { ClimateAnomaly } from '@/services/climate';
-import type { WeatherAlert } from '@/services/weather';
-import type { CanadaRoadRecord } from '@/services/canada-roads';
-import type { CanadaAlert } from '@/services/canada-alerts';
-import type { PositiveGeoEvent } from '@/services/positive-events-geo';
-import type { KindnessPoint } from '@/services/kindness-data';
-import type { HappinessData } from '@/services/happiness-data';
-import type { SpeciesRecovery } from '@/services/conservation-data';
-import type { RenewableInstallation } from '@/services/renewable-installations';
-import type { ResilienceRankingItem } from '@/services/resilience';
-import type { RadiationObservation } from '@/services/radiation';
 import type { GpsJamHex } from '@/services/gps-interference';
+import type { HappinessData } from '@/services/happiness-data';
+import { t } from '@/services/i18n';
+import type { KindnessPoint } from '@/services/kindness-data';
+import type { PositiveGeoEvent } from '@/services/positive-events-geo';
+import type { RadiationObservation } from '@/services/radiation';
+import type { RenewableInstallation } from '@/services/renewable-installations';
 import type { SatellitePosition } from '@/services/satellites';
-import type { IranEvent } from '@/services/conflict';
-import type { ImageryScene } from '@/generated/server/worldmonitor/imagery/v1/service_server';
-import type { WebcamEntry, WebcamCluster } from '@/generated/client/worldmonitor/webcam/v1/service_client';
-import type { TrafficAnomaly as ProtoTrafficAnomaly, DdosLocationHit } from '@/generated/client/worldmonitor/infrastructure/v1/service_client';
-import type { AcledConflictEvent } from '@/generated/client/worldmonitor/conflict/v1/service_client';
-import type { DiseaseOutbreakItem } from '@/services/disease-outbreaks';
 import type { GetChokepointStatusResponse } from '@/services/supply-chain';
+import type { WeatherAlert } from '@/services/weather';
+import type {
+AisDensityZone,
+AisDisruptionEvent,
+AssetType,
+CableAdvisory,
+CableHealthRecord,
+CyberThreat,
+Hotspot,
+InternetOutage,
+MapLayers,
+MilitaryFlight,
+MilitaryFlightCluster,
+MilitaryVessel,
+MilitaryVesselCluster,
+NaturalEvent,
+NewsItem,
+NewsLocationMarker,
+RelatedAsset,
+RepairShip,
+SocialUnrestEvent,
+UcdpGeoEvent,
+} from '@/types';
+import { isMobileDevice } from '@/utils';
+import { markLcpDebug } from '@/utils/lcp-debug';
 import type { ChinaCorridorControlTower } from '../../shared/china-corridor-control-towers';
+import type { CountryClickPayload,DeckGLMap,DeckMapView } from './DeckGLMap';
+import type { GlobeMap } from './GlobeMap';
+import type { MapComponent,MapComponentOptions } from './Map';
 import { projectChinaCorridorOverlay } from './map/china-corridor-overlay';
-import type { ScenarioVisualState, ScenarioResult } from '@/config/scenario-templates';
-import { getAuthState } from '@/services/auth-state';
-import { hasPremiumAccess } from '@/services/panel-gating';
-import { trackGateHit } from '@/services/analytics';
 
-export type { ScenarioVisualState, ScenarioResult };
+export type { ScenarioResult,ScenarioVisualState };
 
 export type TimeRange = '1h' | '6h' | '24h' | '48h' | '7d' | 'all';
 export type MapView = 'global' | 'america' | 'mena' | 'eu' | 'asia' | 'latam' | 'africa' | 'oceania';
@@ -121,7 +115,6 @@ export interface MapContainerOptions {
   chrome?: boolean;
   mapLibreWorkerUrl?: string;
   preferDesktopRenderer?: boolean;
-  isFreeTierFallbackActive?: () => boolean;
 }
 
 export type ViewportTransitionFailureReason =
@@ -173,14 +166,12 @@ export class MapContainer {
   private deckGLMap: DeckGLMap | null = null;
   private svgMap: MapComponent | null = null;
   private globeMap: GlobeMap | null = null;
-  private supplyChainPanel: import('@/components/SupplyChainPanel').SupplyChainPanel | null = null;
   private initialState: MapContainerState;
   private useDeckGL: boolean;
   private useGlobe: boolean;
   private readonly chrome: boolean;
   private readonly mapLibreWorkerUrl: string | undefined;
   private readonly svgLayerToggleGuard: NonNullable<MapComponentOptions['canToggleLayer']>;
-  private readonly isFreeTierFallbackActive: (() => boolean) | null;
   private isResizingInternal = false;
   private resizeObserver: ResizeObserver | null = null;
   private rendererDemandCleanup: (() => void) | null = null;
@@ -256,8 +247,6 @@ export class MapContainer {
   private cachedKindnessData: KindnessPoint[] | null = null;
   private cachedHappinessScores: HappinessData | null = null;
   private cachedCIIScores: CIIScore[] | null = null;
-  private cachedResilienceRanking: ResilienceRankingItem[] | null = null;
-  private cachedResilienceGreyedOut: ResilienceRankingItem[] = [];
   private cachedSpeciesRecovery: SpeciesRecovery[] | null = null;
   private cachedRenewableInstallations: RenewableInstallation[] | null = null;
   private cachedHotspotActivity: NewsItem[] | null = null;
@@ -275,12 +264,7 @@ export class MapContainer {
     this.initialState = initialState;
     this.chrome = options.chrome ?? true;
     this.mapLibreWorkerUrl = options.mapLibreWorkerUrl;
-    this.svgLayerToggleGuard = (layer, currentlyEnabled) => isLayerToggleAllowed(
-      layer,
-      currentlyEnabled === true,
-      hasPremiumAccess(getAuthState()),
-    );
-    this.isFreeTierFallbackActive = options.isFreeTierFallbackActive ?? null;
+    this.svgLayerToggleGuard = (layer, currentlyEnabled) => isLayerToggleAllowed(layer, currentlyEnabled === true);
     this.isMobile = isMobileDevice();
     this.preferDesktopRenderer = options.preferDesktopRenderer ?? false;
     this.useGlobe = preferGlobe && this.hasGlobeSupport();
@@ -296,7 +280,7 @@ export class MapContainer {
     this.container.addEventListener('keydown', this.invalidateViewportAuthority);
 
     if (this.initialState.layers) {
-      const layers = sanitizeResilienceScoreForRenderer(this.initialState.layers, this.useDeckGL);
+      const layers = sanitizePublicLayers(this.initialState.layers);
       if (layers !== this.initialState.layers) {
         this.initialState = { ...this.initialState, layers };
       }
@@ -380,7 +364,7 @@ export class MapContainer {
 
   private sanitizeNonDeckLayers(): void {
     if (this.initialState.layers) {
-      const layers = sanitizeResilienceScoreForRenderer(this.initialState.layers, false);
+      const layers = sanitizePublicLayers(this.initialState.layers);
       if (layers !== this.initialState.layers) {
         this.initialState = { ...this.initialState, layers };
       }
@@ -751,7 +735,7 @@ export class MapContainer {
       this.destroyFlatMap();
       this.useGlobe = true;
       this.useDeckGL = false;
-      const layers = sanitizeResilienceScoreForRenderer(snapshot.layers, false);
+      const layers = sanitizePublicLayers(snapshot.layers);
       this.initialState = layers === snapshot.layers ? snapshot : { ...snapshot, layers };
       this.pendingCenter = center ? { ...center, zoom: snapshot.zoom } : null;
       void this.init();
@@ -776,7 +760,7 @@ export class MapContainer {
       this.globeMap = null;
       this.useGlobe = false;
       this.useDeckGL = this.shouldUseDeckGL();
-      const layers = sanitizeResilienceScoreForRenderer(snapshot.layers, this.useDeckGL);
+      const layers = sanitizePublicLayers(snapshot.layers);
       this.initialState = layers === snapshot.layers ? snapshot : { ...snapshot, layers };
       this.pendingCenter = center ? { ...center, zoom: snapshot.zoom } : null;
       // Cancel any pending deck demand gate from a prior flat init before
@@ -837,7 +821,6 @@ export class MapContainer {
     if (this.cachedKindnessData) this.setKindnessData(this.cachedKindnessData);
     if (this.cachedHappinessScores) this.setHappinessScores(this.cachedHappinessScores);
     if (this.cachedCIIScores) this.setCIIScores(this.cachedCIIScores);
-    if (this.cachedResilienceRanking) this.setResilienceRanking(this.cachedResilienceRanking, this.cachedResilienceGreyedOut);
     if (this.cachedSpeciesRecovery) this.setSpeciesRecoveryZones(this.cachedSpeciesRecovery);
     if (this.cachedRenewableInstallations) this.setRenewableInstallations(this.cachedRenewableInstallations);
     if (this.cachedHotspotActivity) this.updateHotspotActivity(this.cachedHotspotActivity);
@@ -1050,13 +1033,9 @@ export class MapContainer {
   public setLayers(layers: MapLayers, options: { bypassEntitlementSanitization?: boolean } = {}): void {
     // Strip resilience on non-DeckGL, then locked premium layers for settled free users (#6045).
     // Wait for isProTierResolved so Pro users don't lose resilienceScore during Clerk/Convex boot.
-    let sanitized = sanitizeResilienceScoreForRenderer(layers, this.useDeckGL);
-    if (!options.bypassEntitlementSanitization && shouldSanitizeLockedLayers(
-      hasPremiumAccess(getAuthState()),
-      isProTierResolved(),
-      this.isFreeTierFallbackActive?.() === true,
-    )) {
-      sanitized = sanitizeLockedLayers(sanitized, false);
+    let sanitized = sanitizePublicLayers(layers);
+    if (!options.bypassEntitlementSanitization && true) {
+      sanitized = sanitizePublicLayers(sanitized);
     }
     this.initialState = { ...this.initialState, layers: sanitized };
     if (this.useGlobe) { this.globeMap?.setLayers(sanitized); return; }
@@ -1382,14 +1361,6 @@ export class MapContainer {
     if (this.useDeckGL) { this.deckGLMap?.setCIIScores(scores); }
   }
 
-  public setResilienceRanking(items: ResilienceRankingItem[], greyedOut: ResilienceRankingItem[] = []): void {
-    this.cachedResilienceRanking = items;
-    this.cachedResilienceGreyedOut = greyedOut;
-    if (this.useDeckGL) {
-      this.deckGLMap?.setResilienceRanking(items, greyedOut);
-    }
-  }
-
   public setSpeciesRecoveryZones(species: SpeciesRecovery[]): void {
     this.cachedSpeciesRecovery = species;
     if (this.useGlobe) { this.globeMap?.setSpeciesRecoveryZones(species); return; }
@@ -1557,7 +1528,7 @@ export class MapContainer {
   public enableLayer(layer: keyof MapLayers): void {
     if (layer === 'resilienceScore' && !this.useDeckGL) return;
     // #6045 — don't stamp initialState or enable locked premium layers for free users.
-    if (!isLayerEntitled(layer, hasPremiumAccess(getAuthState()))) return;
+    if (!isPublicLayer(layer)) return;
     this.initialState = {
       ...this.initialState,
       layers: { ...this.initialState.layers, [layer]: true },
@@ -1730,8 +1701,7 @@ export class MapContainer {
 
   // ─── Scenario Engine ─────────────────────────────────────────────────────────
 
-  public setSupplyChainPanel(panel: import('@/components/SupplyChainPanel').SupplyChainPanel): void {
-    this.supplyChainPanel = panel;
+  public setSupplyChainPanel(_panel: import('@/components/SupplyChainPanel').SupplyChainPanel): void {
   }
 
   /**
@@ -1747,9 +1717,7 @@ export class MapContainer {
     this.globeMap?.setScenarioState(state);
   }
 
-  public activateScenario(scenarioId: string, result: ScenarioResult): void {
-    if (!hasPremiumAccess(getAuthState())) {
-      trackGateHit('scenario-engine');
+  public activateScenario(scenarioId: string, result: ScenarioResult): void {{
       return;
     }
     const state: ScenarioVisualState = {
@@ -1759,7 +1727,6 @@ export class MapContainer {
     };
     this.cachedScenarioState = state;
     this.applyScenarioState(state);
-    this.supplyChainPanel?.showScenarioSummary(scenarioId, result);
   }
 
   /**
@@ -1768,7 +1735,6 @@ export class MapContainer {
   public deactivateScenario(): void {
     this.cachedScenarioState = null;
     this.applyScenarioState(null);
-    this.supplyChainPanel?.hideScenarioSummary();
   }
 
   // Utility methods

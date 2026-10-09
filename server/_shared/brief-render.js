@@ -1222,62 +1222,6 @@ const SHARE_SCRIPT = `<script>
 })();
 </script>`;
 
-// Umami analytics loader, mirroring the production snippet in
-// index.html. Hosted magazine pages are served from worldmonitor.app
-// (the auth'd route) and the public-share hash mirror — both within
-// `data-domains`. The `async` script never blocks rendering; if it's
-// blocked by an extension, BRIEF_THREAD_OPEN_SCRIPT silently no-ops.
-// Same data-website-id as the dashboard so events land in the same
-// project — segmentation is via event properties, not website ids.
-// `data-exclude-search` keeps the query out of the reported URL. On the
-// auth'd route the query carries the sole reader credential (`?t=`, see
-// api/brief/[userId]/[issueDate].ts). Without the attribute the tracker
-// stores that credential with every pageview.
-const UMAMI_LOADER = '<script async src="https://abacus.worldmonitor.app/script.js" data-website-id="e8800335-c853-46a8-8497-c993ed2f58bc" data-exclude-search="true" data-domains="worldmonitor.app,tech.worldmonitor.app,finance.worldmonitor.app,commodity.worldmonitor.app,happy.worldmonitor.app"></script>';
-
-/**
- * U11 telemetry: emit a `brief-thread-open` event whenever a story
- * source-link is clicked from inside the magazine. Properties are
- * baked at render time as `data-*` attributes on the anchor:
- *   - data-country  : ISO-2 (or absent on stories without one)
- *   - data-severity : 'critical' | 'high' | 'medium' | 'low'
- *   - data-followed : '1' | '0' (renderer reads recipient watchlist)
- *
- * Fire-and-forget. `window.umami?.track(...)` short-circuits when
- * the script blocked / hasn't loaded — the click then proceeds to
- * navigation as if no tracker existed. We do NOT preventDefault
- * even on transient analytics failure: the user clicked a source
- * link and they get the source.
- */
-const BRIEF_THREAD_OPEN_SCRIPT = `<script>
-(function() {
-  function emit(el) {
-    try {
-      if (!window.umami || typeof window.umami.track !== 'function') return;
-      var country = el.dataset.country || null;
-      var severity = el.dataset.severity || null;
-      var followed = el.dataset.followed === '1';
-      window.umami.track('brief-thread-open', {
-        country: country,
-        followed: followed,
-        severity: severity,
-        source: 'magazine',
-      });
-    } catch (e) { /* swallow — never break navigation */ }
-  }
-  document.addEventListener('click', function(ev) {
-    var el = ev.target;
-    while (el && el.nodeType === 1) {
-      if (el.dataset && el.dataset.threadOpen === '1') {
-        emit(el);
-        return;
-      }
-      el = el.parentNode;
-    }
-  }, { capture: true });
-})();
-</script>`;
-
 const NAV_SCRIPT = `<script>
 (function() {
   var deck = document.getElementById('deck');
@@ -1657,7 +1601,6 @@ export function renderBriefMagazine(envelope, options = {}) {
     '<link rel="preconnect" href="https://fonts.googleapis.com">' +
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
     `<link href="${FONTS_HREF}" rel="stylesheet">` +
-    UMAMI_LOADER +
     STYLE_BLOCK +
     '</head>' +
     '<body>' +
@@ -1670,7 +1613,6 @@ export function renderBriefMagazine(envelope, options = {}) {
     '<div class="nav-dots" id="navDots"></div>' +
     '<div class="hint">← → / swipe / scroll</div>' +
     (shareUrl ? SHARE_SCRIPT : '') +
-    BRIEF_THREAD_OPEN_SCRIPT +
     NAV_SCRIPT +
     '</body>' +
     '</html>'

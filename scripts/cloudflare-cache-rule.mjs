@@ -194,7 +194,6 @@ export const AGENT_TEXT_FILES = Object.freeze([
   'developers.md',
   'mcp-server.md',
   'openapi.md',
-  'pricing.md',
   'sdks.md',
   'support.md',
   'sitemap.xml',

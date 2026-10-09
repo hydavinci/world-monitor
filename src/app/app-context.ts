@@ -1,8 +1,11 @@
-import type { InternetOutage, SocialUnrestEvent, MilitaryFlight, MilitaryFlightCluster, MilitaryVessel, MilitaryVesselCluster, USNIFleetReport, PanelConfig, MapLayers, NewsItem, MarketData, ClusteredEvent, CyberThreat, Monitor, AisDisruptionEvent } from '@/types';
-import type { AirportDelayAlert, PositionSample } from '@/services/aviation';
 import type { IranEvent } from '@/generated/client/worldmonitor/conflict/v1/service_client';
+import type { AirportDelayAlert,PositionSample } from '@/services/aviation';
 import type { ConflictEvent } from '@/services/conflict';
+import type { Earthquake } from '@/services/earthquakes';
 import type { GpsJamHex } from '@/services/gps-interference';
+import type { RadiationWatchResult } from '@/services/radiation';
+import type { SecurityAdvisory } from '@/services/security-advisories';
+import type { AisDisruptionEvent,ClusteredEvent,CyberThreat,InternetOutage,MapLayers,MarketData,MilitaryFlight,MilitaryFlightCluster,MilitaryVessel,MilitaryVesselCluster,Monitor,NewsItem,PanelConfig,SocialUnrestEvent,USNIFleetReport } from '@/types';
 import type { OverlayId } from '@/utils/overlay-history';
 
 // Geometry-resolved satellite-fire shape ingested into CII. Mirrors the inline
@@ -15,15 +18,11 @@ export type SatelliteFireSignal = {
   frp: number;
   region?: string;
 };
-import type { SanctionsPressureResult } from '@/services/sanctions-pressure';
-import type { RadiationWatchResult } from '@/services/radiation';
-import type { SecurityAdvisory } from '@/services/security-advisories';
-import type { Earthquake } from '@/services/earthquakes';
 
 export type { CountryBriefSignals } from '@/types';
+export type { UnifiedSettingsTabId };
 
 import type { UnifiedSettingsTabId } from '@/components/settings-types';
-export type { UnifiedSettingsTabId };
 
 export interface UnifiedSettingsController {
   open(
@@ -58,7 +57,6 @@ export interface IntelligenceCache {
   iranEvents?: IranEvent[];
   orefAlerts?: { alertCount: number; historyCount24h: number };
   advisories?: SecurityAdvisory[];
-  sanctions?: SanctionsPressureResult;
   radiation?: RadiationWatchResult;
   imageryScenes?: Array<{ id: string; satellite: string; datetime: string; resolutionM: number; mode: string; geometryGeojson: string; previewUrl: string; assetUrl: string }>;
 }
@@ -122,8 +120,6 @@ export interface AppContext {
   digestPanel: import('@/components/GoodThingsDigestPanel').GoodThingsDigestPanel | null;
   speciesPanel: import('@/components/SpeciesComebackPanel').SpeciesComebackPanel | null;
   renewablePanel: import('@/components/RenewableEnergyPanel').RenewableEnergyPanel | null;
-  authModal: { open(): void; close(): void; destroy(): void } | null;
-  authHeaderWidget: import('@/components/AuthHeaderWidget').AuthHeaderWidget | null;
   tvMode: import('@/services/tv-mode').TvModeController | null;
   happyAllItems: NewsItem[];
   isDestroyed: boolean;

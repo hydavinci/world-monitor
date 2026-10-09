@@ -1,5 +1,4 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
-import { sentryVitePlugin } from '@sentry/vite-plugin';
 import { VitePWA } from 'vite-plugin-pwa';
 import type { OutputBundle } from 'rollup';
 import { resolve, dirname, extname } from 'path';
@@ -7,7 +6,8 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import { brotliCompress } from 'zlib';
 import { promisify } from 'util';
 import pkg from './package.json';
-import { getSentryBuildMetadata } from './shared/sentry-build-metadata';
+import { retiredRouteResponse } from './api/_retired-routes.js';
+import { getCorsHeaders } from './server/cors';
 import { appendChunkOwnership, chunkHasFirstPartyModule } from './shared/chunk-ownership';
 import { VARIANT_META, type VariantMeta } from './src/config/variant-meta';
 import {
@@ -33,28 +33,6 @@ import {
 const brotliCompressAsync = promisify(brotliCompress);
 const BROTLI_EXTENSIONS = new Set(['.js', '.mjs', '.css', '.html', '.svg', '.json', '.txt', '.xml', '.wasm']);
 const STATIC_SCRIPT_NONCE = 'wm-static-bootstrap';
-
-// @clerk/clerk-js is loaded as a UMD bundle from the Clerk Frontend API at
-// runtime (src/services/clerk.ts), not bundled. Resolve the version from
-// package.json so the runtime SDK matches the @clerk/clerk-js types we compile
-// against, and inject it via `define` (__CLERK_JS_VERSION__). Fall back to
-// devDependencies in case the (types-only) dep is moved there, and fail the
-// build loudly if it can't be resolved — an empty version yields a `.../@/dist`
-// URL that 404s and silently breaks auth in production.
-const CLERK_DEPS = pkg.dependencies as Record<string, string>;
-const CLERK_DEV_DEPS = (pkg.devDependencies ?? {}) as Record<string, string>;
-const CLERK_JS_VERSION = (CLERK_DEPS['@clerk/clerk-js'] || CLERK_DEV_DEPS['@clerk/clerk-js'] || '')
-  .replace(/^[\^~>=<\s]*/, '');
-if (!CLERK_JS_VERSION) {
-  throw new Error('[vite] @clerk/clerk-js not found in package.json — __CLERK_JS_VERSION__ would be empty and 404 the Clerk Frontend API script URL.');
-}
-// @clerk/ui (the runtime UI controller, pinned by CLERK_UI_VERSION in
-// src/services/clerk.ts) is major 1, which pairs with @clerk/clerk-js major 6.
-// Fail the build if the SDK major drifts so the pairing is updated deliberately
-// rather than loading an incompatible UI controller and breaking auth at runtime.
-if (CLERK_JS_VERSION.split('.')[0] !== '6') {
-  throw new Error(`[vite] @clerk/clerk-js major is ${CLERK_JS_VERSION.split('.')[0]}, expected 6 — update CLERK_UI_VERSION in src/services/clerk.ts to the paired @clerk/ui major, then bump this guard.`);
-}
 
 const PANEL_CHUNK_NAMES = [
   'panels-markets',
@@ -89,7 +67,6 @@ const LAZY_HTML_PRELOAD_CHUNKS = [
   'MapContainer',
   'UnifiedSettings',
   'settings-window',
-  'checkout',
   ...PANEL_CHUNK_NAMES,
   ...PANEL_SUPPORT_CHUNK_NAMES,
 ] as const;
@@ -437,6 +414,30 @@ function deferDashboardStylesheetLinks(html: string, bundle: OutputBundle): stri
     const deferredTag = tag.replace(/\s*\/?>$/, ' media="print" data-wm-deferred-style="dashboard">');
     return `${deferredTag}\n    <noscript>${tag}</noscript>`;
   });
+}
+
+function retiredRoutesPlugin(): Plugin {
+  return {
+    name: 'public-only-retired-routes',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const headers = new Headers();
+        for (const [key, value] of Object.entries(req.headers)) {
+          if (value !== undefined) headers.set(key, Array.isArray(value) ? value.join(', ') : value);
+        }
+        const request = new Request(new URL(req.url ?? '/', 'http://localhost'), {
+          method: req.method ?? 'GET',
+          headers,
+        });
+        const response = retiredRouteResponse(request, getCorsHeaders(request));
+        if (!response) return next();
+        res.statusCode = request.method === 'OPTIONS' ? 204 : response.status;
+        response.headers.forEach((value, key) => res.setHeader(key, value));
+        res.end(request.method === 'OPTIONS' ? undefined : await response.text());
+      });
+    },
+  };
 }
 
 function polymarketPlugin(): Plugin {
@@ -922,12 +923,6 @@ export default defineConfig(({ mode }) => {
   const activeMeta = VARIANT_META[activeVariant] || VARIANT_META.full;
   const emitPublicSourceMaps = process.env.WM_EMIT_SOURCEMAPS === '1'
     || process.env.VERCEL_ENV === 'preview';
-  // Sentry source-map upload. Gated on the token so a build without it (local,
-  // fork, CI) behaves exactly as before rather than failing. Matching is by
-  // debug ID — the plugin stamps the same id into the bundle and its map.
-  const uploadSourceMapsToSentry = Boolean(process.env.SENTRY_AUTH_TOKEN);
-  const sentryBuild = getSentryBuildMetadata(pkg.version, process.env.VERCEL_GIT_COMMIT_SHA ?? 'dev');
-  const publishSentryRelease = process.env.VERCEL_ENV === 'production' && Boolean(sentryBuild.dist);
 
   return {
     html: {
@@ -935,9 +930,6 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
-      // Resolved + build-time validated above (devDependencies fallback +
-      // non-empty + major-pairing guards).
-      __CLERK_JS_VERSION__: JSON.stringify(CLERK_JS_VERSION),
       // Vercel sets VERCEL_GIT_COMMIT_SHA on production + preview builds.
       // Local `vite build` falls back to 'dev' — installStaleBundleCheck
       // detects the marker and skips the comparison so dev tabs don't
@@ -945,34 +937,7 @@ export default defineConfig(({ mode }) => {
       __BUILD_HASH__: JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA ?? 'dev'),
     },
     plugins: [
-      // Ship readable dashboard stack traces to Sentry. Without this every
-      // browser frame arrives minified (`Rs.loadNews`, `BO`, `v`), which is why
-      // triage has had to infer call sites from Vite chunk names.
-      ...(uploadSourceMapsToSentry
-        ? [sentryVitePlugin({
-            org: 'elie-habib',
-            project: 'worldmonitor',
-            authToken: process.env.SENTRY_AUTH_TOKEN,
-            telemetry: false,
-            release: {
-              name: sentryBuild.release,
-              inject: false,
-              dist: sentryBuild.dist,
-              // Preview/local uploads must not resolve shared production issues.
-              create: publishSentryRelease,
-              finalize: publishSentryRelease,
-              // Preserve the plugin's Vercel-aware commit detection in production.
-              setCommits: publishSentryRelease ? undefined : false,
-              deploy: publishSentryRelease ? undefined : false,
-            },
-            sourcemaps: {
-              // Previews deliberately serve public maps (emitPublicSourceMaps);
-              // leave those in place and only sweep them when production built
-              // them solely to upload.
-              filesToDeleteAfterUpload: emitPublicSourceMaps ? [] : ['dist/**/*.map'],
-            },
-          })]
-        : []),
+      retiredRoutesPlugin(),
       // Emit dist/build-hash.txt with the deployed SHA so the running bundle
       // can fetch /build-hash.txt at tab-focus time and force-reload itself
       // if it's running an older bundle (see src/bootstrap/stale-bundle-check.ts).
@@ -1043,14 +1008,12 @@ export default defineConfig(({ mode }) => {
             '**/ml*.js',
             '**/onnx*.wasm',
             '**/locale-*.js',
-            '**/clerk-*.js',
             // Fonts are fetched only when their stylesheet applies. Precache
             // would pull every local weight into the first mobile visit.
             '**/*.woff2',
             // Keep off-page/static-heavy public assets out of the dashboard's
             // first-visit precache. The small root favicons above remain
             // explicit includeAssets entries.
-            'pro/**',
             'favico/**',
             'textures/**',
             // #4891: blog OG covers + post images are generated into the prod
@@ -1158,10 +1121,8 @@ export default defineConfig(({ mode }) => {
       format: 'es',
     },
     build: {
-      // Uploading requires the maps to exist. When they are not also being
-      // published deliberately, the Sentry plugin deletes them after upload so
-      // production keeps shipping no public maps.
-      sourcemap: emitPublicSourceMaps || uploadSourceMapsToSentry,
+      // Source maps are opt-in local/preview artifacts; no external uploads.
+      sourcemap: emitPublicSourceMaps,
       // Vite's global threshold accommodates the known lazy GlobeMap bundle.
       // wm-chunk-size-warning-policy keeps the 1200 kB default for every other
       // chunk so unrelated regressions between 1200 and 2000 kB remain visible.
@@ -1207,7 +1168,6 @@ export default defineConfig(({ mode }) => {
           embed: resolve(__dirname, 'embed.html'),
           settings: resolve(__dirname, 'settings.html'),
           liveChannels: resolve(__dirname, 'live-channels.html'),
-          mcpGrant: resolve(__dirname, 'mcp-grant.html'),
         },
         output: {
           // onlyExplicitManualChunks keeps the panel clusters from forming
@@ -1222,9 +1182,6 @@ export default defineConfig(({ mode }) => {
           manualChunks(id) {
             // Keep the existing secondary-flow chunk stable when standalone
             // entries stop sharing panel dependencies with the dashboard.
-            if (id.endsWith('/src/services/checkout.ts')) {
-              return 'checkout';
-            }
             // Give the layered dashboard stylesheet a CSS-only chunk. Vite folds a
             // CSS-only chunk into each importing entry's own CSS, so dashboard.html
             // links it. Left inside a shared JavaScript chunk it inherited that
@@ -1275,14 +1232,6 @@ export default defineConfig(({ mode }) => {
               if (id.includes('/i18next')) {
                 return 'i18n';
               }
-              if (id.includes('/@sentry/') || id.includes('/@sentry-internal/')) {
-                return 'sentry';
-              }
-              if (id.includes('/@clerk/clerk-js/')) {
-                // Clerk remains a runtime dynamic import; the stable chunk name
-                // lets Workbox keep the large auth SDK out of precache.
-                return 'clerk';
-              }
             }
             // Large static config DATA TABLE (~62KB) with only lazy consumers
             // (search/map/globe/tech-hub services). Isolating it keeps it off the
@@ -1332,13 +1281,6 @@ export default defineConfig(({ mode }) => {
             // Post-paint service tail split (#4487). These files are dynamic-imported
             // from data-loader/country-intel/SignalModal; stable names let the
             // dist guard prove they stay out of main rather than merely grepping src.
-            // Keep the product catalog independent from its shared cache and
-            // entitlement dependencies. Before this split, Rollup named the shared
-            // cache group `products`, making the post-hydration product task parse
-            // unrelated IndexedDB code alongside the tiny checkout catalog. (#5165)
-            if (id.endsWith('/src/config/products.ts') || id.endsWith('/src/config/products.generated.ts')) {
-              return 'products';
-            }
             if (id.endsWith('/src/services/persistent-cache.ts')) {
               return 'persistent-cache';
             }
@@ -1414,11 +1356,6 @@ export default defineConfig(({ mode }) => {
         ],
       },
       proxy: {
-        // Widget agent — forward to Railway relay for SSE streaming
-        '/widget-agent': {
-          target: 'https://proxy.worldmonitor.app',
-          changeOrigin: true,
-        },
         // Yahoo Finance API
         '/api/yahoo': {
           target: 'https://query1.finance.yahoo.com',

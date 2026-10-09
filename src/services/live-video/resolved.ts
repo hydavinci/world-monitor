@@ -1,7 +1,7 @@
 // The video each catalog channel has live now, published every 6 h by seed-live-video-resolved (#8545) and read
 // through the on-demand bootstrap URL. Fetched at play intent only, never at boot, and only by slots that list a
 // channel. Anything missing, slow, stale or malformed reads as an empty map, so the slot plays its static catalog.
-import { track } from '@/services/analytics';
+
 import { ensureHydrated } from '@/services/bootstrap';
 
 import { type LiveVideoSource, parseResolvedLiveVideos, type ResolvedLiveVideos, withResolvedEntries } from './model';
@@ -51,7 +51,7 @@ export async function getResolvedLiveVideos({ timeoutMs = DEFAULT_TIMEOUT_MS }: 
 export async function withResolvedLiveVideos(source: LiveVideoSource): Promise<LiveVideoSource> {
   const merged = withResolvedEntries(source, await getResolvedLiveVideos(), Date.now());
   if (merged !== source) {
-    track('live-video-resolved-applied', { slot: source.slot, count: merged.entries.length - source.entries.length });
+
   }
   return merged;
 }

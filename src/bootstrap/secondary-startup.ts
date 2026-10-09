@@ -1,12 +1,9 @@
 import { scheduleAfterFirstPaint } from '@/utils/after-paint';
-import type { BeforeSendEvent } from '@vercel/analytics';
 import {
   STRIPPABLE_AT_BOOT_RE,
-  redactSensitiveUrl,
   scrubUrl,
 } from '../../shared/sensitive-url-params';
 
-let vercelAnalyticsScheduled = false;
 let dashboardFontsScheduled = false;
 
 export interface DashboardFontContext {
@@ -83,40 +80,9 @@ export function initDeferredDashboardFonts(): void {
   scheduleAfterFirstPaint(loadDeferredDashboardFonts, 3000);
 }
 
-export function initVercelAnalytics(): void {
-  if (vercelAnalyticsScheduled || typeof window === 'undefined') return;
-  vercelAnalyticsScheduled = true;
-  scheduleAfterFirstPaint(() => {
-    void import('@vercel/analytics')
-      .then(({ inject }) => {
-        inject({
-          beforeSend: (event) => {
-            const redacted = redactAnalyticsUrl(event);
-            // Sampling is a cost control, not a privacy control: redaction
-            // must hold for every event that is kept.
-            return Math.random() > 0.1 ? null : redacted;
-          },
-        });
-      })
-      .catch(() => {
-        // Analytics is best-effort. Ad blockers/offline users should not affect boot.
-      });
-  }, 3000);
-}
-
-/** Vercel's beforeSend exists to redact event.url before ingest. */
-export function redactAnalyticsUrl(event: BeforeSendEvent): BeforeSendEvent {
-  const raw = event.url;
-  if (typeof raw !== 'string') return event;
-  const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
-  const url = redactSensitiveUrl(raw, origin);
-  return url === raw ? event : { ...event, url };
-}
-
 /**
- * Strip params nobody reads (STRIPPABLE_AT_BOOT_RE) from the live URL before
- * analytics/RUM init. Params with a deferred reader stay; their consumers
- * delete them after reading, and DebugBear holds its collector until then.
+ * Strip params nobody reads from the live URL. Deferred readers remove their
+ * own parameters after consuming them.
  */
 export function stripSensitiveParamsFromUrl(): void {
   if (typeof window === 'undefined') return;
@@ -131,7 +97,6 @@ export function stripSensitiveParamsFromUrl(): void {
   try {
     window.history.replaceState({}, '', url.pathname + (query ? `?${query}` : '') + url.hash);
   } catch {
-    // History API unavailable (extreme embed cases). Vercel and Umami still
-    // redact per event.
+    console.warn('[URL] Unable to remove sensitive parameters from browser history.');
   }
 }

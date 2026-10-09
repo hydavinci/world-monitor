@@ -203,61 +203,6 @@ test('STATUS_COUNTS buckets COVERAGE_MARGIN_LOW to ok so a thin-but-passing coho
   assert.equal(STATUS_COUNTS.COVERAGE_MARGIN_LOW, 'ok');
 });
 
-// ── pool coverage margin (scorecardFiveFactor) ──────────────────────────────
-
-const FLOORS = SEED_META.scorecardFiveFactor.minPoolCounts;
-const COMFORTABLE = Object.fromEntries(
-  Object.entries(FLOORS).map(([pool, floor]) => [pool, floor + 50]),
-);
-const classifyScorecard = (poolCounts, over = {}) => classifyKey(
-  'scorecardFiveFactor',
-  STANDALONE_KEYS.scorecardFiveFactor,
-  { allowOnDemand: false },
-  makeCtx({
-    strens: { [STANDALONE_KEYS.scorecardFiveFactor]: 4096 },
-    metaValues: {
-      [SEED_META.scorecardFiveFactor.key]: seedMeta({ recordCount: 196, poolCounts, ...over }),
-    },
-    activationStates: { scorecardFiveFactor: true },
-  }),
-);
-
-test('a cohort clear of every floor reports OK and still publishes its headroom', () => {
-  const entry = classifyScorecard(COMFORTABLE);
-  assert.equal(entry.status, 'OK');
-  // Emitted on a healthy cohort too — trending headroom is the point, and a
-  // consumer that only ever saw the thin readings could not compute a trend.
-  assert.equal(entry.poolCoverageMargin.food.margin, 50);
-  assert.equal(entry.poolCoverageMargin.food.low, false);
-  assert.equal(entry.poolCountMargin, 10);
-});
-
-test('a pool within the margin of its floor reports COVERAGE_MARGIN_LOW, not OK', () => {
-  // Mirrors the live cohort: food passes its floor of 80 by six countries.
-  const entry = classifyScorecard({ ...COMFORTABLE, food: FLOORS.food + 6 });
-  assert.equal(entry.status, 'COVERAGE_MARGIN_LOW');
-  assert.deepEqual(entry.poolCoverageMargin.food, {
-    count: FLOORS.food + 6, floor: FLOORS.food, margin: 6, low: true,
-  });
-  assert.equal(entry.poolCoverageMargin.energy.low, false);
-});
-
-// The whole risk of adding a status late in the chain: it must never win over a
-// real fault. A thin cohort that has also stopped publishing is a stale cohort.
-test('a thin margin never masks staleness or an outright shortfall', () => {
-  const stale = classifyScorecard(
-    { ...COMFORTABLE, food: FLOORS.food + 6 },
-    { fetchedAt: NOW - (SEED_META.scorecardFiveFactor.maxStaleMin + 1) * ONE_MIN_MS },
-  );
-  assert.equal(stale.status, 'STALE_SEED');
-
-  const breached = classifyScorecard({ ...COMFORTABLE, food: FLOORS.food - 1 });
-  assert.equal(breached.status, 'COVERAGE_PARTIAL');
-  // Reported low as well, so the margin view can never read healthier than the
-  // shortfall verdict on the same counts.
-  assert.equal(breached.poolCoverageMargin.food.low, true);
-});
-
 // ── classifyKey core statuses ───────────────────────────────────────────────
 
 test('classifyKey: fresh seed + data → OK', () => {
@@ -1800,7 +1745,6 @@ const ISSUE_5055_HEALTH_REGISTRATIONS = [
   ['defensePatents', 'patents:defense:latest', 'seed-meta:military:defense-patents', 25200],
   ['acledIntel', 'conflict:acled:v1:all:0:0', 'seed-meta:conflict:acled-intel', 38],
   ['portwatchDisruptions', 'portwatch:disruptions:active:v1', 'seed-meta:portwatch:disruptions', 150],
-  ['comtradeBilateralHs4', 'seed-meta:comtrade:bilateral-hs4', 'seed-meta:comtrade:bilateral-hs4', 50400],
   ['sharedFxRates', 'shared:fx-rates:v1', 'seed-meta:shared:fx-rates', 3600],
   ['submarineCables', 'infrastructure:submarine-cables:v1', 'seed-meta:infrastructure:submarine-cables', 25200],
 ];
@@ -1948,20 +1892,6 @@ test('classifyKey: issue #5099 ACLED display feed is strict, not on-demand softe
   assert.equal(STATUS_COUNTS[dataWithoutMeta.status], 'warn');
 });
 
-test('classifyKey: issue #5055 Comtrade bilateral probe is explicitly meta-only', () => {
-  const metaKey = 'seed-meta:comtrade:bilateral-hs4';
-  const entry = classifyKey('comtradeBilateralHs4', STANDALONE_KEYS.comtradeBilateralHs4, { allowOnDemand: true },
-    makeCtx({
-      strens: { [metaKey]: 96 },
-      metaValues: { [metaKey]: seedMeta({ recordCount: 180 }) },
-    }));
-
-  assert.equal(STANDALONE_KEYS.comtradeBilateralHs4, metaKey);
-  assert.equal(entry.status, 'OK');
-  assert.equal(entry.records, 180);
-  assert.equal(entry.maxStaleMin, 50400);
-});
-
 test('classifyKey: empty on-demand standalone key → EMPTY_ON_DEMAND (warn)', () => {
   // minerals is in ON_DEMAND_KEYS and has no SEED_META entry.
   const entry = classifyKey('minerals', STANDALONE_KEYS.minerals, { allowOnDemand: true }, makeCtx({}));
@@ -2032,24 +1962,6 @@ test('the three bundle tick heartbeats stay registered together (#6691 / #6806)'
   }
 });
 
-test('classifyKey: digestNotifications heartbeat goes stale when the cron stops', () => {
-  const entry = classifyKey('digestNotifications', STANDALONE_KEYS.digestNotifications, { allowOnDemand: true },
-    makeCtx({
-      strens: { [STANDALONE_KEYS.digestNotifications]: 256 },
-      metaValues: {
-        'seed-meta:digest:last-run': seedMeta({
-          fetchedAt: NOW - 120 * ONE_MIN_MS,
-          sentCount: 0,
-        }),
-      },
-    }));
-
-  assert.equal(STANDALONE_KEYS.digestNotifications, 'digest:last-run');
-  assert.equal(entry.status, 'STALE_SEED');
-  assert.equal(entry.maxStaleMin, 90);
-  assert.equal(STATUS_COUNTS[entry.status], 'warn');
-});
-
 test('classifyKey: expired transitional producers fail closed when missing or empty', () => {
   const graduatedNames = [
     'fxYoy',
@@ -2057,7 +1969,6 @@ test('classifyKey: expired transitional producers fail closed when missing or em
     'chokepointFlowsRelayHeartbeat',
     'climateNewsRelayHeartbeat',
     'eiaPetroleum',
-    'digestNotifications',
   ];
 
   for (const name of graduatedNames) {
@@ -2290,10 +2201,6 @@ test('containment evaluates real classifier results with request-local proof', (
     assert.equal(isContainedHealthWarning({ status, records: 5 }, undefined, NOW), false, status);
   }
   const { entry, evidence, ctx } = classifyContainment('earthquakes', { sourceState: 'degraded' });
-  const ready = __testing__.composeScorecardReadModelStatus(entry, 1);
-  const unavailable = __testing__.composeScorecardReadModelStatus(entry, 0);
-  assert.equal(isContainedHealthWarning(ready, evidence, NOW), true);
-  assert.equal(isContainedHealthWarning(unavailable, evidence, NOW), false);
   assert.equal(isContainedHealthWarning({ ...entry, status: 'COVERAGE_PARTIAL' }, evidence, NOW), false,
     'a final verdict change invalidates earlier evidence');
   assert.equal(isContainedHealthWarning(entry, makeCtx().containmentEvidenceByName.get('earthquakes'), NOW), false);
@@ -2343,8 +2250,7 @@ test('containment validates per-entity and served synthesis evidence without rec
 });
 
 test('containment has no source-specific denylist', () => {
-  for (const name of ['sanctionsPressure', 'sanctionsEntities', 'tariffTrendsUs',
-    'supplyVulnerability', 'supplyChokepointDependencies']) {
+  for (const name of ['sanctionsEntities', 'tariffTrendsUs']) {
     const { entry, evidence } = classifyContainment(name, {
       sourceState: 'degraded', recordCount: 1000, rankableRecordCount: 1000,
       redistributionPolicyVersion: SEED_META[name].requiredRedistributionPolicyVersion,
@@ -2363,12 +2269,9 @@ test('containment rejects missing proof even when an earlier diagnostic wins', (
     ['earthquakes', { fetchedAt: 'invalid' }, 'STALE_SEED'],
     ['consumerPricesCoverage', { fetchedAt: NOW - 10_000 * ONE_MIN_MS }, 'STALE_SEED'],
     ['consumerPricesCoverage', { status: 'error' }, 'SEED_ERROR'],
-    ['supplyChokepointDependencies', { fetchedAt: NOW - 10_000 * ONE_MIN_MS, redistributionPolicyVersion: 0 }, 'STALE_SEED'],
     ['predictionMarkets', { fetchedAt: NOW - 10_000 * ONE_MIN_MS }, 'STALE_SEED'],
     ['portwatchPortActivity', { recordCount: 1 }, 'COVERAGE_PARTIAL'],
     ['consumerPricesCoverage', { coverage: { status: 'partial', completionRatio: 2 } }, 'COVERAGE_PARTIAL'],
-    ['physicalDivergence', { sourceState: 'error', recordCount: 2 }, 'SEED_ERROR'],
-    ['physicalDivergence', { sourceState: 'ok', recordCount: 2, inputFreshUntil: NOW - 1 }, 'SEED_ERROR'],
     ['resilienceRanking', { recordCount: 196 }, 'STALE_SEED'],
   ];
   for (const [name, meta, expected] of cases) {

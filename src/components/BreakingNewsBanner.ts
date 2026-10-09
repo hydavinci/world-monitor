@@ -7,6 +7,7 @@ import { rawHtml, trustedHtml } from '@/utils/dom-utils';
 import { sanitizeUrl } from '@/utils/sanitize';
 import { corroborationFlag } from '@/utils/corroboration-flag';
 import { renderPrimarySourceProvenance } from './news/source-provenance';
+import { showDesktopNotification } from '@/services/desktop-notifications';
 
 const MAX_ALERTS = 3;
 const CRITICAL_DISMISS_MS = 60_000;
@@ -34,6 +35,7 @@ export class BreakingNewsBanner {
   private boundOnResize: () => void;
   private dismissed = new Map<string, number>();
   private highlightTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>();
+  private desktopNotifications = new Set<Notification>();
   private readonly inFlow: boolean;
 
   constructor() {
@@ -197,6 +199,20 @@ export class BreakingNewsBanner {
 
     this.activeAlerts.push(active);
     this.playSound();
+    const settings = getAlertSettings();
+    if (settings.enabled && settings.desktopNotificationsEnabled) {
+      const level = t(`components.breakingNews.${alert.threatLevel}`);
+      const notification = showDesktopNotification(
+        alert.headline,
+        `${level} · ${alert.source}`,
+        `wm-breaking-${alert.id}`,
+        () => this.scrollToPanel(this.resolveTargetPanel(alert)),
+      );
+      if (notification) {
+        this.desktopNotifications.add(notification);
+        notification.addEventListener('close', () => this.desktopNotifications.delete(notification), { once: true });
+      }
+    }
     this.updateOffset();
   }
 
@@ -385,6 +401,8 @@ export class BreakingNewsBanner {
       if (active.timer) clearTimeout(active.timer);
     }
     this.activeAlerts = [];
+    for (const notification of this.desktopNotifications) notification.close();
+    this.desktopNotifications.clear();
     this.container.remove();
     document.body.classList.remove('has-breaking-alert');
     document.documentElement.style.removeProperty('--breaking-alert-offset');

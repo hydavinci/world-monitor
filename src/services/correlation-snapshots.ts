@@ -2,7 +2,6 @@ import { ensureHydrated, getHydratedData, waitForBootstrapSlowTier } from './boo
 import { getPersistentCache, setPersistentCache } from './persistent-cache';
 import type { ConvergenceCard, CorrelationDomain } from './correlation-engine';
 import { CORRELATION_DOMAINS } from '@/types/correlation';
-import { enqueueSentryCall } from '@/bootstrap/sentry-defer';
 
 export interface CorrelationSnapshot {
   cards: ConvergenceCard[];
@@ -193,10 +192,10 @@ async function refresh(): Promise<void> {
         reportedFailure = true;
         const domains = [...failedDomains];
         try {
-          enqueueSentryCall(s => s.captureMessage('Correlation snapshot recovery stalled', {
-            level: 'warning', tags: { component: 'correlation-snapshots' }, extra: { domains },
-          }));
-        } catch { /* Telemetry must not interrupt recovery. */ }
+          console.warn('Correlation snapshot recovery stalled', { domains });
+        } catch (error) {
+          console.error('[correlation-snapshots] Local diagnostic logger failed', error);
+        }
       }
       const retryMs = Math.min(15_000 * 2 ** Math.min(failureCount - 1, 4), 180_000)
         * (0.8 + 0.2 * Math.random());

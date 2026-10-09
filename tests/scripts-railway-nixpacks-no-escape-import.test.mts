@@ -14,7 +14,7 @@
  * This guard now also covers standalone `seed-*` cron entry points that use
  * the same root-scripts packaging contract. (See
  * docs/railway-seed-consolidation-runbook.md for the service list and
- * Dockerfile.digest-notifications for the cherry-pick alternative.)
+ * Dockerfile.relay for the cherry-pick alternative.)
  *
  * Approach: BFS from each entry script, follow relative imports and
  * _bundle-runner section script references, assert no resolved path escapes

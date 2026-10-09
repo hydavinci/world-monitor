@@ -2,26 +2,22 @@
  * Standalone settings window: panel toggles only.
  * Loaded when the app is opened with ?settings=1 (e.g. from the main window's Settings button).
  */
-import type { PanelConfig } from '@/types';
 import {
-  DEFAULT_PANELS,
-  STORAGE_KEYS,
-  ALL_PANELS,
-  VARIANT_DEFAULTS,
-  getEffectivePanelConfig,
-  isPanelEntitled,
-  FREE_MAX_PANELS,
-  countFreePanelCapUsage,
-  userSetPanelEnabled,
-  isFreePanelCapCounted,
+ALL_PANELS,
+DEFAULT_PANELS,
+STORAGE_KEYS,
+VARIANT_DEFAULTS,
+getEffectivePanelConfig,
+isPublicPanel,
+userSetPanelEnabled,
 } from '@/config';
-import { isProUser } from '@/services/widget-store';
 import { SITE_VARIANT } from '@/config/variant';
-import { loadFromStorage, saveToStorage } from '@/utils';
 import { t } from '@/services/i18n';
-import { escapeHtml } from '@/utils/sanitize';
 import { isDesktopRuntime } from '@/services/runtime';
-import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
+import type { PanelConfig } from '@/types';
+import { loadFromStorage,saveToStorage } from '@/utils';
+import { setTrustedHtml,trustedHtml } from '@/utils/dom-utils';
+import { escapeHtml } from '@/utils/sanitize';
 
 
 function getLocalizedPanelName(panelKey: string, fallback: string): string {
@@ -61,7 +57,7 @@ export function initSettingsWindow(): void {
 
   function render(): void {
     const panelEntries = Object.entries(panelSettings).filter(
-      ([key]) => (key !== 'runtime-config' || isDesktopApp) && (!key.startsWith('cw-') || isProUser())
+      ([key]) => (key !== 'runtime-config' || isDesktopApp) && (!key.startsWith('cw-') || false)
     );
     const panelHtml = panelEntries
       .map(
@@ -89,12 +85,7 @@ export function initSettingsWindow(): void {
           if (config) {
             // Preserve saved config for dynamic cw-* panels; unknown keys should
             // not collapse to getEffectivePanelConfig's disabled synthetic fallback.
-            const resolvedConfig = ALL_PANELS[panelKey] ? getEffectivePanelConfig(panelKey, SITE_VARIANT) : config;
-            if (!config.enabled && !isPanelEntitled(panelKey, resolvedConfig, isProUser())) return;
-            if (!config.enabled && !isProUser() && isFreePanelCapCounted(panelKey)) {
-              const enabledCount = countFreePanelCapUsage(panelSettings);
-              if (enabledCount >= FREE_MAX_PANELS) return;
-            }
+            if (!config.enabled && !isPublicPanel(panelKey)) return;
             userSetPanelEnabled(config, !config.enabled);
             saveToStorage(STORAGE_KEYS.panels, panelSettings);
             render();

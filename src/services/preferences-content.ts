@@ -1,51 +1,44 @@
-import { LANGUAGES, getCurrentLanguageTag, changeLanguage, t } from '@/services/i18n';
-import { getAiFlowSettings, setAiFlowSetting, getStreamQuality, setStreamQuality, STREAM_QUALITY_OPTIONS } from '@/services/ai-flow-settings';
-import { getMapProvider, setMapProvider, MAP_PROVIDER_OPTIONS, MAP_THEME_OPTIONS, getMapTheme, setMapTheme, type MapProvider } from '@/config/basemap';
-import {
-  formatIdleStopMinutes,
-  getLiveMediaIdleStop,
-  getLiveStreamsAlwaysOn,
-  LIVE_MEDIA_IDLE_STOP_OPTIONS,
-  parseLiveMediaIdleStop,
-  setLiveMediaIdleStop,
-  setLiveStreamsAlwaysOn,
-} from '@/services/live-stream-settings';
-import { getGlobeVisualPreset, setGlobeVisualPreset, GLOBE_VISUAL_PRESET_OPTIONS, type GlobeVisualPreset } from '@/services/globe-render-settings';
+import { getMapProvider,getMapTheme,MAP_PROVIDER_OPTIONS,MAP_THEME_OPTIONS,setMapProvider,setMapTheme,type MapProvider } from '@/config/basemap';
 import type { StreamQuality } from '@/services/ai-flow-settings';
-import { getThemePreference, setThemePreference, type ThemePreference } from '@/utils/theme-manager';
-import { getFontFamily, setFontFamily, type FontFamily } from '@/services/font-settings';
+import { getAiFlowSettings,getStreamQuality,setAiFlowSetting,setStreamQuality,STREAM_QUALITY_OPTIONS } from '@/services/ai-flow-settings';
 import {
-  FONT_SCALE_CHANGED_EVENT,
-  FONT_SCALE_STEPS,
-  fontScaleLabel,
-  getFontScale,
-  parseFontScale,
-  setFontScale,
-  type FontScaleChangedDetail,
-} from '@/services/font-scale-settings';
-import { escapeHtml } from '@/utils/sanitize';
-import { trackLanguageChange } from '@/services/analytics';
-import { exportSettings, importSettings, type ImportResult } from '@/utils/settings-persistence';
-import { getSyncState, getLastSyncAt, syncNow, isCloudSyncEnabled } from '@/utils/cloud-prefs-sync';
-import { declareOverlay } from '@/utils/open-modal';
-
-const SYNC_STATE_LABELS: Record<string, string> = {
-  synced: 'Synced', pending: 'Pending', syncing: 'Syncing\u2026',
-  conflict: 'Conflict', offline: 'Offline', 'signed-out': 'Signed out', error: 'Error',
-};
-const SYNC_STATE_COLORS: Record<string, string> = {
-  synced: 'var(--color-ok, #34d399)', pending: 'var(--color-warn, #fbbf24)', syncing: 'var(--color-warn, #fbbf24)',
-  conflict: 'var(--color-error, #f87171)', offline: 'var(--text-faint, #888)', 'signed-out': 'var(--text-faint, #888)', error: 'var(--color-error, #f87171)',
-};
-import {
-  loadFrameworkLibrary,
-  saveImportedFramework,
-  deleteImportedFramework,
-  renameImportedFramework,
-  getActiveFrameworkForPanel,
-  type AnalysisPanelId,
+deleteImportedFramework,
+getActiveFrameworkForPanel,
+loadFrameworkLibrary,
+renameImportedFramework,
+saveImportedFramework,
+type AnalysisPanelId,
 } from '@/services/analysis-framework-store';
-import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
+
+import {
+FONT_SCALE_CHANGED_EVENT,
+FONT_SCALE_STEPS,
+fontScaleLabel,
+getFontScale,
+parseFontScale,
+setFontScale,
+type FontScaleChangedDetail,
+} from '@/services/font-scale-settings';
+import { getFontFamily,setFontFamily,type FontFamily } from '@/services/font-settings';
+import { getGlobeVisualPreset,GLOBE_VISUAL_PRESET_OPTIONS,setGlobeVisualPreset,type GlobeVisualPreset } from '@/services/globe-render-settings';
+import { changeLanguage,getCurrentLanguageTag,LANGUAGES,t } from '@/services/i18n';
+import {
+formatIdleStopMinutes,
+getLiveMediaIdleStop,
+getLiveStreamsAlwaysOn,
+LIVE_MEDIA_IDLE_STOP_OPTIONS,
+parseLiveMediaIdleStop,
+setLiveMediaIdleStop,
+setLiveStreamsAlwaysOn,
+} from '@/services/live-stream-settings';
+import { setTrustedHtml,trustedHtml } from '@/utils/dom-utils';
+import { declareOverlay } from '@/utils/open-modal';
+import { escapeHtml } from '@/utils/sanitize';
+import { exportSettings,importSettings,type ImportResult } from '@/utils/settings-persistence';
+import { getThemePreference,setThemePreference,type ThemePreference } from '@/utils/theme-manager';
+import { getAlertSettings, updateAlertSettings } from '@/services/breaking-news-alerts';
+import { getDesktopNotificationPermission, requestDesktopNotificationPermission, showDesktopNotification } from '@/services/desktop-notifications';
+
 
 
 const DESKTOP_RELEASES_URL = 'https://github.com/koala73/worldmonitor/releases';
@@ -94,20 +87,6 @@ function renderMapThemeDropdown(container: HTMLElement, provider: MapProvider): 
     .join(''), "legacy direct innerHTML migration"));
 }
 
-function updateSyncStatusUI(container: HTMLElement): void {
-  const dot = container.querySelector<HTMLElement>('#usSyncDot');
-  const label = container.querySelector<HTMLElement>('#usSyncLabel');
-  const time = container.querySelector<HTMLElement>('#usSyncTime');
-  if (!dot || !label || !time) return;
-
-  const state = getSyncState();
-  const lastSync = getLastSyncAt();
-
-  dot.style.background = (SYNC_STATE_COLORS[state] ?? SYNC_STATE_COLORS.error) as string;
-  label.textContent = SYNC_STATE_LABELS[state] ?? 'Unknown';
-  time.textContent = `Last synced: ${lastSync ? new Date(lastSync).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : 'Never'}`;
-}
-
 function updateAiStatus(container: HTMLElement): void {
   const settings = getAiFlowSettings();
   const dot = container.querySelector('#usStatusDot');
@@ -115,13 +94,7 @@ function updateAiStatus(container: HTMLElement): void {
   if (!dot || !text) return;
 
   dot.className = 'ai-flow-status-dot';
-  if (settings.cloudLlm && settings.browserModel) {
-    dot.classList.add('active');
-    text.textContent = t('components.insights.aiFlowStatusCloudAndBrowser');
-  } else if (settings.cloudLlm) {
-    dot.classList.add('active');
-    text.textContent = t('components.insights.aiFlowStatusActive');
-  } else if (settings.browserModel) {
+  if (settings.browserModel) {
     dot.classList.add('browser-only');
     text.textContent = t('components.insights.aiFlowStatusBrowserOnly');
   } else {
@@ -130,12 +103,27 @@ function updateAiStatus(container: HTMLElement): void {
   }
 }
 
+function updateNotificationControls(container: HTMLElement): void {
+  const permission = getDesktopNotificationPermission();
+  const settings = getAlertSettings();
+  const status = container.querySelector<HTMLElement>('#us-notification-status');
+  if (status) status.textContent = t(`preferences.alertNotifications.${permission}`);
+  const authorize = container.querySelector<HTMLButtonElement>('#us-notification-permission');
+  if (authorize) authorize.disabled = permission !== 'default';
+  const test = container.querySelector<HTMLButtonElement>('#us-notification-test');
+  if (test) test.disabled = permission !== 'granted' || !settings.enabled || !settings.desktopNotificationsEnabled;
+}
+
 function handlePreferenceChange(
   target: HTMLInputElement,
   container: HTMLElement,
   host: PreferencesHost,
 ): boolean | Promise<boolean> {
   switch (target.id) {
+    case 'us-desktop-notifications':
+      updateAlertSettings({ desktopNotificationsEnabled: target.checked });
+      updateNotificationControls(container);
+      return true;
     case 'us-stream-quality':
       setStreamQuality(target.value as StreamQuality);
       return true;
@@ -176,12 +164,8 @@ function handlePreferenceChange(
       return true;
     }
     case 'us-language':
-      trackLanguageChange(target.value);
+      {}
       return changeLanguage(target.value);
-    case 'us-cloud':
-      setAiFlowSetting('cloudLlm', target.checked);
-      updateAiStatus(container);
-      return true;
     case 'us-browser': {
       setAiFlowSetting('browserModel', target.checked);
       const warn = container.querySelector<HTMLElement>('.ai-flow-toggle-warn');
@@ -341,13 +325,27 @@ export function renderPreferences(host: PreferencesHost): PreferencesResult {
 
   html += `</div></details>`;
 
+  const notificationPermission = getDesktopNotificationPermission();
+  const alerts = getAlertSettings();
+  html += `<details class="wm-pref-group">
+    <summary>${t('preferences.alertNotifications.title')}</summary>
+    <div class="wm-pref-group-content">
+      ${toggleRowHtml('us-desktop-notifications', t('preferences.alertNotifications.desktop'),
+        t('preferences.alertNotifications.description'), alerts.desktopNotificationsEnabled, notificationPermission === 'unsupported')}
+      <div class="ai-flow-toggle-desc" id="us-notification-status" role="status" aria-live="polite"></div>
+      <div class="us-data-mgmt">
+        <button type="button" class="btn btn-secondary" id="us-notification-permission">${t('preferences.alertNotifications.authorize')}</button>
+        <button type="button" class="btn btn-secondary" id="us-notification-test">${t('preferences.alertNotifications.test')}</button>
+      </div>
+    </div>
+  </details>`;
+
   // ── Intelligence group ──
   html += `<details class="wm-pref-group">`;
   html += `<summary>${t('preferences.intelligence')}</summary>`;
   html += `<div class="wm-pref-group-content">`;
 
   if (!host.isDesktopApp) {
-    html += toggleRowHtml('us-cloud', t('components.insights.aiFlowCloudLabel'), t('components.insights.aiFlowCloudDesc'), settings.cloudLlm);
     html += toggleRowHtml('us-browser', t('components.insights.aiFlowBrowserLabel'), t('components.insights.aiFlowBrowserDesc'), settings.browserModel);
     html += `<div class="ai-flow-toggle-warn" style="display:${settings.browserModel ? 'block' : 'none'}">${t('components.insights.aiFlowBrowserWarn')}</div>`;
     html += `
@@ -497,28 +495,6 @@ export function renderPreferences(host: PreferencesHost): PreferencesResult {
   html += toggleRowHtml('us-badge-anim', t('components.insights.badgeAnimLabel'), t('components.insights.badgeAnimDesc'), settings.badgeAnimation);
   html += `</div></details>`;
 
-  // ── Cloud Sync group (web-only, signed-in, feature flag on) ──
-  if (!host.isDesktopApp && host.isSignedIn && isCloudSyncEnabled()) {
-    const syncState = getSyncState();
-    const lastSync = getLastSyncAt();
-    const lastSyncStr = lastSync
-      ? new Date(lastSync).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
-      : 'Never';
-
-    html += `<details class="wm-pref-group">`;
-    html += `<summary>Cloud Sync</summary>`;
-    html += `<div class="wm-pref-group-content">`;
-    html += `<div class="wm-sync-status-row">
-      <div class="wm-sync-status-info">
-        <span class="wm-sync-status-dot" id="usSyncDot" style="background:${SYNC_STATE_COLORS[syncState] ?? SYNC_STATE_COLORS.error}"></span>
-        <span class="wm-sync-status-label" id="usSyncLabel">${SYNC_STATE_LABELS[syncState] ?? 'Unknown'}</span>
-        <span class="wm-sync-status-time" id="usSyncTime">Last synced: ${escapeHtml(lastSyncStr)}</span>
-      </div>
-      <button type="button" class="btn btn-secondary wm-sync-now-btn" id="usSyncNowBtn">Sync now</button>
-    </div>`;
-    html += `</div></details>`;
-  }
-
   // ── Data & Community group ──
   html += `<details class="wm-pref-group">`;
   html += `<summary>${t('preferences.dataAndCommunity')}</summary>`;
@@ -548,6 +524,8 @@ export function renderPreferences(host: PreferencesHost): PreferencesResult {
 
       const ac = new AbortController();
       const { signal } = ac;
+      updateNotificationControls(container);
+      window.addEventListener('focus', () => updateNotificationControls(container), { signal });
 
       window.addEventListener(FONT_SCALE_CHANGED_EVENT, (event) => {
         const select = container.querySelector<HTMLSelectElement>('#us-font-scale');
@@ -582,6 +560,35 @@ export function renderPreferences(host: PreferencesHost): PreferencesResult {
 
       container.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
+        const authorize = target.closest<HTMLButtonElement>('#us-notification-permission');
+        if (authorize && !authorize.disabled) {
+          authorize.disabled = true;
+          void requestDesktopNotificationPermission().then(() => {
+            if (!signal.aborted) updateNotificationControls(container);
+          }).catch(error => {
+            console.error('[desktop-notifications] Permission request failed:', error);
+            if (signal.aborted) return;
+            updateNotificationControls(container);
+            const status = container.querySelector<HTMLElement>('#us-notification-status');
+            if (status) status.textContent = t('preferences.alertNotifications.permissionFailed');
+          });
+          return;
+        }
+        const test = target.closest<HTMLButtonElement>('#us-notification-test');
+        if (test && !test.disabled) {
+          const alerts = getAlertSettings();
+          if (!alerts.enabled || !alerts.desktopNotificationsEnabled) {
+            updateNotificationControls(container);
+            return;
+          }
+          showDesktopNotification(
+            t('preferences.alertNotifications.testTitle'),
+            t('preferences.alertNotifications.testBody'),
+            'wm-breaking-test',
+            () => {},
+          );
+          return;
+        }
         if (target.closest('#usExportBtn')) {
           try {
             exportSettings();
@@ -747,24 +754,6 @@ export function renderPreferences(host: PreferencesHost): PreferencesResult {
       }, { signal });
 
       if (!host.isDesktopApp) updateAiStatus(container);
-
-      // ── Cloud Sync: wire "Sync now" button + live state updates ──
-      if (!host.isDesktopApp && host.isSignedIn && isCloudSyncEnabled()) {
-        const syncBtn = container.querySelector<HTMLButtonElement>('#usSyncNowBtn');
-        if (syncBtn) {
-          syncBtn.addEventListener('click', () => {
-            syncBtn.disabled = true;
-            syncBtn.textContent = 'Syncing\u2026';
-            syncNow().finally(() => {
-              syncBtn.disabled = false;
-              syncBtn.textContent = 'Sync now';
-              updateSyncStatusUI(container);
-            });
-          }, { signal });
-        }
-        const syncPollId = setInterval(() => updateSyncStatusUI(container), 2000);
-        signal.addEventListener('abort', () => clearInterval(syncPollId));
-      }
 
       return () => ac.abort();
     },

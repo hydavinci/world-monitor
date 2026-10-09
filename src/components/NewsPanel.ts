@@ -9,7 +9,7 @@ import { assessCorroboration, badgePublisherCount, corroborationFlagHtml, eviden
 import { analysisWorker, enrichWithVelocityML, getClusterAssetContext, MAX_DISTANCE_KM, activityTracker, generateSummary, translateText, preloadRelatedAssetTables } from '@/services';
 import { SITE_VARIANT } from '@/config';
 import { t, getCurrentLanguage, getCurrentLanguageTag } from '@/services/i18n';
-import { track } from '@/services/analytics';
+
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 import {
   renderCredibilityBadge,
@@ -203,7 +203,7 @@ export class NewsPanel extends Panel {
     this.updateSortButtonLabel();
     this.sortBtn.addEventListener('click', () => {
       this.sortMode = this.sortMode === 'relevance' ? 'newest' : 'relevance';
-      track('news-sort-toggle', { mode: this.sortMode });
+
       this.saveSortMode();
       this.updateSortButtonLabel();
       // Re-render with cached data
@@ -258,7 +258,7 @@ export class NewsPanel extends Panel {
     setTrustedHtml(this.summaryBtn, trustedHtml('✨', "legacy direct innerHTML migration"));
     this.summaryBtn.title = t('components.newsPanel.summarize');
     this.summaryBtn.addEventListener('click', () => {
-      track('news-summarize', { panelId: this.panelId });
+
       this.handleSummarize();
     });
 
@@ -281,7 +281,7 @@ export class NewsPanel extends Panel {
     // Simplified prose back. It keys the cache too, so the two scripts cannot
     // serve each other's summary.
     const currentLang = getCurrentLanguageTag();
-    const cacheKey = `panel_summary_v3_${SITE_VARIANT}_${this.panelId}_${currentLang}`;
+    const cacheKey = `panel_summary_browser_v1_${SITE_VARIANT}_${this.panelId}_${currentLang}`;
     const cached = this.getCachedSummary(cacheKey);
     if (cached) {
       this.showSummary(cached);

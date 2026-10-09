@@ -46,7 +46,6 @@ export const WEBMCP_SPA_TOOL = Object.freeze({
   listFollowedCountries: 'list_followed_countries',
   setCountryFollowed: 'set_country_followed',
   getAccessContext: 'get_access_context',
-  openSignIn: 'open_sign_in',
 } as const);
 
 export const WEBMCP_SPA_TOOL_NAMES = [
@@ -82,7 +81,6 @@ export const WEBMCP_SPA_TOOL_NAMES = [
   WEBMCP_SPA_TOOL.listFollowedCountries,
   WEBMCP_SPA_TOOL.setCountryFollowed,
   WEBMCP_SPA_TOOL.getAccessContext,
-  WEBMCP_SPA_TOOL.openSignIn,
 ] as const;
 
 /**

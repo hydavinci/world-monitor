@@ -102,10 +102,4 @@ describe('China macro production registration', () => {
     assert.ok(210_000 < 240_000);
   });
 
-  it('exposes the snapshot through the economic MCP cache tool and public API path', () => {
-    const source = read('api/mcp/registry/cache-tools.ts');
-    assert.match(source, /BOOTSTRAP_CACHE_KEYS\.chinaMacro/);
-    assert.match(source, /BOOTSTRAP_CACHE_KEYS\.chinaReleaseCalendar/);
-    assert.match(source, /GET \/api\/economic\/v1\/get-china-macro-snapshot/);
-  });
 });

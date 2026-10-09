@@ -7,7 +7,7 @@ const ENTERPRISE_KEY = 'enterprise-test-key-123';
 process.env.WM_SESSION_SECRET = SECRET;
 process.env.WORLDMONITOR_VALID_KEYS = ENTERPRISE_KEY;
 
-const { USER_API_KEY_GATEWAY_VALIDATION_ERROR, getHeaderApiKey, validateApiKey } = await import('./_api-key.js');
+const { getHeaderApiKey, validateApiKey } = await import('./_api-key.js');
 const { issueSessionToken } = await import('./_session.js');
 
 function makeReq({ origin, referer, secFetchSite, key, cookie } = {}) {
@@ -140,7 +140,7 @@ test('PR #3557 review: wms_ session token is REJECTED when forceKey=true (premiu
   const r = await validateApiKey(makeReq({ key: token }), { forceKey: true });
   assert.equal(r.valid, false);
   assert.equal(r.required, true);
-  assert.match(r.error, /Pro authentication/);
+  assert.match(r.error, /Operator authentication/);
 });
 
 // Returning tester/widget users mint a wms_ token in a new tab. JS cannot see
@@ -224,7 +224,7 @@ test('stale tester cookie cannot turn anonymous authority into forceKey access',
   }), { forceKey: true });
   assert.equal(r.valid, false);
   assert.equal(r.required, true);
-  assert.match(r.error, /Pro authentication/);
+  assert.match(r.error, /Operator authentication/);
 });
 
 test('wms_ header ALONE is still kind session (XP preserved)', async () => {
@@ -238,7 +238,7 @@ test('wms_ header ALONE + forceKey is still rejected with Pro authentication', a
   const { token } = await issueSessionToken();
   const r = await validateApiKey(makeReq({ key: token }), { forceKey: true });
   assert.equal(r.valid, false);
-  assert.match(r.error, /Pro authentication/);
+  assert.match(r.error, /Operator authentication/);
 });
 
 test('PR #3557 review: wms_ result must NOT carry kind=enterprise (gateway entitlement-bypass anti-regression)', async () => {
@@ -304,16 +304,13 @@ test('invalid enterprise-shape key is rejected', async () => {
   assert.equal(r.valid, false);
 });
 
-// ── User API key (wm_-prefix) — gateway handles validation ──────────────────
+// Retired account credentials must be ordinary invalid keys.
 
-test('wm_-prefixed user key returns required:true / valid:false so gateway can fall back', async () => {
-  // Gateway code at server/gateway.ts:440 does:
-  //   if (keyCheck.required && !keyCheck.valid && wmKey.startsWith('wm_')) { ...validateUserApiKey... }
-  // So validateApiKey must return that exact shape for wm_ keys to trigger the fallback.
+test('unknown wm_-prefixed key is denied without gateway account validation', async () => {
   const r = await validateApiKey(makeReq({ key: 'wm_user_abc123' }));
   assert.equal(r.required, true);
   assert.equal(r.valid, false);
-  assert.equal(r.error, USER_API_KEY_GATEWAY_VALIDATION_ERROR);
+  assert.equal(r.error, 'Invalid API key');
 });
 
 test('getHeaderApiKey centralizes X-WorldMonitor-Key and X-Api-Key aliases', () => {

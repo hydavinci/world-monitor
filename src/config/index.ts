@@ -62,16 +62,8 @@ export {
   getInitialPanelSettingsForVariant,
   isPanelInVariantDefaults,
   isPanelNativeToVariant,
-  isPanelEntitled,
-  enforceFreePanelLimit,
-  countFreePanelCapUsage,
-  isFreePanelCapCounted,
-  restoreFreeMapPanelAccess,
-  restoreProGatedPanels,
+  isPublicPanel,
   userSetPanelEnabled,
-  shouldDeferFreeTierEnforcement,
-  FREE_MAX_PANELS,
-  FREE_MAX_SOURCES,
 } from './panels';
 
 // ============================================

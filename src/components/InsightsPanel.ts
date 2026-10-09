@@ -1,34 +1,33 @@
-import { Panel } from './Panel';
-import { mlWorker } from '@/services/ml-worker';
-import { generateSummary, type SummarizeOptions } from '@/services/summarization';
-import { parallelAnalysis, type AnalyzedHeadline } from '@/services/parallel-analysis';
-import { signalAggregator, type RegionalConvergence } from '@/services/signal-aggregator';
-import { focalPointDetector } from '@/services/focal-point-detector';
-import { stripOrefLabels } from '@/services/oref-alerts';
-import { getCachedCountryScoreValue } from '@/services/cached-risk-scores';
-import { getTheaterPostureSummaries } from '@/services/military-surge';
-import { getCachedPosture } from '@/services/cached-theater-posture';
-import { isMobileDevice } from '@/utils';
-import { escapeHtml, sanitizeUrl, unsafeRawHtml } from '@/utils/sanitize';
-import { assessCorroboration, badgePublisherCount, corroborationFlagHtml, evidenceFromCluster, evidenceFromStory, publisherRoster } from '@/utils/corroboration-flag';
-import { describePublisherRoster, renderPublisherRosterHtml } from './news/publisher-roster';
-import { collectBriefCitationSources, collectBriefSources, normalizeCachedBriefSources, renderBriefSourcesFooter, type BriefSource } from '@/utils/brief-sources';
-import { formatIntelBrief } from '@/utils/format-intel-brief';
 import { SITE_VARIANT } from '@/config';
-import { deletePersistentCache, getPersistentCache, setPersistentCache } from '@/services/persistent-cache';
-import { t } from '@/services/i18n';
-import { isDesktopRuntime } from '@/services/runtime';
-import { getAiFlowSettings, isAnyAiProviderEnabled, subscribeAiFlowChange } from '@/services/ai-flow-settings';
-import { getActiveFrameworkForPanel, subscribeFrameworkChange } from '@/services/analysis-framework-store';
-import { hasPremiumAccess } from '@/services/panel-gating';
-import { FrameworkSelector } from './FrameworkSelector';
-import { fetchServerInsights, getServerInsights, type ServerInsights, type ServerInsightStory } from '@/services/insights-loader';
-import { computeISQ, type SignalQuality, type SignalQualityInput } from '@/utils/signal-quality';
-import { TimeoutError, withTimeout } from '@/utils/with-timeout';
+import { getAiFlowSettings,isAnyAiProviderEnabled,subscribeAiFlowChange } from '@/services/ai-flow-settings';
+import { getActiveFrameworkForPanel,subscribeFrameworkChange } from '@/services/analysis-framework-store';
+import { getCachedCountryScoreValue } from '@/services/cached-risk-scores';
+import { getCachedPosture } from '@/services/cached-theater-posture';
 import { extractEntitiesFromTitle } from '@/services/entity-extraction';
 import { getEntityIndex } from '@/services/entity-index';
+import { focalPointDetector } from '@/services/focal-point-detector';
+import { t } from '@/services/i18n';
+import { fetchServerInsights,getServerInsights,type ServerInsights,type ServerInsightStory } from '@/services/insights-loader';
+import { getTheaterPostureSummaries } from '@/services/military-surge';
+import { mlWorker } from '@/services/ml-worker';
+import { stripOrefLabels } from '@/services/oref-alerts';
+import { parallelAnalysis,type AnalyzedHeadline } from '@/services/parallel-analysis';
+import { deletePersistentCache,getPersistentCache,setPersistentCache } from '@/services/persistent-cache';
+import { isDesktopRuntime } from '@/services/runtime';
+import { signalAggregator,type RegionalConvergence } from '@/services/signal-aggregator';
+import { generateSummary,type SummarizeOptions } from '@/services/summarization';
+import { isMobileDevice } from '@/utils';
+import { collectBriefCitationSources,collectBriefSources,normalizeCachedBriefSources,renderBriefSourcesFooter,type BriefSource } from '@/utils/brief-sources';
+import { assessCorroboration,badgePublisherCount,corroborationFlagHtml,evidenceFromCluster,evidenceFromStory,publisherRoster } from '@/utils/corroboration-flag';
+import { formatIntelBrief } from '@/utils/format-intel-brief';
+import { escapeHtml,sanitizeUrl,unsafeRawHtml } from '@/utils/sanitize';
+import { computeISQ,type SignalQuality,type SignalQualityInput } from '@/utils/signal-quality';
+import { TimeoutError,withTimeout } from '@/utils/with-timeout';
+import { FrameworkSelector } from './FrameworkSelector';
+import { describePublisherRoster,renderPublisherRosterHtml } from './news/publisher-roster';
+import { Panel } from './Panel';
 
-import type { ClusteredEvent, FocalPoint, MilitaryFlight } from '@/types';
+import type { ClusteredEvent,FocalPoint,MilitaryFlight } from '@/types';
 
 const getAuthoritativeCountryScore = getCachedCountryScoreValue;
 
@@ -81,7 +80,7 @@ export class InsightsPanel extends Panel {
       void this.updateInsights(this.lastClusters);
     });
 
-    this.fwSelector = new FrameworkSelector({ panelId: 'insights', isPremium: hasPremiumAccess(), panel: this, note: t('components.insights.frameworkNote') });
+    this.fwSelector = new FrameworkSelector({ panelId: 'insights', isPremium: false, panel: this, note: t('components.insights.frameworkNote') });
     this.header.appendChild(this.fwSelector.el);
 
     // #4890: the World Brief text is the field LCP element in ~1/3 of desktop
@@ -432,9 +431,8 @@ export class InsightsPanel extends Panel {
     }
 
     // Build summarize options from AI flow settings (web) or defaults (desktop)
-    const aiFlow = isDesktopRuntime() ? { cloudLlm: true, browserModel: true } : getAiFlowSettings();
+    const aiFlow = isDesktopRuntime() ? { browserModel: true } : getAiFlowSettings();
     const summarizeOpts: SummarizeOptions = {
-      skipCloudProviders: !aiFlow.cloudLlm,
       skipBrowserFallback: !aiFlow.browserModel,
     };
 

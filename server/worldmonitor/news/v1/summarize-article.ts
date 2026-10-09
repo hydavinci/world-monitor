@@ -16,14 +16,7 @@ import {
 import { CHROME_UA } from '../../../_shared/constants';
 import { isModelUsable, isProviderAvailable, recordModelFailure, recordModelSuccess } from '../../../_shared/llm-health';
 import { sanitizeHeadlinesLight, sanitizeForPrompt, sanitizeForPromptLine } from '../../../_shared/llm-sanitize.js';
-import {
-  getPremiumRpcBillingErrorType,
-  resolvePremiumCallerIdentity,
-} from '../../../_shared/premium-check';
-import {
-  markRetryableResponse,
-  setResponseHeader,
-} from '../../../_shared/response-headers';
+import { denyRetiredRpc } from '../../../../api/_retired-routes.js';
 import { stripThinkingTags } from '../../../_shared/llm';
 import { buildLlmCallEvent, deliverUsageEvents } from '../../../_shared/usage';
 
@@ -70,14 +63,11 @@ export function hasReasoningPreamble(text: string): boolean {
 // ======================================================================
 
 export async function summarizeArticle(
-  ctx: ServerContext,
+  _ctx: ServerContext,
   req: SummarizeArticleRequest,
 ): Promise<SummarizeArticleResponse> {
-  const premiumIdentity = await resolvePremiumCallerIdentity(ctx.request);
-  const isPremium = premiumIdentity.isPremium;
   const { provider, mode = 'brief', geoContext = '', variant = 'full', lang = 'en' } = req;
-  const systemAppend = isPremium && typeof req.systemAppend === 'string' ? req.systemAppend : '';
-  const requiresPremium = mode !== 'translate';
+  if (mode !== 'translate') return denyRetiredRpc();
 
   const MAX_HEADLINES = 10;
   const MAX_HEADLINE_LEN = 500;
@@ -119,39 +109,6 @@ export async function summarizeArticle(
     typeof p.b === 'string' ? sanitizeForPrompt(p.b.slice(0, MAX_BODY_LEN)) : '',
   );
 
-  if (requiresPremium && !isPremium) {
-    const billingDenial = premiumIdentity.billingDenial;
-    if (billingDenial) {
-      if (billingDenial.retryable) {
-        markRetryableResponse(ctx.request);
-        setResponseHeader(ctx.request, 'Retry-After', String(billingDenial.retryAfterSeconds));
-        setResponseHeader(ctx.request, 'X-Billing-Verification', billingDenial.code);
-      }
-      return {
-        summary: '',
-        model: '',
-        provider,
-        tokens: 0,
-        fallback: true,
-        error: billingDenial.message,
-        errorType: getPremiumRpcBillingErrorType(billingDenial),
-        status: 'SUMMARIZE_STATUS_ERROR',
-        statusDetail: billingDenial.code,
-      };
-    }
-    return {
-      summary: '',
-      model: '',
-      provider: provider,
-      tokens: 0,
-      fallback: true,
-      error: 'Pro subscription required',
-      errorType: 'AuthError',
-      status: 'SUMMARIZE_STATUS_ERROR',
-      statusDetail: 'Pro subscription required',
-    };
-  }
-
   // Provider credential check
   const skipReasons: Record<string, string> = {
     ollama: 'OLLAMA_API_URL not configured',
@@ -191,7 +148,7 @@ export async function summarizeArticle(
   }
 
   try {
-    const cacheKey = await getCacheKey(headlines, mode, sanitizedGeoContext, variant, lang, systemAppend || undefined, bodies);
+    const cacheKey = await getCacheKey(headlines, mode, sanitizedGeoContext, variant, lang, undefined, bodies);
 
     // Single atomic call — source tracking happens inside cachedFetchJsonWithMeta,
     // eliminating the TOCTOU race between a separate getCachedJson and cachedFetchJson.
@@ -268,20 +225,15 @@ export async function summarizeArticle(
           bodies: uniqueBodies,
         });
 
-        const sanitizedAppend = systemAppend ? sanitizeForPrompt(systemAppend) : '';
-        const effectiveSystemPrompt = sanitizedAppend
-          ? `${systemPrompt}\n\n---\n\n${sanitizedAppend}`
-          : systemPrompt;
-
         const llmStartMs = Date.now();
-        const llmPromptChars = effectiveSystemPrompt.length + userPrompt.length;
+        const llmPromptChars = systemPrompt.length + userPrompt.length;
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: { ...providerHeaders, 'User-Agent': CHROME_UA },
           body: JSON.stringify({
             model,
             messages: [
-              { role: 'system', content: effectiveSystemPrompt },
+              { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
             ],
             temperature: 0.3,

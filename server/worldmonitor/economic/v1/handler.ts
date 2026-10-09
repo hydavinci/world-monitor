@@ -1,3 +1,4 @@
+import { denyRetiredRpc } from '../../../../api/_retired-routes.js';
 import type { EconomicServiceHandler } from '../../../../src/generated/server/worldmonitor/economic/v1/service_server';
 
 import { getFredSeries } from './get-fred-series';
@@ -11,7 +12,6 @@ import { getBisExchangeRates } from './get-bis-exchange-rates';
 import { getBisCredit } from './get-bis-credit';
 import { listGroceryBasketPrices } from './list-grocery-basket-prices';
 import { listBigMacPrices } from './list-bigmac-prices';
-import { getNationalDebt } from './get-national-debt';
 import { listFuelPrices } from './list-fuel-prices';
 import { getBlsSeries } from './get-bls-series';
 import { getEconomicCalendar } from './get-economic-calendar';
@@ -27,7 +27,6 @@ import { getFaoFoodPriceIndex } from './get-fao-food-price-index';
 import { getOilStocksAnalysis } from './get-oil-stocks-analysis';
 import { getOilInventories } from './get-oil-inventories';
 import { getEnergyCrisisPolicies } from './get-energy-crisis-policies';
-import { listGlobalTenders } from './list-global-tenders';
 import { getChinaMacroSnapshot } from './get-china-macro-snapshot';
 import { getChinaActivityNowcast } from './get-china-activity-nowcast';
 import { getUsCpiMonthly } from './get-us-cpi-monthly';
@@ -48,7 +47,7 @@ export const economicHandler: EconomicServiceHandler = {
   getBisCredit,
   listGroceryBasketPrices,
   listBigMacPrices,
-  getNationalDebt,
+  getNationalDebt: denyRetiredRpc,
   listFuelPrices,
   getBlsSeries,
   getEconomicCalendar,
@@ -64,7 +63,7 @@ export const economicHandler: EconomicServiceHandler = {
   getOilStocksAnalysis,
   getOilInventories,
   getEnergyCrisisPolicies,
-  listGlobalTenders,
+  listGlobalTenders: denyRetiredRpc,
   getChinaMacroSnapshot,
   getChinaActivityNowcast,
   getUsCpiMonthly,

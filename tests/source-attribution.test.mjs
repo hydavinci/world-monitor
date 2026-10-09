@@ -460,10 +460,30 @@ test('C4S CAD and TPS Open Data stay distinct catalog identities on the shared A
 });
 
 test('uppercase URL constants are included in the upstream inventory', () => {
+  const fixture = makeFixtureCheckout();
+  try {
+    writeFileSync(join(fixture.dir, 'server/public-source.ts'),
+      "const BASE_V2 = 'https://uppercase-v2.example/v2/';\n"
+      + "const BASE_V3 = 'https://uppercase-v3.example/v3/';\n");
+    const inventory = scanUpstreamHosts(fixture.dir);
+    for (const host of ['uppercase-v2.example', 'uppercase-v3.example']) {
+      const entry = inventory.find(candidate => candidate.host === host);
+      assert.ok(entry, `${host}: BASE_V2/BASE_V3 URL constants must be attributed`);
+      assert.deepEqual(entry.references, [{ path: 'server/public-source.ts' }]);
+    }
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('the public RPC parsing origin is observed but never counted as an upstream provider', () => {
   const inventory = scanUpstreamHosts(rootDir);
-  const travelpayouts = inventory.find((entry) => entry.host === 'api.travelpayouts.com');
-  assert.ok(travelpayouts, 'BASE_V2/BASE_V3 URL constants must be attributed');
-  assert.ok(travelpayouts.references.some((reference) => reference.path.endsWith('travelpayouts_data.ts')));
+  const observed = inventory.find(entry => entry.host === 'public.invalid');
+  assert.ok(observed, 'the parser origin remains visible to inventory review');
+  assert.ok(observed.references.some(reference => reference.path === 'src/services/public-rpc-policy.ts'));
+  const manifest = buildManifest([observed], { entries: [] });
+  assert.equal(manifest.entries[0].status, 'excluded');
+  assert.equal(activeSourceAttributionEntries(manifest).length, 0);
 });
 
 test('live HLS playback origins are observed with an explicit presentation exclusion', () => {

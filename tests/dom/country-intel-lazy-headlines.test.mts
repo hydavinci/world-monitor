@@ -9,10 +9,6 @@ const coverageMocks = vi.hoisted(() => ({
   premiumFetch: vi.fn(),
 }));
 
-vi.mock('@/services/premium-fetch', () => ({
-  premiumFetch: (...args: unknown[]) => coverageMocks.premiumFetch(...args),
-}));
-
 vi.mock('@/components/CountryDeepDivePanel', () => ({
   CountryDeepDivePanel: function CountryDeepDivePanel() {
     return coverageMocks.createPanel();
@@ -57,11 +53,6 @@ vi.mock('@/services/supply-chain', async (importOriginal) => ({
   fetchCountryProducts: async () => [],
   fetchMultiSectorCostShock: async () => null,
   fetchCountryVulnerabilities: async () => null,
-}));
-
-vi.mock('@/services/panel-gating', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/services/panel-gating')>(),
-  hasPremiumAccess: () => false,
 }));
 
 vi.mock('@/services/analysis-framework-store', async (importOriginal) => ({
@@ -259,36 +250,5 @@ describe('CountryIntelManager lazy coverage headlines', () => {
     expect(newsUpdates.some((batch) => batch.some((item) => item.title === secondCountryHeadline.title)))
       .toBe(false);
     expect(newsUpdates[newsUpdates.length - 1]?.map((item: NewsItem) => item.title)).toEqual([eagerHeadline.title]);
-  });
-
-  it('passes only well-formed evidence items from the brief response to the page', async () => {
-    coverageMocks.fetchCountryCoverage.mockResolvedValue({ headlines: [], timelineEvents: [] });
-    const validItem = {
-      id: 'E2',
-      kind: 'resilience',
-      label: 'Fiscal space',
-      value: '28/100',
-      factText: 'Fiscal space scores 28 of 100.',
-      asOf: '2026-09-01',
-      url: 'https://www.worldmonitor.app/country/US',
-    };
-    coverageMocks.premiumFetch.mockImplementation(async (url: string) => {
-      if (!String(url).includes('get-country-intel-brief')) throw new Error('offline');
-      return new Response(JSON.stringify({
-        brief: 'SITUATION NOW\nFiscal space scores 28 of 100. [E2]',
-        sources: [],
-        evidence: [validItem, null, { label: 'No id', value: '1' }, { id: 7, label: 'Number id', value: '2' }, 'E3'],
-        generatedAt: 1758585600000,
-        cached: false,
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    });
-
-    const { briefUpdates, open } = createBriefHarness([], { realBriefFetch: true });
-    await open();
-    await vi.waitFor(() => expect(briefUpdates.some((update) => update.brief)).toBe(true));
-
-    const update = briefUpdates.find((entry) => entry.brief)!;
-    expect(update.brief).toBe('SITUATION NOW\nFiscal space scores 28 of 100. [E2]');
-    expect(update.evidence).toEqual([validItem]);
   });
 });

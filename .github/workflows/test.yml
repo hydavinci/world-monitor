@@ -3,7 +3,7 @@ name: Test
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [ main ]
 
 # A superseded PR run owes nobody a verdict. Branch protection and
 # deploy-gate.sh both evaluate the head SHA only. Letting it finish burned
@@ -26,7 +26,6 @@ jobs:
     outputs:
       code: ${{ steps.diff.outputs.code }}
       browser: ${{ steps.diff.outputs.browser }}
-      digest: ${{ steps.diff.outputs.digest }}
       validation: ${{ steps.diff.outputs.validation }}
       umami: ${{ steps.diff.outputs.umami }}
       consumer_prices: ${{ steps.diff.outputs.consumer_prices }}
@@ -38,7 +37,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Specialized jobs (desktop-rust, umami, digest, …) are path-filtered
+          # Specialized jobs (desktop-rust, umami, …) are path-filtered
           # on PRs. Do the same on push to main. Forcing them true here used to
           # compile the Tauri crate and rebuild Umami images on every merge —
           # weather, news, embed — which is not a desktop or analytics gate.
@@ -47,7 +46,6 @@ jobs:
           emit_all_true() {
             echo "browser=true" >> "$GITHUB_OUTPUT"
             echo "code=true" >> "$GITHUB_OUTPUT"
-            echo "digest=true" >> "$GITHUB_OUTPUT"
             echo "validation=true" >> "$GITHUB_OUTPUT"
             echo "umami=true" >> "$GITHUB_OUTPUT"
             echo "consumer_prices=true" >> "$GITHUB_OUTPUT"
@@ -176,16 +174,6 @@ jobs:
             END { print count + 0 }
           ')
           echo "browser=$( [ "$BROWSER" -gt 0 ] && echo true || echo false )" >> "$GITHUB_OUTPUT"
-          # digest-image job: build Dockerfile.digest-notifications when a PR
-          # touches its inputs (scripts/, shared/, server/_shared/, api/, the
-          # Dockerfile itself, or the root package manifest). Catches the
-          # cross-directory-import + native-dep breakage class documented in
-          # tests/dockerfile-digest-notifications-imports.test.mjs.
-          DIGEST=$(printf '%s\n' "$FILES" | awk '
-            /^(scripts\/|shared\/|server\/_shared\/|api\/|\.dockerignore$|Dockerfile\.digest-notifications|package\.json|package-lock\.json)/ { count++ }
-            END { print count + 0 }
-          ')
-          echo "digest=$( [ "$DIGEST" -gt 0 ] && echo true || echo false )" >> "$GITHUB_OUTPUT"
           # resilience-validation-smoke job: run the no-secrets artifact/schema
           # and script-contract gate when the validation bundle, its Dockerfile,
           # its committed artifacts, or its focused tests change.
@@ -319,7 +307,7 @@ jobs:
         # denominator to this matrix's length, and tests/data-test-shards.test.mjs
         # reads the matrix and proves the shards together run the inventory
         # exactly once.
-        shard: [1, 2, 3]
+        shard: [ 1, 2, 3 ]
     timeout-minutes: 15
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -339,7 +327,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
-            pro-test/package-lock.json
             blog-site/package-lock.json
       - uses: ./.github/actions/install-root-deps
       - name: Install blog-site deps for SEO contract tests
@@ -392,7 +379,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
-            pro-test/package-lock.json
             blog-site/package-lock.json
       - uses: ./.github/actions/install-root-deps
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -481,12 +467,6 @@ jobs:
           npm run ci:blog-site
           npm --prefix blog-site run build
           npm --prefix blog-site run verify:guides
-      - name: Build /pro artifacts for built-output tests
-        # public/pro/ stopped being committed in #6898, so the suites that read
-        # it need the same treatment dist/ already gets. Ordered before the
-        # dashboard build to mirror production: root `vite build` copies
-        # public/ into dist/, so /pro must exist by then.
-        run: npm run build:pro
       - name: Build dashboard artifacts for built-output tests
         run: VITE_VARIANT=full ./node_modules/.bin/vite build
       - name: Client bundle size budget (#7111, #7119)
@@ -549,7 +529,7 @@ jobs:
         run: node scripts/check-desktop-build-env.mjs
 
   unit:
-    needs: [changes, unit-shards, unit-built-output]
+    needs: [ changes, unit-shards, unit-built-output ]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -601,10 +581,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready --username=postgres --dbname=umami_integration"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+          --health-cmd "pg_isready --username=postgres --dbname=umami_integration" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -789,7 +766,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [ 1, 2 ]
     timeout-minutes: 20
     needs: changes
     if: needs.changes.outputs.browser == 'true'
@@ -1000,11 +977,6 @@ jobs:
           done
           sudo dpkg --configure -a || true
           npx playwright install --with-deps chromium
-      - name: Build /pro artifacts for prehydration browser checks
-        # public/pro/ is built output since #6898. Keep this explicit and
-        # immediately before the focused spec so the browser checks cannot run
-        # against missing or stale bytes from another build.
-        run: npm run build:pro
       - name: Run fail-closed prehydration browser checks
         id: prehydration
         run: npm run test:e2e:prehydration
@@ -1013,43 +985,6 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: playwright-prehydration-${{ github.run_id }}-${{ github.run_attempt }}
-          path: test-results/
-          if-no-files-found: ignore
-          retention-days: 14
-      # Named explicitly for the same reason as the ci-smoke set above: nothing
-      # runs the e2e/ glob, so this gate reported green while never executing.
-      # It reads the same public/pro/ bytes the build step above produced, and
-      # nothing between here and there rebuilds them -- it sits after the
-      # prehydration upload rather than beside its build because
-      # dashboard-build-guards.test.mjs pins that build/prehydration pair as
-      # literally adjacent text.
-      - name: Run critical-CSS layout-shift gate
-        id: pro-cls
-        run: npm run test:e2e:pro-cls
-      # Its own upload, per the rule above: Playwright clears test-results/ when
-      # the next run starts, so the WebMCP step would otherwise delete this
-      # gate's failure trace before anyone could read it.
-      - name: Upload critical-CSS CLS Playwright artifacts
-        if: ${{ !cancelled() && steps.pro-cls.outcome != 'skipped' }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: playwright-pro-cls-${{ github.run_id }}-${{ github.run_attempt }}
-          path: test-results/
-          if-no-files-found: ignore
-          retention-days: 14
-      # Named explicitly for the same reason as the gates above: nothing runs
-      # the e2e/ glob, so an unnamed spec would never execute. It reads the same
-      # public/pro/ bytes the build step above produced.
-      - name: Run /pro hero native-animation gate
-        id: pro-hero
-        run: npm run test:e2e:pro-hero
-      # Its own upload: Playwright clears test-results/ when the next run
-      # starts, so a later step would delete this gate's failure trace.
-      - name: Upload /pro hero animation Playwright artifacts
-        if: ${{ !cancelled() && steps.pro-hero.outcome != 'skipped' }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: playwright-pro-hero-${{ github.run_id }}-${{ github.run_attempt }}
           path: test-results/
           if-no-files-found: ignore
           retention-days: 14
@@ -1075,7 +1010,7 @@ jobs:
           retention-days: 14
 
   variant-smoke-full:
-    needs: [changes, variant-smoke-shards, variant-smoke-pro-webmcp]
+    needs: [ changes, variant-smoke-shards, variant-smoke-pro-webmcp ]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -1096,43 +1031,3 @@ jobs:
             echo "Variant smoke jobs did not satisfy the change selection."
             exit 1
           fi
-
-  # The focused suite is already inside `unit` / test:data. This job exists
-  # only for validation-docs PRs that skip `unit` (docs/ is carved out of
-  # `code`). `validation` alone also fired on every code PR and push, paying
-  # a second npm ci for files unit had just run, so it is gated on `code` as
-  # well (#7772); deploy-gate counts the resulting skip as passing.
-  resilience-validation-smoke:
-    needs: changes
-    if: needs.changes.outputs.validation == 'true' && needs.changes.outputs.code != 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-      - uses: ./.github/actions/install-root-deps
-      - run: npm run test:resilience-validation-smoke
-
-  digest-image:
-    needs: changes
-    if: needs.changes.outputs.digest == 'true'
-    runs-on: ubuntu-latest
-    # docker build with the warm runner cache typically lands in ~90s.
-    # 20min cap catches base-image-pull stalls, npm-registry flakes, and
-    # native-dep compile failures without letting one bad PR check block
-    # the queue for an hour. The static BFS import test in test:data
-    # remains the load-bearing gate; this job is the integration smoke.
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - name: Build digest-notifications image (smoke)
-        # No push, no tag publish. Catches cross-directory-import breakage
-        # before it reaches main. Pairs with the BFS import test in
-        # tests/dockerfile-digest-notifications-imports.test.mjs — that test
-        # walks the import graph statically; this job actually executes the
-        # COPY+install steps and surfaces native-dep / package-lock issues
-        # the static walk can't see.
-        run: docker build -f Dockerfile.digest-notifications -t wm-digest .

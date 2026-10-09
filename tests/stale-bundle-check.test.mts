@@ -1,11 +1,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { installStaleBundleCheck } from '../src/bootstrap/stale-bundle-check.ts';
-import {
-  _resetSentryDeferStateForTests,
-  _setSentryLoaderForTests,
-  scheduleSentryInit,
-} from '../src/bootstrap/sentry-defer.ts';
 import { RELOAD_BLOCKING_MODAL_SELECTOR, RELOAD_POLICY_ATTR, type VisibleElementLike } from '../src/utils/open-modal.ts';
 import type { DeferralReport } from '../src/bootstrap/stale-bundle-check.ts';
 
@@ -146,49 +141,6 @@ function install(
     ...(useDefaultReporter ? {} : { reportDeferral: (report: DeferralReport) => { env.deferralReports.push(report); } }),
     now: () => env.clock.value,
   });
-}
-
-function restoreGlobalProperty(name: 'window' | 'setTimeout', descriptor: PropertyDescriptor | undefined): void {
-  if (descriptor) {
-    Object.defineProperty(globalThis, name, descriptor);
-  } else {
-    Reflect.deleteProperty(globalThis, name);
-  }
-}
-
-/**
- * Drain everything queued through `enqueueSentryCall` into a recording
- * `captureMessage`, the way tests/sentry-defer-replay.test.mts drives the real
- * deferred-init path: a bare `window` so init schedules at all, and a captured
- * `setTimeout` so the 10s audit-window delay is a callback we invoke.
- */
-async function drainSentryCalls(): Promise<Array<{ message: string; tags: Record<string, string> }>> {
-  const captured: Array<{ message: string; tags: Record<string, string> }> = [];
-  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-  const previousSetTimeout = Object.getOwnPropertyDescriptor(globalThis, 'setTimeout');
-  let delayedCallback: (() => void) | null = null;
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    value: { addEventListener() {}, removeEventListener() {} },
-  });
-  Object.defineProperty(globalThis, 'setTimeout', {
-    configurable: true,
-    value: (cb: () => void) => { delayedCallback = cb; return 1; },
-  });
-  _setSentryLoaderForTests(async () => ({
-    captureMessage(message: string, context: { tags: Record<string, string> }) {
-      captured.push({ message, tags: context.tags });
-    },
-  } as never));
-  try {
-    const initPromise = scheduleSentryInit();
-    delayedCallback?.();
-    await initPromise;
-  } finally {
-    restoreGlobalProperty('window', previousWindow);
-    restoreGlobalProperty('setTimeout', previousSetTimeout);
-  }
-  return captured;
 }
 
 async function fireFocus(env: FakeEnv): Promise<void> {
@@ -484,47 +436,34 @@ describe('installStaleBundleCheck', () => {
     assert.deepEqual(env.deferralReports.map((r) => r.reloadPolicy), ['blocking', 'blocking']);
   });
 
-  it('default reporter sends nothing to Sentry when an episode only starts', async () => {
-    // A modal open when a deploy lands is the state this guard exists for, not
-    // a failure. Reporting it made WORLDMONITOR-15X an always-open issue.
-    _resetSentryDeferStateForTests();
-    try {
-      env.fetchResponse = { ok: true, status: 200, body: 'sha-newer-deploy' };
-      env.modal = 'open-declared-blocking';
-      install(env, 'sha-running-bundle', 60_000, 3, true);
-      await fireFocus(env);
-      assert.equal(env.reloadCalls, 0, 'precondition: the reload was deferred');
-
-      const captured = await drainSentryCalls();
-      assert.equal(captured.length, 0, 'an episode start is expected and stays out of Sentry');
-    } finally {
-      _resetSentryDeferStateForTests();
-    }
+  it('default reporter does not warn when an expected deferral only starts', async (t) => {
+    const messages: unknown[][] = [];
+    t.mock.method(console, 'warn', (...args: unknown[]) => { messages.push(args); });
+    env.fetchResponse = { ok: true, status: 200, body: 'sha-newer-deploy' };
+    env.modal = 'open-declared-blocking';
+    install(env, 'sha-running-bundle', 60_000, 3, true);
+    await fireFocus(env);
+    assert.equal(env.reloadCalls, 0);
+    assert.ok(!messages.some(args => args[0] === '[stale-bundle] reload still deferred, modal never closed'));
   });
 
-  it('default reporter publishes a suspected wedge with reload_policy beside blocked_by', async () => {
-    // Pins the tag set an alert rule keys on, through the real deferred Sentry
-    // queue rather than the recording fake the other tests use.
-    _resetSentryDeferStateForTests();
-    try {
-      env.fetchResponse = { ok: true, status: 200, body: 'sha-newer-deploy' };
-      env.modal = 'open-declared-blocking';
-      install(env, 'sha-running-bundle', 60_000, 3, true);
-      for (let i = 0; i < 3; i++) {
-        env.clock.tick(5 * 60_000);
-        await fireFocus(env);
-      }
-      assert.equal(env.reloadCalls, 0, 'precondition: the reload stayed deferred');
-
-      const captured = await drainSentryCalls();
-      assert.equal(captured.length, 1, 'one Sentry message per wedged episode');
-      assert.equal(captured[0]?.message, '[stale-bundle] reload still deferred, modal never closed');
-      assert.equal(captured[0]?.tags.blocked_by, 'modal-overlay');
-      assert.equal(captured[0]?.tags.reload_policy, 'blocking');
-      assert.equal(captured[0]?.tags.deferrals, '3');
-    } finally {
-      _resetSentryDeferStateForTests();
+  it('default reporter warns locally with the suspected wedge and reload policy', async (t) => {
+    const messages: unknown[][] = [];
+    t.mock.method(console, 'warn', (...args: unknown[]) => { messages.push(args); });
+    env.fetchResponse = { ok: true, status: 200, body: 'sha-newer-deploy' };
+    env.modal = 'open-declared-blocking';
+    install(env, 'sha-running-bundle', 60_000, 3, true);
+    for (let i = 0; i < 3; i++) {
+      env.clock.tick(5 * 60_000);
+      await fireFocus(env);
     }
+    assert.equal(env.reloadCalls, 0);
+    const warnings = messages.filter(args => args[0] === '[stale-bundle] reload still deferred, modal never closed');
+    assert.equal(warnings.length, 1);
+    const report = warnings[0]?.[1] as DeferralReport;
+    assert.equal(report.blockedBy, 'modal-overlay');
+    assert.equal(report.reloadPolicy, 'blocking');
+    assert.equal(report.deferrals, 3);
   });
 
   it('reports a suspected wedge once when an overlay outlasts any plausible email wait', async () => {

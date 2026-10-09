@@ -3,8 +3,8 @@
 // Registers a small set of tools via `document.modelContext.registerTool`
 // so browsers implementing the current WebMCP API can drive the site the same
 // way a human does. Tools MUST route through existing UI code paths so agents
-// inherit every auth/entitlement gate a browser user is subject to — they are
-// not a backdoor around the paywall.
+// inherit the dashboard's public availability, validation, and cancellation
+// rules rather than bypassing its controls.
 //
 // Current tools mirror the static Agent Skills set (#3310) and add bounded
 // live-dashboard context/actions through the existing agent-bus seam (#6211):
@@ -39,92 +39,89 @@
 //  29. open_mission_picker()      — opens the mission preset picker.
 //  30. list_followed_countries()  — reads the current followed-country list.
 //  31. set_country_followed()     — follows or unfollows one country.
-//  32. get_access_context()       — reads signed-out / loading / signed-in access.
-//  33. open_sign_in()             — opens the existing Clerk sign-in dialog.
+//  32. get_access_context()       — reads public dashboard capabilities.
 //
-// No tool is conditionally registered. Live controls re-check auth and
-// entitlement through the agent-bus applier on every invocation, so a single
-// registration remains correct across sign-in/sign-out.
+// No tool is conditionally registered. Live controls re-check current dashboard
+// availability through the agent-bus applier on every invocation.
 //
 // Scanner compatibility: WebMCP scanners probe for
 // `document.modelContext.registerTool` invocations during initial page load.
 // Register synchronously from the dashboard entry before loading App. Tool
 // callbacks await App bindings, so discovery does not wait for the UI bundle.
 
-import { trackPrivacyRestricted, type UmamiEvent } from './analytics';
+import {
+DASHBOARD_COUNTRY_CODE_PATTERN,
+DASHBOARD_LAYER_ACTION_TARGET_ID_PATTERN,
+DASHBOARD_MAP_MAX_LATITUDE,
+DASHBOARD_MAP_MODES,
+DASHBOARD_MAP_VIEWS,
+DASHBOARD_TIME_RANGES,
+MAX_LAYER_ACTION_TARGETS,
+MAX_LAYER_ACTION_TARGET_ID_LENGTH,
+} from '../../shared/agent-bus-contract';
+import { SET_PANEL_ENABLED_ID_PATTERN,type SetPanelEnabledResult } from '../config/panel-enablement';
+import { SITE_VARIANTS,isSiteVariant,type SiteVariant } from '../config/variant';
+import {
+WEBMCP_SPA_TOOL,
+WEBMCP_SPA_TOOL_NAMES,
+WEBMCP_TOOL_BUDGETS,
+type WebMcpSpaToolName,
+} from '../config/webmcp';
 import { markLcpDebug } from '../utils/lcp-debug';
 import {
-  WEBMCP_SPA_TOOL,
-  WEBMCP_SPA_TOOL_NAMES,
-  WEBMCP_TOOL_BUDGETS,
-  type WebMcpSpaToolName,
-} from '../config/webmcp';
-import { SITE_VARIANTS, isSiteVariant, type SiteVariant } from '../config/variant';
-import {
-  DASHBOARD_PANEL_CATALOG_CATEGORY_KEYS,
-  DASHBOARD_PANEL_CATALOG_DEFAULT_LIMIT,
-  DASHBOARD_PANEL_CATALOG_MAX_LIMIT,
-  DASHBOARD_PANEL_CATALOG_OUTPUT_TARGET_CHARS,
-  DASHBOARD_PANEL_CATEGORY_MAX_CHARS,
-  DASHBOARD_PANEL_ID_MAX_CHARS,
-  DASHBOARD_PANEL_ID_PATTERN,
-  DASHBOARD_PANEL_LABEL_MAX_CHARS,
-  DashboardPanelCatalogError,
-  type DashboardPanelCatalogItem,
-  type DashboardPanelCatalogPage,
-  type DashboardPanelCatalogQuery,
-  type DashboardPanelUnavailableReason,
-} from './webmcp-panel-catalog';
-import {
-  DASHBOARD_MAP_MAX_LATITUDE,
-  DASHBOARD_MAP_MODES,
-  DASHBOARD_MAP_VIEWS,
-  DASHBOARD_TIME_RANGES,
-  DASHBOARD_COUNTRY_CODE_PATTERN,
-  DASHBOARD_LAYER_ACTION_TARGET_ID_PATTERN,
-  MAX_LAYER_ACTION_TARGET_ID_LENGTH,
-  MAX_LAYER_ACTION_TARGETS,
-} from '../../shared/agent-bus-contract';
-import {
-  DASHBOARD_TAB_ID_PATTERN,
-  DASHBOARD_TAB_NAME_MAX_LENGTH,
-  isDashboardTabId,
-  isDashboardTabListSnapshot,
-  mutationDenied,
-  type DashboardTabAction,
-  type DashboardTabActionResult,
-  type DashboardTabListSnapshot,
-  type DashboardTabMutationResult,
+DASHBOARD_TAB_ID_PATTERN,
+DASHBOARD_TAB_NAME_MAX_LENGTH,
+isDashboardTabId,
+isDashboardTabListSnapshot,
+mutationDenied,
+type DashboardTabAction,
+type DashboardTabActionResult,
+type DashboardTabListSnapshot,
+type DashboardTabMutationResult,
 } from './dashboard-tab-actions';
-import {
-  DEFAULT_MAP_LAYER_PAGE_SIZE,
-  MAX_MAP_LAYER_PAGE_SIZE,
-  WEBMCP_MAP_LAYER_MONITORS,
-  WEBMCP_MAP_LAYER_RENDERERS,
-  WEBMCP_MAP_LAYER_STATES,
-  listMapLayerCatalog,
-  parseMapLayerCatalogArgs,
-  type MapLayerCatalogSnapshot,
-} from './webmcp-map-layer-catalog';
-import { SET_PANEL_ENABLED_ID_PATTERN, type SetPanelEnabledResult } from '../config/panel-enablement';
-import {
-  MISSION_PRESET_APPLY_DENY_REASONS,
-  MissionPresetCatalogError,
-  isMissionPresetId,
-  type MissionPresetApplyDenyReason,
-  type MissionPresetCatalogQuery,
-  type MissionPresetCatalogResult,
-} from './webmcp-mission-preset-catalog';
 import type { MissionPresetId } from './mission-presets';
 import type {
-  PanelLayoutMutationResult,
-  PanelLayoutSnapshot,
+PanelLayoutMutationResult,
+PanelLayoutSnapshot,
 } from './panel-layout-actions';
 import {
-  PANEL_LAYOUT_DENIAL_REASONS,
-  PANEL_LAYOUT_ID_MAX_CHARS,
-  PANEL_LAYOUT_REGIONS,
+PANEL_LAYOUT_DENIAL_REASONS,
+PANEL_LAYOUT_ID_MAX_CHARS,
+PANEL_LAYOUT_REGIONS,
 } from './panel-layout-actions';
+import {
+DEFAULT_MAP_LAYER_PAGE_SIZE,
+MAX_MAP_LAYER_PAGE_SIZE,
+WEBMCP_MAP_LAYER_MONITORS,
+WEBMCP_MAP_LAYER_RENDERERS,
+WEBMCP_MAP_LAYER_STATES,
+listMapLayerCatalog,
+parseMapLayerCatalogArgs,
+type MapLayerCatalogSnapshot,
+} from './webmcp-map-layer-catalog';
+import {
+MISSION_PRESET_APPLY_DENY_REASONS,
+MissionPresetCatalogError,
+isMissionPresetId,
+type MissionPresetApplyDenyReason,
+type MissionPresetCatalogQuery,
+type MissionPresetCatalogResult,
+} from './webmcp-mission-preset-catalog';
+import {
+DASHBOARD_PANEL_CATALOG_CATEGORY_KEYS,
+DASHBOARD_PANEL_CATALOG_DEFAULT_LIMIT,
+DASHBOARD_PANEL_CATALOG_MAX_LIMIT,
+DASHBOARD_PANEL_CATALOG_OUTPUT_TARGET_CHARS,
+DASHBOARD_PANEL_CATEGORY_MAX_CHARS,
+DASHBOARD_PANEL_ID_MAX_CHARS,
+DASHBOARD_PANEL_ID_PATTERN,
+DASHBOARD_PANEL_LABEL_MAX_CHARS,
+DashboardPanelCatalogError,
+type DashboardPanelCatalogItem,
+type DashboardPanelCatalogPage,
+type DashboardPanelCatalogQuery,
+type DashboardPanelUnavailableReason,
+} from './webmcp-panel-catalog';
 
 export interface WebMcpAppBindings {
   openCountryBriefByCode(
@@ -227,9 +224,6 @@ export interface WebMcpAppBindings {
   getAccessContext(
     options?: WebMcpExecutionOptions,
   ): AccessContextSnapshot | Promise<AccessContextSnapshot>;
-  openSignIn(
-    options?: WebMcpExecutionOptions,
-  ): OpenSignInResult | Promise<OpenSignInResult>;
 }
 
 export interface ApplyMissionPresetResult {
@@ -257,7 +251,7 @@ export interface FollowedCountryListResult {
   enabled: boolean;
   countries: string[];
   count: number;
-  access: 'free' | 'pro' | 'loading';
+  access: 'local';
   limit: number | null;
 }
 
@@ -365,30 +359,14 @@ export interface WebMcpNavigationResult {
   context: DashboardContextSnapshot;
 }
 
-export type WebMcpAccountState = 'signed_out' | 'loading' | 'signed_in';
-export type WebMcpClerkState = 'unavailable' | 'loading' | 'ready';
-export type WebMcpProductTier = 'anonymous' | 'free' | 'pro' | 'unknown';
-
 export interface AccessContextSnapshot {
-  accountState: WebMcpAccountState;
-  clerk: WebMcpClerkState;
-  productTier: WebMcpProductTier;
-  capabilities: {
-    premiumAccess: boolean;
-    apiAccess: boolean;
-    mcpAccess: boolean;
-    dataExport: boolean;
-  };
+  mode: 'public';
+  capabilities: { dataExport: boolean };
   limits: {
     enabledPanels: { used: number; cap: number | null };
     dashboardTabs: { used: number; cap: number | null; canCreate: boolean };
   };
 }
-
-export type OpenSignInResult =
-  | { ok: true; status: 'opened' }
-  | { ok: true; status: 'already_open'; reason: 'already_open' }
-  | { ok: false; status: 'denied'; reason: 'clerk_unavailable' };
 
 export type DashboardActionStatus = 'applied' | 'denied' | 'invalid' | 'skipped';
 
@@ -442,7 +420,7 @@ export class DashboardBindingError extends Error {
   }
 }
 
-type WebMcpAnalytics = (event: UmamiEvent, data?: Record<string, unknown>) => void;
+type WebMcpDiagnosticObserver = (event: string, data?: Record<string, unknown>) => void;
 type WebMcpInvocationOutcome = 'success' | 'denied' | 'failure';
 type WebMcpInvocationReason =
   | 'completed'
@@ -482,7 +460,7 @@ interface WebMcpRegistrationRuntime {
   document?: Pick<Document, 'modelContext' | 'addEventListener'>;
   navigator?: { modelContext?: LegacyWebMcpProvider };
   window?: Pick<Window, 'addEventListener'>;
-  track?: WebMcpAnalytics;
+  onDiagnostic?: WebMcpDiagnosticObserver;
 }
 
 const ISO2 = /^[A-Z]{2}$/;
@@ -543,7 +521,6 @@ export const WEBMCP_TOOL_CANCELLATION_POLICY: Readonly<
   [WEBMCP_SPA_TOOL.switchMonitor]: 'cancellation-required',
   [WEBMCP_SPA_TOOL.openSettings]: 'view-state',
   [WEBMCP_SPA_TOOL.openAlerts]: 'view-state',
-  [WEBMCP_SPA_TOOL.openSignIn]: 'view-state',
   [WEBMCP_SPA_TOOL.openDashboardPanel]: 'view-state',
   [WEBMCP_SPA_TOOL.setPanelEnabled]: 'cancellation-required',
   [WEBMCP_SPA_TOOL.setPanelCollapsed]: 'cancellation-required',
@@ -648,7 +625,6 @@ const TOOL_FAILURE_MESSAGES: Record<WebMcpSpaToolName, string> = {
   list_followed_countries: 'World Monitor could not list followed countries.',
   set_country_followed: 'World Monitor could not update that followed country.',
   get_access_context: 'World Monitor could not read access context.',
-  open_sign_in: 'World Monitor could not open sign-in.',
 };
 export const WEBMCP_UNSUPPORTED_CANCELLATION_MESSAGE =
   'This browser cannot cancel work already running in the page, so World Monitor '
@@ -675,14 +651,14 @@ class SafeWebMcpError extends Error {
 }
 
 function reportWebMcpEvent(
-  trackEvent: WebMcpAnalytics,
-  event: UmamiEvent,
+  trackEvent: WebMcpDiagnosticObserver | undefined,
+  event: string,
   data: Record<string, unknown>,
 ): void {
   try {
-    trackEvent(event, data);
-  } catch {
-    // Optional telemetry must never affect registration or tool execution.
+    trackEvent?.(event, data);
+  } catch (error) {
+    console.warn('[WebMCP] Local diagnostic observer failed', error);
   }
 }
 
@@ -776,7 +752,7 @@ function withInvocationLogging(
     input: Record<string, unknown>,
     extra?: { signal?: AbortSignal },
   ) => Promise<unknown> | unknown,
-  trackEvent: WebMcpAnalytics,
+  trackEvent: WebMcpDiagnosticObserver | undefined,
   hooks: WebMcpInvocationHooks = {},
 ): DashboardWebMcpTool['execute'] {
   return async (args, extra?: WebMcpToolExecutionContext) => {
@@ -869,6 +845,7 @@ const VALIDATION_DENIAL_REASONS = new Set([
   'invalid_name',
   'confirmation_required',
   'last_tab',
+  'main_tab',
   'invalid_monitor',
   'invalid_renderer',
   'invalid_state',
@@ -1098,13 +1075,7 @@ function boundDashboardCompatibility(
   };
 }
 
-const ACCOUNT_STATES = new Set<WebMcpAccountState>(['signed_out', 'loading', 'signed_in']);
-const CLERK_STATES = new Set<WebMcpClerkState>(['unavailable', 'loading', 'ready']);
-const PRODUCT_TIERS = new Set<WebMcpProductTier>(['anonymous', 'free', 'pro', 'unknown']);
 
-function oneOf<T extends string>(value: unknown, allowed: ReadonlySet<T>, fallback: T): T {
-  return typeof value === 'string' && allowed.has(value as T) ? value as T : fallback;
-}
 
 function optionalCap(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -1120,15 +1091,8 @@ export function boundWebMcpAccessContext(
   const enabledPanels = snapshot.limits?.enabledPanels;
   const dashboardTabs = snapshot.limits?.dashboardTabs;
   return {
-    accountState: oneOf(snapshot.accountState, ACCOUNT_STATES, 'loading'),
-    clerk: oneOf(snapshot.clerk, CLERK_STATES, 'unavailable'),
-    productTier: oneOf(snapshot.productTier, PRODUCT_TIERS, 'unknown'),
-    capabilities: {
-      premiumAccess: snapshot.capabilities?.premiumAccess === true,
-      apiAccess: snapshot.capabilities?.apiAccess === true,
-      mcpAccess: snapshot.capabilities?.mcpAccess === true,
-      dataExport: snapshot.capabilities?.dataExport === true,
-    },
+    mode: 'public',
+    capabilities: { dataExport: snapshot.capabilities?.dataExport === true },
     limits: {
       enabledPanels: {
         used: Math.max(0, Math.floor(boundedNumber(enabledPanels?.used))),
@@ -1213,15 +1177,6 @@ function boundDashboardSearchResult(result: DashboardSearchResponse): DashboardS
   return bounded;
 }
 
-function boundOpenSignInResult(result: OpenSignInResult): OpenSignInResult {
-  if (result?.ok === true && result.status === 'already_open') {
-    return { ok: true, status: 'already_open', reason: 'already_open' };
-  }
-  if (result?.ok === true && result.status === 'opened') {
-    return { ok: true, status: 'opened' };
-  }
-  return { ok: false, status: 'denied', reason: 'clerk_unavailable' };
-}
 
 function boundSearchOpenResult(result: DashboardSearchOpenResult): DashboardSearchOpenResult {
   const opened = result.ok === true && result.status === 'opened';
@@ -1355,15 +1310,12 @@ function boundFollowedCountryList(result: FollowedCountryListResult): FollowedCo
   const countries = normalizeIdentifiers(result.countries, 2)
     .filter((country) => /^[A-Z]{2}$/.test(country))
     .slice(0, 249);
-  const access = result.access === 'pro' || result.access === 'loading'
-    ? result.access
-    : 'free';
   return {
     ok: true,
     enabled: result.enabled === true,
     countries,
     count: countries.length,
-    access,
+    access: 'local',
     limit: typeof result.limit === 'number'
       ? Math.max(0, Math.floor(boundedNumber(result.limit)))
       : null,
@@ -1574,9 +1526,6 @@ function boundDashboardTabList(
   const activeTabId = boundedText(snapshot.activeTabId, 64);
   const canCreate = snapshot.canCreate === true;
   const cap = snapshot.cap === null || typeof snapshot.cap === 'number' ? snapshot.cap : null;
-  const createBlockReason = snapshot.createBlockReason
-    ? boundedText(snapshot.createBlockReason, 32) as DashboardTabListSnapshot['createBlockReason']
-    : undefined;
 
   let startIndex = 0;
   if (cursor !== undefined) {
@@ -1607,7 +1556,6 @@ function boundDashboardTabList(
     tabsTruncated: nextCursor !== undefined || snapshot.tabsTruncated === true,
     canCreate,
     cap,
-    ...(createBlockReason ? { createBlockReason } : {}),
     ...(nextCursor ? { nextCursor: boundedText(nextCursor, 64) } : {}),
   });
 
@@ -1650,7 +1598,6 @@ function boundDashboardTabMutation(result: DashboardTabMutationResult): Dashboar
     ...(typeof result.tabCount === 'number' ? { tabCount: Math.max(0, Math.floor(result.tabCount)) } : {}),
     ...(typeof result.canCreate === 'boolean' ? { canCreate: result.canCreate } : {}),
     ...(result.cap === null || typeof result.cap === 'number' ? { cap: result.cap } : {}),
-    ...(result.lockReason ? { lockReason: boundedText(result.lockReason, 32) as DashboardTabMutationResult['lockReason'] } : {}),
   };
   if (JSON.stringify(bounded).length > MAX_OUTPUT_CHARS) {
     throw new SafeWebMcpError('Dashboard tab result exceeded the safe output limit.');
@@ -1840,7 +1787,7 @@ export function createWebMcpBindingsGate(
 
 export function buildWebMcpTools(
   bindings: WebMcpAppBindings | Promise<WebMcpAppBindings>,
-  trackEvent: WebMcpAnalytics = trackPrivacyRestricted,
+  trackEvent?: WebMcpDiagnosticObserver,
 ): DashboardWebMcpTool[] {
   const bindingsGate = createWebMcpBindingsGate(bindings);
   let app: WebMcpAppBindings;
@@ -3013,7 +2960,7 @@ export function buildWebMcpTools(
       name: WEBMCP_SPA_TOOL.listFollowedCountries,
       title: 'List Followed Countries',
       description:
-        'Read the current followed-country list through the same anonymous or signed-in state used by the dashboard. Returns only ISO 3166-1 alpha-2 codes, access state, and the free-tier limit.',
+        'Read the locally followed-country list through the dashboard service. Returns ISO 3166-1 alpha-2 codes and public follow capabilities.',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -3038,7 +2985,7 @@ export function buildWebMcpTools(
       name: WEBMCP_SPA_TOOL.setCountryFollowed,
       title: 'Set Country Followed',
       description:
-        'Follow or unfollow one country through the dashboard service that owns ISO validation, access state, the free-tier cap, sign-in handoff, and storage. Idempotent for the requested state. Requires target-side cancellation because it persists state or writes to the signed-in account.',
+        'Follow or unfollow one country through the dashboard service that owns ISO validation and local storage. Idempotent for the requested state. Requires target-side cancellation because it persists local preferences.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -3074,7 +3021,7 @@ export function buildWebMcpTools(
       name: WEBMCP_SPA_TOOL.getAccessContext,
       title: 'Get Access Context',
       description:
-        'Read whether this tab is signed out, still loading account state, or signed in. Returns product tier, capability flags, panel and dashboard-tab limits, and whether the host can cancel tools. Contains no names, emails, account IDs, tokens, or session details.',
+        'Read public dashboard capabilities, panel and dashboard-tab availability, and whether the host can cancel tools. Does not request authentication or credentials.',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -3084,27 +3031,6 @@ export function buildWebMcpTools(
       execute: withBindings(WEBMCP_SPA_TOOL.getAccessContext, async (_args, extra) => (
         boundWebMcpAccessContext(await app.getAccessContext(extra), Boolean(extra?.signal))
       ), trackEvent),
-    },
-    {
-      name: WEBMCP_SPA_TOOL.openSignIn,
-      title: 'Open Sign In',
-      description:
-        'Open the existing Clerk sign-in dialog on this page. Does not accept credentials, one-time codes, or provider choices. Returns a stable reason when Clerk is unavailable or the dialog is already open.',
-      inputSchema: {
-        type: 'object',
-        properties: {},
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false },
-      execute: withBindings(WEBMCP_SPA_TOOL.openSignIn, async (args, extra) => {
-        if (!hasOnlyOwnKeys(args, [])) {
-          throw new SafeWebMcpError(
-            'open_sign_in does not accept credentials or other arguments.',
-            'validation',
-          );
-        }
-        return boundOpenSignInResult(await app.openSignIn(extra));
-      }, trackEvent),
     },
   ];
   const registered = new Set(tools.map((tool) => tool.name));
@@ -3145,7 +3071,7 @@ function observeRegistration(
   provider: Pick<WebMCP.ModelContext, 'registerTool'>,
   tool: DashboardWebMcpTool,
   controller: AbortController,
-  trackEvent: WebMcpAnalytics,
+  trackEvent: WebMcpDiagnosticObserver | undefined,
 ): Promise<boolean> {
   let registration: Promise<void>;
   try {
@@ -3173,7 +3099,7 @@ function startRegistration(
   provider: Pick<WebMCP.ModelContext, 'registerTool'>,
   tools: DashboardWebMcpTool[],
   controller: AbortController,
-  trackEvent: WebMcpAnalytics,
+  trackEvent: WebMcpDiagnosticObserver | undefined,
   api = 'document-current',
 ): void {
   const registrations = tools.map((tool) => (
@@ -3219,7 +3145,7 @@ export function registerWebMcpTools(
 
   const runtimeWindow = runtime.window
     ?? (typeof window === 'undefined' ? null : window);
-  const trackEvent = runtime.track ?? trackPrivacyRestricted;
+  const trackEvent = runtime.onDiagnostic;
   const controller = new AbortController();
   const tools = buildWebMcpTools(raceWebMcpAbort(app, controller.signal), trackEvent);
   let registrationStarted = false;

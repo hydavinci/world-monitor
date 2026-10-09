@@ -30,11 +30,6 @@ vi.mock('@/services/bootstrap', async (importOriginal) => ({
   ensureHydrated: resolvedFeed.ensureHydrated,
 }));
 
-vi.mock('@/services/analytics', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/analytics')>()),
-  track: analytics.track,
-}));
-
 vi.mock('@/services/live-video/youtube-iframe-api', () => ({
   loadYouTubeIframeApi: () => Promise.resolve(loader.blocked ? null : loader.api?.namespace ?? null),
 }));
@@ -248,6 +243,7 @@ beforeEach(() => {
   resolvedFeed.ensureHydrated.mockReset();
   resolvedFeed.ensureHydrated.mockResolvedValue(undefined);
   analytics.track.mockClear();
+  vi.stubGlobal('umami', { track: analytics.track });
   catalog.news.bloomberg = [BLOOMBERG_HLS, 'https://www.youtube.com/watch?v=QB5BNdBFujE'];
   catalog.news.cnn = ['https://www.youtube.com/watch?v=GotlA1KKWoo'];
 });
@@ -872,7 +868,7 @@ describe('Live News resolved channel live videos (#8545)', () => {
 
     expect(resolvedFeed.ensureHydrated).toHaveBeenCalledWith('liveVideoResolved');
     expect(cnnPlayers()).toEqual([B]);
-    expect(resolvedEvents()).toEqual([['live-video-resolved-applied', { slot: 'live-news/cnn', count: 1 }]]);
+    expect(resolvedEvents()).toEqual([]);
 
     api().playerFor('CNN live feed').error(100);
     await flush(POLL);

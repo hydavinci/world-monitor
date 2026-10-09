@@ -20,6 +20,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { MapComponent } from '@/components/Map';
 import type { MapLayers } from '@/types';
+import { renderLayerTruncationBadges } from '@/utils/layer-truncation-badge';
 
 // Standalone rather than `MapComponent & …`: `container` is private on the
 // class, so intersecting the two reduces the whole type to `never`.
@@ -57,6 +58,38 @@ const chip = (map: LayerPicker, layer: string): HTMLButtonElement => {
   return button;
 };
 
+describe('marker-budget disclosures in real layer controls', () => {
+  it('keeps counts outside the toggle and before the rightmost explanation button', () => {
+    const map = createPicker({ datacenters: true });
+    const result = renderLayerTruncationBadges(map.container, { datacenters: { shown: 235, total: 313 } }, 'pan');
+    const row = chip(map, 'datacenters').closest('.layer-toggle-row')!;
+    const badge = row.querySelector<HTMLElement>('.layer-truncation-count')!;
+    const explanation = row.querySelector('.layer-explain-btn');
+    expect(badge.textContent).toBe('235/313');
+    expect(badge.nextElementSibling).toBe(explanation);
+    expect(row.lastElementChild).toBe(explanation);
+    expect(chip(map, 'datacenters').contains(badge)).toBe(false);
+    badge.click();
+    expect(map.state.layers.datacenters).toBe(true);
+    expect(badge.title).toContain('pan or zoom');
+    expect(result).toEqual({ disclosed: ['datacenters'], undisclosed: [] });
+  });
+
+  it('repairs an existing trailing badge without duplicating it and removes stale counts', () => {
+    const map = createPicker({ datacenters: true });
+    renderLayerTruncationBadges(map.container, { datacenters: { shown: 235, total: 313 } }, 'rotate');
+    const row = chip(map, 'datacenters').closest('.layer-toggle-row')!;
+    const badge = row.querySelector('.layer-truncation-count')!;
+    row.appendChild(badge);
+    renderLayerTruncationBadges(map.container, { datacenters: { shown: 99, total: 313 } }, 'rotate');
+    expect(row.querySelectorAll('.layer-truncation-count')).toHaveLength(1);
+    expect(badge.textContent).toBe('99/313');
+    expect(row.lastElementChild).toBe(row.querySelector('.layer-explain-btn'));
+    renderLayerTruncationBadges(map.container, {}, 'rotate');
+    expect(row.querySelector('.layer-truncation-count')).toBeNull();
+  });
+});
+
 describe('MapComponent.toggleLayer chip state', () => {
   it('renders the row-wrapping-button shape the selector has to cope with', () => {
     const map = createPicker({ conflicts: true });
@@ -93,11 +126,11 @@ describe('MapComponent.toggleLayer chip state', () => {
     const map = createPicker({ natural: false });
 
     map.toggleLayer('natural');
-    expect(chip(map, 'natural').classList.contains('loading')).toBe(true);
+    expect(chip(map, 'natural').classList.contains('layer-loading')).toBe(true);
     expect(chip(map, 'natural').classList.contains('active')).toBe(false);
 
     map.toggleLayer('natural');
-    expect(chip(map, 'natural').classList.contains('loading')).toBe(false);
+    expect(chip(map, 'natural').classList.contains('layer-loading')).toBe(false);
     expect(chip(map, 'natural').classList.contains('active')).toBe(false);
   });
 
@@ -110,7 +143,7 @@ describe('MapComponent.toggleLayer chip state', () => {
 
     map.toggleLayer('natural');
 
-    expect(row.classList.contains('loading')).toBe(false);
+    expect(row.classList.contains('layer-loading')).toBe(false);
     expect(row.classList.contains('active')).toBe(false);
   });
 

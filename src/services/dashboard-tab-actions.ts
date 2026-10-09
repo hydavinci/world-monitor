@@ -1,25 +1,17 @@
-/**
- * Decision layer for dashboard-tab WebMCP tools.
- *
- * PanelLayoutManager still owns live snapshots, persistence, and the visible
- * tab bar. This module answers whether a list/select/create/rename/delete
- * request is allowed and what the caller should apply, so agents and the UI
- * share the same name limits, last-tab guard, and stable denial reasons.
- */
+export interface TabCapVerdict { allowed: true; cap: null; }
 
-import type { ExportGateLockReason, TabCapVerdict } from './gates/export-resolver';
 import {
-  DASHBOARD_TAB_NAME_MAX_LENGTH,
-  isDashboardTabId,
-  type PanelTab,
-  type TabsState,
+DASHBOARD_TAB_NAME_MAX_LENGTH,
+isDashboardTabId,
+type PanelTab,
+type TabsState,
 } from './tab-store';
 
 export {
-  DASHBOARD_TAB_ID_PATTERN,
-  DASHBOARD_TAB_ID_RE,
-  DASHBOARD_TAB_NAME_MAX_LENGTH,
-  isDashboardTabId,
+DASHBOARD_TAB_ID_PATTERN,
+DASHBOARD_TAB_ID_RE,
+DASHBOARD_TAB_NAME_MAX_LENGTH,
+isDashboardTabId
 } from './tab-store';
 
 export type DashboardTabActionType = 'list' | 'select' | 'create' | 'rename' | 'delete';
@@ -30,6 +22,7 @@ export type DashboardTabDenialReason =
   | 'tab_not_found'
   | 'tab_cap'
   | 'last_tab'
+  | 'main_tab'
   | 'confirmation_required'
   | 'tabs_unavailable'
   | 'persist_failed'
@@ -58,7 +51,6 @@ export interface DashboardTabListSnapshot {
   nextCursor?: string;
   canCreate: boolean;
   cap: number | null;
-  createBlockReason?: ExportGateLockReason;
 }
 
 export interface DashboardTabMutationResult {
@@ -76,26 +68,11 @@ export interface DashboardTabMutationResult {
   tabCount?: number;
   canCreate?: boolean;
   cap?: number | null;
-  lockReason?: ExportGateLockReason;
 }
 
 export type DashboardTabActionResult = DashboardTabListSnapshot | DashboardTabMutationResult;
 
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
-
-function tabCapDenial(cap: Extract<TabCapVerdict, { allowed: false }>): {
-  ok: false;
-  reason: DashboardTabDenialReason;
-  message: string;
-  lockReason: ExportGateLockReason;
-} {
-  return {
-    ok: false,
-    reason: 'tab_cap',
-    message: 'Dashboard tab limit reached for this account.',
-    lockReason: cap.reason,
-  };
-}
 
 export const DASHBOARD_TAB_UNAVAILABLE_RESULT: DashboardTabMutationResult = {
   ok: false,
@@ -129,7 +106,7 @@ export function describeDashboardTabs(
     id: tab.id,
     name: tab.name,
     active: tab.id === state.activeTabId,
-    canDelete,
+    canDelete: canDelete && tab.view !== 'map',
   }));
   const snapshot: DashboardTabListSnapshot = {
     activeTabId: state.activeTabId,
@@ -139,7 +116,6 @@ export function describeDashboardTabs(
     canCreate: cap.allowed,
     cap: cap.cap,
   };
-  if (!cap.allowed) snapshot.createBlockReason = cap.reason;
   return snapshot;
 }
 
@@ -165,12 +141,11 @@ export function resolveSelectDashboardTab(
 
 export function resolveCreateDashboardTab(
   state: TabsState,
-  cap: TabCapVerdict,
   requestedName: unknown,
 ):
   | { ok: true; unchanged: boolean; alreadyExisted: true; tab: PanelTab }
   | { ok: true; unchanged: false; name: string }
-  | { ok: false; reason: DashboardTabDenialReason; message: string; lockReason?: ExportGateLockReason } {
+  | { ok: false; reason: DashboardTabDenialReason; message: string; } {
   if (requestedName !== undefined) {
     const name = normalizeDashboardTabName(requestedName);
     if (!name) {
@@ -189,13 +164,7 @@ export function resolveCreateDashboardTab(
         tab: existing,
       };
     }
-    if (!cap.allowed) {
-      return tabCapDenial(cap);
-    }
     return { ok: true, unchanged: false, name };
-  }
-  if (!cap.allowed) {
-    return tabCapDenial(cap);
   }
   return { ok: true, unchanged: false, name: '' };
 }
@@ -262,6 +231,13 @@ export function resolveDeleteDashboardTab(
     return { ok: false, reason: 'tab_not_found', message: 'That dashboard tab is not available.' };
   }
   const tab = state.tabs[index]!;
+  if (tab.view === 'map') {
+    return {
+      ok: false,
+      reason: 'main_tab',
+      message: 'The Main map workspace cannot be deleted.',
+    };
+  }
   const fallback = state.tabs[index === 0 ? 1 : index - 1]!;
   return {
     ok: true,

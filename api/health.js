@@ -1,6 +1,6 @@
 import { getCorsHeaders, isDisallowedOrigin } from './_cors.js';
 import { jsonResponse } from './_json-response.js';
-import { USER_API_KEY_GATEWAY_VALIDATION_ERROR, validateApiKey } from './_api-key.js';
+import { validateApiKey } from './_api-key.js';
 import {
   hasPoolCoverageShortfall,
   parsePoolCounts,
@@ -9,7 +9,6 @@ import {
 } from './_pool-coverage.js';
 import {
   EDUCATION_MIN_RANKABLE_RECORD_COUNT,
-  SUPPLY_VULNERABILITY_MIN_RANKABLE_RECORD_COUNT,
   parseEducationPayloadRankableRecordCount,
   parseRankableRecordCount,
 } from './_rankable-coverage.js';
@@ -170,7 +169,6 @@ const HEALTH_VERDICT_COMPACT_SNAPSHOT_KEY = healthVerdictRedisKey(
   process.env.VERCEL_GIT_COMMIT_SHA,
 );
 const HEALTH_VERDICT_SNAPSHOT_TTL_SECONDS = 60;
-const CONTRACTS_FINDER_CANONICAL_KEY = 'economic:global-tenders:v1';
 // Edge runtime mirror of scripts/china-coverage-manifest.mjs. Edge functions
 // cannot import scripts/; tests enforce key and status-projection parity.
 const CHINA_COVERAGE_SUMMARY_KEY = 'health:china-coverage:v1';
@@ -341,7 +339,6 @@ const BOOTSTRAP_KEYS = {
   customsRevenue:    'trade:customs-revenue:v1',
   comtradeFlows:     'comtrade:flows:v1',
   blsSeries:         'bls:series:v1',
-  sanctionsPressure: 'sanctions:pressure:v1',
   crossSourceSignals: 'intelligence:cross-source-signals:v1',
   sanctionsEntities: 'sanctions:entities:v1',
   radiationWatch:    'radiation:observations:v1',
@@ -355,7 +352,6 @@ const BOOTSTRAP_KEYS = {
   bigmac:            'economic:bigmac:v1',
   fuelPrices:        'economic:fuel-prices:v1',
   faoFoodPriceIndex: 'economic:fao-ffpi:v1',
-  nationalDebt:      'economic:national-debt:v1',
   defiTokens:        'market:defi-tokens:v1',
   aiTokens:          'market:ai-tokens:v1',
   otherTokens:       'market:other-tokens:v1',
@@ -418,7 +414,6 @@ const STANDALONE_KEYS = {
   chinaCoverage:      CHINA_COVERAGE_SUMMARY_KEY,
   // Control-plane heartbeat only. Convex owns every durable scan lease,
   // checkpoint, receipt, and replay decision; this Redis value is disposable.
-  companyMonitoringWorker: 'company-monitoring:worker-health:v1',
   // Seeded and health-monitored; no dashboard consumer yet (#6155 is the
   // data layer only), so it is standalone rather than bootstrap-tiered.
   chinaStockConnect:  'market:china:stock-connect:v1',
@@ -461,8 +456,6 @@ const STANDALONE_KEYS = {
   // true, and that flag is set only on the STANDALONE_KEYS walk. Keeping this
   // here (not in BOOTSTRAP_KEYS) is what makes the activation-marker cutover
   // pending before the first successful publish and strict after it.
-  physicalPremiums:      'market:physical-premium:v1',
-  physicalDivergence:    'market:physical-divergence:v1',
   bisPropertyResidential: 'economic:bis:property-residential:v1',
   bisPropertyCommercial:  'economic:bis:property-commercial:v1',
   imfMacro:             'economic:imf:macro:v2',
@@ -477,7 +470,6 @@ const STANDALONE_KEYS = {
   shippingRates:         'supply_chain:shipping:v2',
   chokepoints:           'supply_chain:chokepoints:v4',
   minerals:              'supply_chain:minerals:v2',
-  mineralProduction:     'supply-chain:mineral-production:v1',
   giving:                'giving:summary:v2',
   gpsjam:                'intelligence:gpsjam:v2',
   // Corporate intelligence (issue #5695): SEC ticker→CIK registry + 8-K
@@ -506,12 +498,6 @@ const STANDALONE_KEYS = {
   // verifies existence + freshness via the matching SEED_META entry. Same
   // shape as militaryFlights above.
   militaryCii:           'intelligence:military-cii:v1',
-  globalTendersSam:             'economic:global-tenders:v1:source:sam',
-  globalTendersTed:             'economic:global-tenders:v1:source:ted',
-  globalTendersContractsFinder: 'economic:global-tenders:v1:source:contracts-finder',
-  globalTendersCanadaBuys:      'economic:global-tenders:v1:source:canada-buys',
-  globalTendersGets:            'economic:global-tenders:v1:source:gets',
-  globalTendersWorldBank:       'economic:global-tenders:v1:source:world-bank',
   crossStraitActivityTaiwanMnd: 'military:cross-strait-activity:v1:source:taiwan-mnd',
   crossStraitActivityJapanMod:  'military:cross-strait-activity:v1:source:japan-mod',
   defensePatents:        'patents:defense:latest',
@@ -528,7 +514,6 @@ const STANDALONE_KEYS = {
   transitSummaries:      'supply_chain:transit-summaries:v1',
   // Meta-only aggregate: payloads are sharded by country, so use the seed-meta
   // key as the probe target rather than pretending one country key is global.
-  comtradeBilateralHs4:  'seed-meta:comtrade:bilateral-hs4',
   // Meta-only probes. The CPI and par-curve documents are sharded, and the
   // canonical curve is large enough to time out a health GET.
   usCpiMonthly:          'seed-meta:economic:us-cpi',
@@ -555,8 +540,6 @@ const STANDALONE_KEYS = {
   // Authoritative shared cohort pointer read by all vulnerability RPCs. The
   // country and inverse manifests are compatibility projections; probing only
   // them can report OK while every public handler is unavailable.
-  supplyVulnerability:   'supply-chain:vulnerability:cohort:v1',
-  supplyChokepointDependencies: 'supply-chain:chokepoint-dependencies:v1',
   thermalEscalation:     'thermal:escalation:v1',
   thermalEscalationBootstrap: 'thermal:escalation-bootstrap:v1',
   // Meta-only aggregate: payloads are sharded one key per reporter, so probe
@@ -596,15 +579,11 @@ const STANDALONE_KEYS = {
   resilienceStaticFao:      'resilience:static:fao',
   // USDA PSD food stocks + FAOSTAT production fill (#6440). RPC/MCP only —
   // not bootstrap-hydrated; country deep-dive fetches on demand.
-  foodStocks:               'resilience:food-stocks:v1',
   // UN WPP + UNESCO/World Bank + ILOSTAT capability data (#6437). The country
   // deep-dive fetches this seeded key on demand; it is not bootstrap-hydrated.
-  demographicsCapability:   'demographics:capability:v1',
   // Atomic country evidence + derived five-factor results (#6441). The public
   // API and MCP service read this key only; no request-time source fan-out.
-  scorecardFiveFactor:       'scorecard:five-factor:v1',
   resilienceRanking:        'resilience:ranking:v28',
-  productCatalog:           'product-catalog:v3',
   energySpineCountries:     'energy:spine:v1:_countries',
   energyExposure:           'energy:exposure:v1:index',
   energyMixAll:             'energy:mix:v1:_all',
@@ -628,8 +607,6 @@ const STANDALONE_KEYS = {
   fuelShortages:            'energy:fuel-shortages:v1',
   energyDisruptions:        'energy:disruptions:v1',
   energyCrisisPolicies:     'energy:crisis-policies:v1',
-  regionalSnapshots:        'intelligence:regional-snapshots:summary:v1',
-  regionalBriefs:           'intelligence:regional-briefs:summary:v1',
   recoveryFiscalSpace:      'resilience:recovery:fiscal-space:v1',
   recoveryReserveAdequacy:  'resilience:recovery:reserve-adequacy:v1',
   recoveryExternalDebt:     'resilience:recovery:external-debt:v1',
@@ -674,7 +651,6 @@ const STANDALONE_KEYS = {
   staticRefHeavyBundleTick:      'bundle:heartbeat:static-ref-heavy',
   telegramFeed:                  'intelligence:telegram-feed:v1',
   xFeed:                         'intelligence:x-feed:v1',
-  digestNotifications:           'digest:last-run',
   webcams:                       'webcam:cameras:active',
   forecastResolutions:           'forecast:resolutions:v1',
   forecastScorecard:             'forecast:scorecard:v1',
@@ -711,7 +687,6 @@ const STANDALONE_KEYS = {
   torontoTps: 'safety:toronto-tps:v1',
 };
 
-const FIVE_FACTOR_SCORECARD_READ_MODEL_KEY = 'scorecard:five-factor:v1:read-model';
 
 const SEED_META = {
   // scripts/seed-conflict-intel.mjs cron runs every 15min, while HAPI is gated
@@ -726,7 +701,6 @@ const SEED_META = {
   chinaCoverage:   { key: 'seed-meta:health:china-coverage',   maxStaleMin: 180 },
   // Always-on loop publishes every few seconds. Five minutes tolerates deploy
   // churn while still detecting a stopped worker well before leases age out.
-  companyMonitoringWorker: { key: 'seed-meta:company-monitoring:worker', maxStaleMin: 5, workerControl: true },
   earthquakes: {
     key: 'seed-meta:seismology:earthquakes', maxStaleMin: 30,
     sourceFailure: {
@@ -863,31 +837,6 @@ const SEED_META = {
   // tests/country-stock-index-health.test.mjs keeps it below the seedable count.
   countryStockIndexes: { key: 'seed-meta:market:country-indexes', maxStaleMin: 30, minRecordCount: 30 },
   commodityQuotes:  { key: 'seed-meta:market:commodities',    maxStaleMin: 30 },
-  physicalPremiums: {
-    key: 'seed-meta:market:physical-premium',
-    maxStaleMin: 4320,
-    minRecordCount: 2,
-    activationKey: 'seed-activated:market:physical-premium',
-    cutover: {
-      mode: 'activation-marker',
-      fromKey: null,
-      issue: 6436,
-      activationKey: 'seed-activated:market:physical-premium',
-    },
-  },
-  physicalDivergence: {
-    key: 'seed-meta:market:physical-divergence',
-    maxStaleMin: 4320,
-    minRecordCount: 2,
-    enforceInputFreshUntil: true,
-    activationKey: 'seed-activated:market:physical-divergence',
-    cutover: {
-      mode: 'activation-marker',
-      fromKey: null,
-      issue: 6448,
-      activationKey: 'seed-activated:market:physical-divergence',
-    },
-  },
   goldExtended:     { key: 'seed-meta:market:gold-extended',  maxStaleMin: 30 },
   goldEtfFlows:     { key: 'seed-meta:market:gold-etf-flows', maxStaleMin: 2880 }, // SPDR publishes daily; 2× = 48h tolerance
   goldCbReserves:   { key: 'seed-meta:market:gold-cb-reserves', maxStaleMin: 44640 }, // IMF IFS is monthly w/ ~2-3mo lag; 31d tolerance
@@ -1160,13 +1109,6 @@ const SEED_META = {
     },
   },
   spending:         { key: 'seed-meta:economic:spending',          maxStaleMin: 120 },
-  globalTenders:    { key: 'seed-meta:economic:global-tenders',   maxStaleMin: 180 },
-  globalTendersSam:             { key: 'seed-meta:economic:global-tenders:sam',              maxStaleMin: 240 }, // 150min request pacing + hourly member gate yields ~180min publishes; 240min leaves one gate of scheduling jitter without raising the 10/day SAM budget.
-  globalTendersTed:             { key: 'seed-meta:economic:global-tenders:ted',              maxStaleMin: 180 },
-  globalTendersContractsFinder: { key: 'seed-meta:economic:global-tenders:contracts-finder', maxStaleMin: 180 },
-  globalTendersCanadaBuys:      { key: 'seed-meta:economic:global-tenders:canada-buys',      maxStaleMin: 180 },
-  globalTendersGets:            { key: 'seed-meta:economic:global-tenders:gets',             maxStaleMin: 180 },
-  globalTendersWorldBank:       { key: 'seed-meta:economic:global-tenders:world-bank',       maxStaleMin: 180 },
   techEvents:       { key: 'seed-meta:research:tech-events',       maxStaleMin: 480 },
   techEventsSeeder: {
     key: 'seed-meta:research:tech-events:seeder',
@@ -1211,7 +1153,6 @@ const SEED_META = {
   },
   telegramFeed:     { key: 'seed-meta:intelligence:telegram-feed:v1', maxStaleMin: 10 }, // 60s poll interval; 10min grace catches poll failures before they go stale in the panel
   xFeed:            { key: 'seed-meta:intelligence:x-feed:v1', maxStaleMin: 45 }, // Fixed 15min List slots; 45min = 3 missed slots. Freshness advances only after an accepted page is published.
-  digestNotifications: { key: 'seed-meta:digest:last-run',          maxStaleMin: 90 }, // Railway digest-notifications cron runs every 30min; 90 = 3x cadence and detects a dead cron before daily digests are missed.
   forecasts:        { key: 'seed-meta:forecast:predictions',       maxStaleMin: 90 },
   forecastsBootstrap: { key: 'seed-meta:forecast:predictions-bootstrap', maxStaleMin: 90 }, // Same cron. Monitored separately: the fast tier now hydrates from the dashboard list, and a transform/write failure there must not hide behind a healthy canonical key (#5300).
   forecastResolutions: { key: 'seed-meta:forecast:resolutions',     maxStaleMin: 2160 }, // daily Bet-2 resolver; 36h catches a missed cron without flapping on normal daily jitter
@@ -1305,52 +1246,8 @@ const SEED_META = {
   sec8kStream:         { key: 'seed-meta:intelligence:sec-8k-stream',        maxStaleMin: 120, minRecordCount: 50 }, // 30min bundle section; 120min = 4x interval. minRecordCount mirrors MIN_STREAM_EVENTS in scripts/seed-sec-8k-stream.mjs — a drained window means Atom-parse decay, not a quiet market.
   customsRevenue:      { key: 'seed-meta:trade:customs-revenue',              maxStaleMin: 1440 },
   comtradeFlows:       { key: 'seed-meta:trade:comtrade-flows',               maxStaleMin: 2880 }, // 24h cron; 2880min = 48h = 2x interval
-  comtradeBilateralHs4: { key: 'seed-meta:comtrade:bilateral-hs4',             maxStaleMin: 50400, minRecordCount: 110 }, // 35d health budget for monthly seed; 40d payload/meta TTL leaves a 5d stale-but-queryable warning window. minRecordCount mirrors MIN_COUNTRY_COVERAGE in scripts/seed-comtrade-bilateral-hs4.mjs (110 of 197 clusters) so a shrunken run reads COVERAGE_PARTIAL, not OK — without it 3-of-197 and 197-of-197 were indistinguishable for the full 35d window.
-  supplyVulnerability: {
-    key: 'seed-meta:supply-chain:vulnerability',
-    maxStaleMin: 2880,
-    minRecordCount: 110,
-    minRankableRecordCount: SUPPLY_VULNERABILITY_MIN_RANKABLE_RECORD_COUNT,
-    requiredRedistributionPolicyVersion: 1,
-    // Mirrors buildVulnerabilityCoverageRequirements() in
-    // scripts/shared/supply-vulnerability-coverage.mjs; the operations test pins
-    // this object to that output. completeCountryCount is diagnostic only.
-    requireVulnerabilityCoverage: {
-      countrySpecificImportCountryCount: 110,
-      globalProductionCommodityCount: 1,
-      rankableCountryCount: 110,
-      rankableRecordCount: SUPPLY_VULNERABILITY_MIN_RANKABLE_RECORD_COUNT,
-      freshRankableRecordCount: 1,
-      reviewedCommodityCount: 23,
-      reviewedHs4Count: 22,
-      reviewedHs2Count: 9,
-    },
-    activationKey: 'seed-activated:supply-chain:vulnerability',
-    cutover: {
-      mode: 'activation-marker',
-      fromKey: null,
-      issue: 6449,
-      activationKey: 'seed-activated:supply-chain:vulnerability',
-    },
-  },
-  supplyChokepointDependencies: {
-    key: 'seed-meta:supply-chain:chokepoint-dependencies',
-    maxStaleMin: 2880,
-    minRecordCount: 7,
-    requiredRedistributionPolicyVersion: 1,
-    activationKey: 'seed-activated:supply-chain:vulnerability',
-    cutover: {
-      mode: 'activation-marker',
-      fromKey: null,
-      issue: 6449,
-      activationKey: 'seed-activated:supply-chain:vulnerability',
-    },
-  },
   blsSeries:           { key: 'seed-meta:economic:bls-series',                maxStaleMin: 2880 }, // daily seed; 2880min = 48h = 2x interval
-  sanctionsPressure:   { key: 'seed-meta:sanctions:pressure',                 maxStaleMin: 720 }, // 6h cron; 12h = 2× interval, before the 18h data TTL
   crossSourceSignals:  { key: 'seed-meta:intelligence:cross-source-signals',  maxStaleMin: 30 }, // 15min cron; 30min = 2x interval
-  regionalSnapshots:   { key: 'seed-meta:intelligence:regional-snapshots',    maxStaleMin: 720 }, // 6h cron via seed-bundle-derived-signals; 720min = 12h = 2x interval
-  regionalBriefs:      { key: 'seed-meta:intelligence:regional-briefs',      maxStaleMin: 20160 }, // weekly cron; 20160min = 14 days = 2x interval
   sanctionsEntities:   { key: 'seed-meta:sanctions:entities',                 maxStaleMin: 720 }, // same 6h producer; co-pinned with pressure so both alarm before the 18h TTL
   radiationWatch:      { key: 'seed-meta:radiation:observations',             maxStaleMin: 30 },
   groceryBasket:       { key: 'seed-meta:economic:grocery-basket',            maxStaleMin: 10080 }, // weekly seed; 10080 = 7 days
@@ -1359,7 +1256,6 @@ const SEED_META = {
   faoFoodPriceIndex:   { key: 'seed-meta:economic:fao-ffpi',                  maxStaleMin: 86400 }, // monthly seed; 86400 = 60 days (2x interval)
   thermalEscalation:   { key: 'seed-meta:thermal:escalation',                 maxStaleMin: 360 }, // cron every 2h; 360 = 3x interval (was 240 = 2x)
   thermalEscalationBootstrap: { key: 'seed-meta:thermal:escalation-bootstrap', maxStaleMin: 360 }, // Same cron as above. Monitored separately because the bootstrap tier now hydrates from the compact projection, and a transform/write failure there must not hide behind a healthy canonical key (#5300).
-  nationalDebt:        { key: 'seed-meta:economic:national-debt',              maxStaleMin: 86400 }, // monthly seed (seed-bundle-macro intervalMs: 30 * DAY); 60d = 2x interval absorbs one missed run. Prior 10080 (7d) was narrower than the cron interval so every cron past day 7 alarmed STALE_SEED.
   // recordCount is the number of reporter/World pairs actually published, so a
   // shortfall reads as COVERAGE_PARTIAL (warn) while a dead seeder still reads
   // as STALE_SEED — which is the distinction #6309 needs: "WTO never had this
@@ -1381,7 +1277,6 @@ const SEED_META = {
   // budget past 480 would therefore be silently green while every flow key was
   // already gone. 420 = the 6h cron plus one hour of grace, so health reaches
   // STALE_SEED an hour BEFORE the keys it vouches for lapse. Same shape as the
-  // meta-only comtradeBilateralHs4 entry above (35d budget, 40d payload TTL).
   tradeFlows:          { key: 'seed-meta:trade:flows',                        maxStaleMin: 420, minRecordCount: 200, dominantFailureMode: true },
   // Same meta-only shape as tradeFlows above (#6316 moved tariffs off the
   // single-key US years=10 probe). maxStaleMin 420 sits inside TARIFF_TTL
@@ -1678,54 +1573,10 @@ const SEED_META = {
       activationKey: 'seed-activated:intelligence:pizzint-history',
     },
   },
-  productCatalog:    { key: 'seed-meta:product-catalog',               maxStaleMin: 1080 }, // relay loop every 6h; 1080 = 18h = 3x interval
   vpdTrackerRealtime:   { key: 'seed-meta:health:vpd-tracker',         maxStaleMin: 2880 }, // daily seed (0 2 * * *); 2880min = 48h = 2x interval
   vpdTrackerHistorical: { key: 'seed-meta:health:vpd-tracker',         maxStaleMin: 2880 }, // shares seed-meta key with vpdTrackerRealtime (same run)
   resilienceStaticIndex: { key: 'seed-meta:resilience:static',         maxStaleMin: 576000, projectFailedDatasets: true }, // annual October snapshot; 400d threshold matches TTL and preserves prior-year data on source outages
   resilienceStaticFao:   { key: 'seed-meta:resilience:static',         maxStaleMin: 576000 }, // same seeder + same heartbeat as resilienceStaticIndex; required so EMPTY_DATA_OK + missing data degrades to STALE_SEED instead of silent OK
-  foodStocks:            {
-    key: 'seed-meta:resilience:food-stocks',
-    maxStaleMin: 86400, // monthly WASDE cycle; 86400min = 60d = 2× interval. Content-age is marketing-year presence (see seed-food-stocks.mjs), not this fetch clock.
-    cutover: {
-      mode: 'expiring-ack',
-      fromKey: null,
-      issue: 6440,
-      status: 'EMPTY',
-    },
-  },
-  demographicsCapability: {
-    key: 'seed-meta:demographics:capability',
-    maxStaleMin: 36000, // 25d: static-ref refreshes every 20d; data TTL is 30d.
-    minRecordCount: 150,
-    cutover: {
-      mode: 'expiring-ack',
-      fromKey: null,
-      issue: 6437,
-      status: 'EMPTY',
-    },
-  },
-  scorecardFiveFactor: {
-    key: 'seed-meta:scorecard:five-factor',
-    maxStaleMin: 2160, // Daily section; 36h allows one delayed Railway tick before the 3d data TTL.
-    minRecordCount: 180,
-    minPoolCounts: { population: 150, food: 80, energy: 120, demographics: 150, technology: 110, defense: 30 },
-    // These minimums are byte-identical to SCORECARD_PUBLICATION_FLOORS in
-    // server/worldmonitor/scorecard/v1/_snapshot.ts, so the producer refuses to
-    // publish any cohort that would trip the shortfall check — health can only
-    // ever see a passing cohort or a stale one, and COVERAGE_PARTIAL is
-    // unreachable here. This margin makes the remaining headroom observable
-    // while the cohort still passes. Informational only (COVERAGE_MARGIN_LOW
-    // buckets to `ok`); 10 is a starting distance, not a calibrated one — worth
-    // revisiting against published poolCounts history before anything alerts.
-    poolCountMargin: 10,
-    activationKey: 'seed-activated:scorecard:five-factor',
-    cutover: {
-      mode: 'activation-marker',
-      fromKey: null,
-      issue: 6441,
-      activationKey: 'seed-activated:scorecard:five-factor',
-    },
-  },
   resilienceRanking:   { key: 'seed-meta:resilience:ranking',          maxStaleMin: 840, requireResilienceCacheState: true }, // RPC cache (12h TTL, refreshed every 6h by seed-resilience-scores cron); 14h budget tolerates 1 missed tick (12h gap) + ~2h jitter for in-flight deploys that preempt a scheduled tick; alerts at 2 missed ticks (18h gap). Bumped from 720 — see comment below.
   resilienceIntervals: { key: 'seed-meta:resilience:intervals',        maxStaleMin: 840, minRecordCount: RESILIENCE_INTERVAL_MIN_RECORD_COUNT, requireResilienceCacheState: true }, // bundled into seed-bundle-resilience, written by the Resilience-Scores section. Real Railway cron is `0 */6 * * *` (every 6h on the hour, UTC) — empirically verified 2026-04-28 via Railway logs showing 6h gaps between successful runs (the prior `intervalMs=2h with hourly fires` claim did not match what's deployed; either the bundle interval gate or the Railway service schedule makes the effective cadence 6h). 840 = 14h staleness ≈ 2.33× cadence: tolerates 1 missed tick (12h gap) + ~2h jitter for in-flight deploys; alerts at 2 missed ticks (18h gap). The 180-record floor matches the atomic publisher: a fresh probe cannot hide a mixed or shrunken fleet. Matches resilienceRanking above (same Resilience-Scores section writes both). Prior values: 20160 (14d, 168× — silent on real outage), 1080 (18h, 3× — over-permissive: masks a 12h outage), 720 (12h, 2× — exact floor; flipped UptimeRobot WARNING for ~1min on every Railway-deploy-preempted tick: 2026-05-10 incident at 18:02 UTC, seedAgeMin=722 vs maxStale=720 after the 12:00 UTC tick was skipped during an in-flight deploy), 360 (1× — false-positive on routine jitter, 2026-04-28: seedAgeMin=367 vs maxStale=360). Re-tighten ONLY if/when the actual Railway cron schedule is verified sub-6h.
   energyExposure:       { key: 'seed-meta:economic:owid-energy-mix',   maxStaleMin: 50400 }, // monthly cron on 1st; 50400min = 35d = TTL matches cron cadence + 5d buffer
@@ -1758,16 +1609,6 @@ const SEED_META = {
   // tests/seed-ttl-outlives-staleness-fleet.test.mjs matches them with a single
   // regex that only tolerates whitespace between the two, so a comment placed
   // between them drops this gate from the parsed set.
-  mineralProduction:    {
-    key: 'seed-meta:supply-chain:mineral-production',
-    maxStaleMin: 60 * 24 * 120,
-    cutover: {
-      mode: 'expiring-ack',
-      fromKey: null,
-      issue: 6439,
-      status: 'EMPTY',
-    },
-  },
   sprPolicies:          { key: 'seed-meta:energy:spr-policies',         maxStaleMin: 60 * 24 * 400 }, // 400 days; static registry, same cadence as chokepoint baselines
   pipelinesGas:         { key: 'seed-meta:energy:pipelines-gas',        maxStaleMin: 20_160 }, // 14d — weekly cron (7d) × 2 headroom
   pipelinesOil:         { key: 'seed-meta:energy:pipelines-oil',        maxStaleMin: 20_160 }, // 14d — same seed-pipelines.mjs publishes both keys
@@ -1960,7 +1801,6 @@ const ON_DEMAND_KEYS = new Set([
   'chinaCoverage',
   // Deployment-order bridge. The worker writes a permanent activation marker
   // on its first healthy loop report; absence becomes strict immediately after.
-  'companyMonitoringWorker',
   // Same deployment-order bridge as chinaCoverage: Vercel can ship this reader
   // before seed-bundle-macro's next 08:00 UTC tick publishes the first CBR
   // table, and the every-15-minute freshness monitor would otherwise report an
@@ -2004,18 +1844,6 @@ const ON_DEMAND_KEYS = new Set([
   // Scheduled producer. The marker is written only after a successful
   // publish of the canonical snapshot. Before that first publish, absence is
   // pending activation; after it, missing or stale data is strict.
-  'physicalPremiums',
-  'physicalDivergence',
-  // Five-factor scorecard (#6441). Vercel can ship this probe before the
-  // Railway resilience bundle publishes the first daily cohort. The seeder
-  // writes a permanent marker in the same EVAL as that first successful
-  // cohort; absence is pending until then and strict afterward.
-  'scorecardFiveFactor',
-  // Daily commodity-vulnerability producer. One durable cohort marker bridges
-  // the Edge reader deploy to the first Railway publish; both projections are
-  // strict forever after the marker exists.
-  'supplyVulnerability',
-  'supplyChokepointDependencies',
   'riskScoresLive',
   'usniFleetStale', 'positiveEventsLive',
   'bisPolicy', 'bisExchange', 'bisCredit',
@@ -2095,7 +1923,6 @@ const ACTIVATION_MARKERS = {
   chinaCoverage: 'seed-activated:health:china-coverage',
   // Written by the PizzINT archive's Lua (scripts/shared/pizzint-history.cjs).
   pizzintHistory: SEED_META.pizzintHistory.activationKey,
-  companyMonitoringWorker: 'seed-activated:company-monitoring:worker',
   // Written by scripts/seed-cbr-rates.mjs (CBR_ACTIVATION_KEY) in runSeed's
   // afterPublish hook, so it exists only once a real table has been published.
   cbrRates: 'seed-activated:economic:cbr-rates',
@@ -2117,13 +1944,8 @@ const ACTIVATION_MARKERS = {
   // article index publishes with its seed-meta (#7748).
   gdeltCountryArticles: SEED_META.gdeltCountryArticles.activationKey,
   gdeltDyadTension: SEED_META.gdeltDyadTension.activationKey,
-  physicalPremiums: SEED_META.physicalPremiums.activationKey,
-  physicalDivergence: SEED_META.physicalDivergence.activationKey,
-  scorecardFiveFactor: SEED_META.scorecardFiveFactor.activationKey,
   imdCycloneMarine: SEED_META.imdCycloneMarine.activationKey,
   forecastCalibrationMap: SEED_META.forecastCalibrationMap.activationKey,
-  supplyVulnerability: SEED_META.supplyVulnerability.activationKey,
-  supplyChokepointDependencies: SEED_META.supplyChokepointDependencies.activationKey,
   newsFeedHealth: 'seed-activated:news:feed-health',
   newsRecallBenchmark: 'seed-activated:news:recall-benchmark',
   // Written by scripts/_seed-history.mjs on every ingest-health report,
@@ -2434,7 +2256,6 @@ const ZERO_RECORD_DATA_OK_KEYS = new Set([
   // is a legitimate peaceful state, not a failed publish. A MISSING key still
   // reads EMPTY (absence is not peaceful).
   'aisGaps',
-  'globalTendersSam', 'globalTendersTed', 'globalTendersContractsFinder', 'globalTendersCanadaBuys', 'globalTendersGets', 'globalTendersWorldBank',
   // retailer-spread is SUPPRESSED to an explicit 0 by the aggregate job when a
   // market's retailers share < MIN_SPREAD_ITEMS (4) common basket items —
   // consumer-prices-core/src/jobs/aggregate.ts writes `retailer_spread_pct: 0`
@@ -2552,84 +2373,6 @@ function applyCanadaAlertsSeedMetaFallback(keyMetaValues, keyMetaErrors, usedFal
 const TRADE_FLOW_DOMINANT_FAILURE_MODES = new Set([
   'run-failed', 'upstream', 'empty', 'incomplete-years', 'mixed', 'none',
 ]);
-
-const COMPANY_MONITORING_WORKER_STATUSES = new Set(['ok', 'error']);
-const COMPANY_MONITORING_CLAIM_FAILURE_KINDS = new Set([
-  'timeout', 'network', 'http_transient', 'http_error', 'invalid_response', 'unknown',
-]);
-const COMPANY_MONITORING_SCAN_OUTCOMES = new Set([
-  'starting', 'disabled', 'idle', 'completed', 'non_reassuring', 'fenced',
-  'replayed', 'claim_error', 'finalize_error',
-]);
-const COMPANY_MONITORING_ADMISSION_OUTCOMES = new Set([
-  'disabled', 'idle', 'admission_recorded', 'admission_replayed',
-  'admission_transport_failure', 'admission_claim_error', 'admission_finalize_error',
-]);
-const COMPANY_MONITORING_WORKER_OUTCOMES = new Set([
-  ...COMPANY_MONITORING_SCAN_OUTCOMES,
-  ...COMPANY_MONITORING_ADMISSION_OUTCOMES,
-]);
-const COMPANY_MONITORING_WORKER_COUNTERS = Object.freeze([
-  'loops', 'claims', 'completed', 'nonReassuring', 'fenced', 'replayed',
-  'executorErrors', 'claimErrors', 'finalizeErrors',
-  'admissionClaims', 'admissionRecorded', 'admissionReplayed',
-  'admissionTransportFailures', 'admissionClaimErrors', 'admissionFinalizeErrors',
-]);
-
-function projectCompanyMonitoringWorkerSubsystem(raw, outcomes) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)
-    || !COMPANY_MONITORING_WORKER_STATUSES.has(raw.status)
-    || !outcomes.has(raw.outcome)) return null;
-  return { status: raw.status, outcome: raw.outcome };
-}
-
-function projectCompanyMonitoringWorkerControl(meta, enabled, now) {
-  if (!enabled || !COMPANY_MONITORING_WORKER_STATUSES.has(meta?.status)
-    || !COMPANY_MONITORING_WORKER_OUTCOMES.has(meta?.outcome)) return null;
-  let subsystems;
-  if (meta.subsystems !== undefined) {
-    if (!meta.subsystems || typeof meta.subsystems !== 'object'
-      || Array.isArray(meta.subsystems)) return null;
-    const scan = projectCompanyMonitoringWorkerSubsystem(
-      meta.subsystems.scan,
-      COMPANY_MONITORING_SCAN_OUTCOMES,
-    );
-    const admission = projectCompanyMonitoringWorkerSubsystem(
-      meta.subsystems.admission,
-      COMPANY_MONITORING_ADMISSION_OUTCOMES,
-    );
-    if (!scan || !admission) return null;
-    const failure = meta.subsystems.scan.claimFailure;
-    if (scan.outcome === 'claim_error' && COMPANY_MONITORING_CLAIM_FAILURE_KINDS.has(failure?.kind)
-      && (failure.httpStatus === null
-        || (Number.isInteger(failure.httpStatus) && failure.httpStatus >= 400 && failure.httpStatus <= 599))) {
-      scan.claimFailure = {
-        kind: failure.kind,
-        httpStatus: failure.httpStatus,
-        consecutiveFailures: Number.isSafeInteger(failure.consecutiveFailures) && failure.consecutiveFailures > 0
-          ? Math.min(failure.consecutiveFailures, 9_999_999_999) : null,
-        lastHealthyAt: Number.isSafeInteger(failure.lastHealthyAt) && failure.lastHealthyAt > 0
-          && Number.isSafeInteger(meta.observedAt) && meta.observedAt === meta.fetchedAt
-          && failure.lastHealthyAt <= meta.observedAt && meta.observedAt <= now
-          ? failure.lastHealthyAt : null,
-      };
-    }
-    subsystems = { scan, admission };
-  }
-  const counters = {};
-  for (const name of COMPANY_MONITORING_WORKER_COUNTERS) {
-    const value = meta?.counters?.[name];
-    counters[name] = Number.isSafeInteger(value) && value >= 0
-      ? Math.min(value, 9_999_999_999)
-      : 0;
-  }
-  return {
-    status: meta.status,
-    outcome: meta.outcome,
-    ...(subsystems ? { subsystems } : {}),
-    counters,
-  };
-}
 
 // A JODI producer's China record, projected for the wire. Opt-in per key via
 // the SEED_META entry declaring `chinaRow: true` so no other seed-meta reader
@@ -2752,12 +2495,12 @@ function projectSourceFailure(meta, policy, now, maxStaleMin) {
 
 function readSeedMeta(seedCfg, keyMetaValues, keyMetaErrors, now) {
   if (!seedCfg) {
-    return { hasMeta: false, seedAge: null, seedStale: null, seedError: false, sourceUnavailable: false, sourceBlocked: false, metaReadFailed: false, metaCount: null, contentAge: null, coverage: null, sourceFailure: null, synthesisFailure: null, dominantFailureMode: null, chinaRow: null, workerControl: null, resilienceCacheState: null };
+    return { hasMeta: false, seedAge: null, seedStale: null, seedError: false, sourceUnavailable: false, sourceBlocked: false, metaReadFailed: false, metaCount: null, contentAge: null, coverage: null, sourceFailure: null, synthesisFailure: null, dominantFailureMode: null, chinaRow: null, resilienceCacheState: null };
   }
   // Per-command Redis errors on the GET seed-meta half of the pipeline must
   // not silently fall through to STALE_SEED — promote to REDIS_PARTIAL.
   if (keyMetaErrors.get(seedCfg.key)) {
-    return { hasMeta: false, seedAge: null, seedStale: null, seedError: false, sourceUnavailable: false, sourceBlocked: false, metaReadFailed: true, metaCount: null, contentAge: null, coverage: null, sourceFailure: null, synthesisFailure: null, dominantFailureMode: null, chinaRow: null, workerControl: null, resilienceCacheState: null };
+    return { hasMeta: false, seedAge: null, seedStale: null, seedError: false, sourceUnavailable: false, sourceBlocked: false, metaReadFailed: true, metaCount: null, contentAge: null, coverage: null, sourceFailure: null, synthesisFailure: null, dominantFailureMode: null, chinaRow: null, resilienceCacheState: null };
   }
   // Unwrap through the envelope helper. Legacy seed-meta is a bare
   // `{ fetchedAt, recordCount, sourceVersion, status? }` object with no `_seed`
@@ -2791,7 +2534,6 @@ function readSeedMeta(seedCfg, keyMetaValues, keyMetaErrors, now) {
     && /^[A-Z0-9_]{1,64}$/.test(meta.errorCode)
     ? meta.errorCode
     : null;
-  const workerControl = projectCompanyMonitoringWorkerControl(meta, seedCfg.workerControl, now);
   const resilienceCacheState = seedCfg.requireResilienceCacheState
     ? assessResilienceCacheState(meta)
     : null;
@@ -2821,7 +2563,6 @@ function readSeedMeta(seedCfg, keyMetaValues, keyMetaErrors, now) {
       // assess China this run; relaying the previous run's verdict here would
       // read as current.
       chinaRow: null,
-      workerControl,
       resilienceCacheState,
       failedDatasets,
     };
@@ -3027,7 +2768,6 @@ function readSeedMeta(seedCfg, keyMetaValues, keyMetaErrors, now) {
     synthesisFailure,
     dominantFailureMode,
     chinaRow,
-    workerControl,
     resilienceCacheState,
     failedDatasets,
   };
@@ -3135,7 +2875,6 @@ function classifyKey(name, redisKey, opts, ctx) {
     synthesisFailure,
     dominantFailureMode,
     chinaRow,
-    workerControl,
     resilienceCacheState,
     failedDatasets,
   } = meta;
@@ -3456,22 +3195,6 @@ function classifyKey(name, redisKey, opts, ctx) {
   // that is otherwise publishing normally. Gating it on a fault verdict would
   // hide exactly the healthy-looking-partial case it exists to describe.
   if (chinaRow) entry.chinaRow = chinaRow;
-  // Closed, bounded projection from the worker's seed-meta. It contains only
-  // control-loop state and counters, never work or customer identifiers.
-  if (workerControl) entry.workerControl = workerControl;
-  const claimFailure = workerControl?.subsystems?.scan?.claimFailure;
-  if (entry.status === 'SEED_ERROR' && hasData && records > 0
-    && workerControl?.status === 'error' && workerControl.outcome === 'claim_error'
-    && workerControl.subsystems.scan.status === 'error'
-    && workerControl.subsystems.admission.status === 'ok'
-    && ['disabled', 'idle', 'admission_recorded', 'admission_replayed'].includes(workerControl.subsystems.admission.outcome)
-    && claimFailure?.consecutiveFailures >= 1 && claimFailure.consecutiveFailures < 3
-    && ((['timeout', 'network'].includes(claimFailure.kind) && claimFailure.httpStatus === null)
-      || (claimFailure.kind === 'http_transient' && [408, 429, 500, 502, 503, 504].includes(claimFailure.httpStatus)))
-    && claimFailure.lastHealthyAt !== null && claimFailure.lastHealthyAt <= now) {
-    const deadline = claimFailure.lastHealthyAt + seedCfg.maxStaleMin * 60_000;
-    if (now < deadline) entry.workerControlPendingUntil = new Date(deadline).toISOString();
-  }
   if (resilienceCacheState) entry.cacheState = resilienceCacheState;
   if (failedDatasets?.length > 0) entry.failedDatasets = failedDatasets;
   // Surface content-age fields when seeder opted in (presence of
@@ -3631,7 +3354,7 @@ function healthStatusBucket(entry, now) {
     && typeof entry.chinaCoveragePendingUntil === 'string'
     && !isExpiredDeadline(entry.chinaCoveragePendingUntil, now)) return 'ok';
   if (entry?.status === 'SEED_ERROR'
-    && [entry.sourceFailurePendingUntil, entry.workerControlPendingUntil]
+    && [entry.sourceFailurePendingUntil]
       .some(deadline => typeof deadline === 'string' && !isExpiredDeadline(deadline, now))) return 'ok';
   if (
     entry?.status === 'STALE_CONTENT'
@@ -3667,100 +3390,6 @@ function isContainedHealthWarning(entry, evidence, now = Date.now()) {
     && evidence.usable === true
     && (entry.containmentUntil === undefined || !isExpiredDeadline(entry.containmentUntil, now))
     && entry.readModelReady !== false;
-}
-
-function isUsableTender(tender) {
-  if (!tender || typeof tender !== 'object' || Array.isArray(tender)) return false;
-  const stringArray = (values) => Array.isArray(values) && values.every((value) => typeof value === 'string');
-  const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-  return [tender.id, tender.title, tender.source, tender.sourceNoticeId, tender.officialUrl,
-    tender.status, tender.participationMode].every((value) => typeof value === 'string' && value.trim())
-    && [tender.countryCode, tender.region, tender.buyer, tender.description, tender.noticeType,
-      tender.publishedAt, tender.updatedAt, tender.deadline]
-      .every((value) => value === undefined || typeof value === 'string')
-    && [tender.categoryCodes, tender.sectors, tender.eligibilityRequirements, tender.submissionUrls].every(stringArray)
-    && (tender.money === undefined || (object(tender.money)
-      && (tender.money.amount === undefined || Number.isFinite(tender.money.amount))
-      && (tender.money.currency === undefined || typeof tender.money.currency === 'string')))
-    && (tender.automationFit === undefined || (object(tender.automationFit)
-      && typeof tender.automationFit.level === 'string'
-      && Number.isFinite(tender.automationFit.score)
-      && typeof tender.automationFit.classificationVersion === 'string'
-      && stringArray(tender.automationFit.matchReasons)
-      && stringArray(tender.automationFit.evidence)));
-}
-
-function composeContractsFinderHealth(entry, meta, snapshot, readFailed, now) {
-  // Source-status bytes prove a diagnostic exists, not that its tender rows
-  // still exist. Replace the generic containment proof with the served data.
-  const evidence = { status: entry.status, records: entry.records, usable: false };
-  const source = Array.isArray(snapshot?.sourceStatuses)
-    ? snapshot.sourceStatuses.find((status) => status?.source === 'contracts-finder') : null;
-  const error = meta?.error ?? source?.error;
-  const lastAttemptAt = meta?.lastAttemptAt ?? source?.fetchedAt;
-  const lastSuccessAt = meta?.lastSuccessfulAt ?? source?.lastSuccessfulAt;
-  entry = { ...entry };
-  if (typeof meta?.sourceState === 'string') entry.sourceState = meta.sourceState;
-  if (typeof error === 'string') entry.error = error.slice(0, 200);
-  if (typeof lastAttemptAt === 'string') entry.lastAttemptAt = lastAttemptAt;
-  if (typeof lastSuccessAt === 'string') entry.lastSuccessAt = lastSuccessAt;
-  if (typeof meta?.firstFailureAt === 'string') entry.firstFailureAt = meta.firstFailureAt;
-  if (Number.isSafeInteger(meta?.consecutiveFailures) && meta.consecutiveFailures >= 0) {
-    entry.consecutiveSourceFailures = meta.consecutiveFailures;
-  }
-  if (readFailed) return { entry: { ...entry, status: 'REDIS_PARTIAL' }, evidence };
-  if (snapshot === null) return { entry: { ...entry, status: 'EMPTY', records: 0 }, evidence };
-  if (meta?.sourceState === 'ok') return { entry, evidence };
-  if (['OK', 'NOT_CONFIGURED'].includes(entry.status)) entry.status = 'SEED_ERROR';
-  if (snapshot.dataAvailable !== true || !Array.isArray(snapshot.tenders) || !Array.isArray(snapshot.sourceStatuses)) {
-    return { entry: { ...entry, status: 'EMPTY_DATA', records: 0 }, evidence };
-  }
-  const sourceRows = snapshot.tenders.filter((tender) => tender?.source === 'contracts-finder');
-  const records = sourceRows.filter((tender) => {
-    if (typeof tender.id !== 'string' || !tender.id.trim()
-      || typeof tender.title !== 'string' || !tender.title.trim()
-      || ![tender.categoryCodes, tender.sectors].every((values) => Array.isArray(values) && values.every((value) => typeof value === 'string'))
-      || !['active', 'open'].includes(tender.status) || !(Date.parse(tender.deadline) > now)) return false;
-    try {
-      const url = new URL(tender.officialUrl);
-      return url.protocol === 'https:' && !url.username && !url.password
-        && (url.hostname === 'contractsfinder.service.gov.uk' || url.hostname.endsWith('.contractsfinder.service.gov.uk'));
-    } catch { return false; }
-  });
-  // Count only the currently usable rows; expiry or corruption must not be
-  // hidden by the count written at the previous scheduled attempt.
-  entry.records = records.length;
-  const success = Date.parse(meta?.lastSuccessfulAt || '');
-  const first = Date.parse(meta?.firstFailureAt || '');
-  const attempt = Date.parse(meta?.lastAttemptAt || '');
-  const validEpisode = success > 0 && success <= first && first <= attempt && attempt <= now
-    && meta.fetchedAt === success && meta.consecutiveFailures === 1;
-  const aggregateFresh = Number.isFinite(snapshot.fetchedAt) && snapshot.fetchedAt > 0
-    && snapshot.fetchedAt <= now && now < snapshot.fetchedAt + 180 * 60_000;
-  const confirmedEmpty = source?.confirmedEmpty === true && meta?.confirmedEmpty === true
-    && sourceRows.length === 0 && source.recordCount === 0 && meta.recordCount === 0
-    && snapshot.sourceStatuses.filter((status) => status?.source === 'contracts-finder').length === 1
-    && snapshot.sourceStatuses.every((status) => status && typeof status.source === 'string' && typeof status.state === 'string')
-    && ['available', 'partial', 'empty'].includes(snapshot.availability)
-    && aggregateFresh && snapshot.tenders.every(isUsableTender);
-  const aligned = (confirmedEmpty ? source.state === 'error' && meta.sourceState === 'error'
-    : source?.state === 'stale' && meta?.sourceState === 'stale')
-    && source.lastSuccessfulAt === meta.lastSuccessfulAt && source.fetchedAt === meta.lastAttemptAt
-    && source.firstFailureAt === meta.firstFailureAt && source.consecutiveFailures === meta.consecutiveFailures
-    && source.recordCount === records.length && meta.recordCount === records.length
-    && sourceRows.length === records.length && new Set(records.map((tender) => tender.id)).size === records.length;
-  const deadline = validEpisode && (records.length > 0 || confirmedEmpty)
-    ? Math.min(first + 90 * 60_000, success + SEED_META.globalTendersContractsFinder.maxStaleMin * 60_000,
-      ...(confirmedEmpty ? [snapshot.fetchedAt + 180 * 60_000] : []),
-      ...records.map((tender) => Date.parse(tender.deadline))) : NaN;
-  if (entry.status === 'SEED_ERROR' && aligned && now < deadline) {
-    entry.containmentUntil = new Date(deadline).toISOString();
-    evidence.usable = true;
-    if (confirmedEmpty) evidence.confirmedEmpty = true;
-  }
-  evidence.status = entry.status;
-  evidence.records = entry.records;
-  return { entry, evidence };
 }
 
 // Orders the buckets above so classifyKey can compare two candidate verdicts
@@ -3948,24 +3577,6 @@ function composeChinaDecisionSignalsStatus(entry, _chinaCoverageEntry, now) {
   return entry;
 }
 
-function composeScorecardReadModelStatus(entry, raw, readError = false) {
-  if (!entry) return entry;
-  if (readError) {
-    return { ...entry, status: 'REDIS_PARTIAL', readModelReady: false };
-  }
-  const readModelReady = Number(raw) === 1;
-  if (readModelReady) return { ...entry, readModelReady: true };
-  if (STATUS_COUNTS[entry.status] === 'crit' || entry.status === 'SEED_ERROR') {
-    return { ...entry, readModelReady: false };
-  }
-  return {
-    ...entry,
-    status: 'COVERAGE_PARTIAL',
-    seedStatus: entry.status,
-    readModelReady: false,
-  };
-}
-
 function parseHealthVerdictSnapshot(raw, now, { requireChecks = true, maxAgeMs = HEALTH_VERDICT_SNAPSHOT_TTL_MS } = {}) {
   if (typeof raw !== 'string') return null;
   const snapshot = parseRedisValue(raw);
@@ -4037,7 +3648,6 @@ const ENTRY_SOFTENING_DEADLINES = [
   { field: 'contentFreshnessPendingUntil', kind: 'content', status: null },
   { field: 'staleContentGraceUntil', kind: 'content', status: null },
   { field: 'sourceFailurePendingUntil', kind: 'source', status: 'SEED_ERROR' },
-  { field: 'workerControlPendingUntil', kind: 'source', status: 'SEED_ERROR' },
   { field: 'chinaCoveragePendingUntil', kind: 'source', status: null },
   { field: 'containmentUntil', kind: 'source', status: null },
   { field: 'transportGraceUntil', kind: 'source', status: 'RELAY_GATE_UNREACHABLE' },
@@ -4874,9 +4484,7 @@ export async function handleHealth(req, ctx, options = {}) {
   if (!compact || wantsHistory) {
     const keyCheck = await validateApiKey(req, { forceKey: true });
     if (keyCheck.required && !keyCheck.valid) {
-      const error = keyCheck.error === USER_API_KEY_GATEWAY_VALIDATION_ERROR
-        ? 'Invalid API key'
-        : keyCheck.error;
+      const error = keyCheck.error;
       // RFC 7235 §3.1 requires WWW-Authenticate on every 401. The challenge
       // must reflect what this gate actually accepts: validateApiKey reads the
       // X-WorldMonitor-Key / X-Api-Key headers (or tester cookies) — never
@@ -5050,7 +4658,6 @@ export async function handleHealth(req, ctx, options = {}) {
   for (const key of CANADA_ALERTS_CUTOVER_FALLBACK_KEYS) {
     if (!allDataKeys.includes(key)) allDataKeys.push(key);
   }
-  if (!allDataKeys.includes(CONTRACTS_FINDER_CANONICAL_KEY)) allDataKeys.push(CONTRACTS_FINDER_CANONICAL_KEY);
   const allMetaKeys = Object.values(SEED_META).map(s => s.key);
   const activationEntries = Object.entries(ACTIVATION_MARKERS);
   const fredRolloutCommands = fredRatesRolloutCommands(now);
@@ -5076,7 +4683,6 @@ export async function handleHealth(req, ctx, options = {}) {
       ...activationEntries.map(([, marker]) => ['EXISTS', sweepKey(marker)]),
       ['GET', sweepKey(CHINA_COVERAGE_SUMMARY_KEY)],
       ['GET', sweepKey(STANDALONE_KEYS.educationAttainment)],
-      ['HEXISTS', sweepKey(FIVE_FACTOR_SCORECARD_READ_MODEL_KEY), 'metadata'],
       ...fredRolloutCommands,
     ];
     if (!getRedisCredentials()) throw new Error('Redis not configured');
@@ -5102,21 +4708,6 @@ export async function handleHealth(req, ctx, options = {}) {
   // sweep finished, so a request that spends time awaiting Redis cannot keep a
   // grace it has already outlived. Injected clocks stay fixed so unit tests
   // remain deterministic.
-  // Only a failed Contracts Finder refresh needs a row-level proof. Keep
-  // ordinary sweeps on STRLEN; a failure reads this one canonical snapshot.
-  const contractsFinderMetaResult = results[allDataKeys.length + allMetaKeys.indexOf(SEED_META.globalTendersContractsFinder.key)];
-  const contractsFinderMeta = unwrapEnvelope(parseRedisValue(contractsFinderMetaResult?.result)).data;
-  const contractsFinderDataResult = results[allDataKeys.indexOf(CONTRACTS_FINDER_CANONICAL_KEY)];
-  const contractsFinderHasData = keyHasData(CONTRACTS_FINDER_CANONICAL_KEY, contractsFinderDataResult?.result ?? 0);
-  let contractsFinderSnapshot = contractsFinderHasData ? undefined : null;
-  let contractsFinderReadFailed = Boolean(contractsFinderMetaResult?.error || contractsFinderDataResult?.error);
-  if (!contractsFinderReadFailed && contractsFinderHasData && contractsFinderMeta?.sourceState !== 'ok') {
-    if (budget.exhausted()) return deadlineFallback();
-    const payload = await redisPipeline([['GET', CONTRACTS_FINDER_CANONICAL_KEY]], budget.clamp(4_000), true).catch(() => null);
-    contractsFinderReadFailed = !payload || Boolean(payload[0]?.error);
-    if (contractsFinderReadFailed && budget.exhausted()) return deadlineFallback();
-    contractsFinderSnapshot = unwrapEnvelope(parseRedisValue(payload?.[0]?.result)).data;
-  }
   const humanitarianMetaResult = results[allDataKeys.length + allMetaKeys.indexOf(SEED_META.humanitarianSummary.key)];
   const humanitarianMeta = unwrapEnvelope(parseRedisValue(humanitarianMetaResult?.result)).data;
   const humanitarianNeedsProof = humanitarianMeta?.sourceState === 'degraded'
@@ -5183,8 +4774,7 @@ export async function handleHealth(req, ctx, options = {}) {
   const educationPayloadResult = results[allDataKeys.length + allMetaKeys.length + activationEntries.length + 1];
   const educationPayload = unwrapEnvelope(parseRedisValue(educationPayloadResult?.result)).data;
   const educationPayloadRankableCount = parseEducationPayloadRankableRecordCount(educationPayload);
-  const scorecardReadModelResult = results[allDataKeys.length + allMetaKeys.length + activationEntries.length + 2];
-  const fredRolloutOffset = allDataKeys.length + allMetaKeys.length + activationEntries.length + 3;
+  const fredRolloutOffset = allDataKeys.length + allMetaKeys.length + activationEntries.length + 2;
   const fredRatesRolloutUntil = parseFredRatesRolloutUntil(
     results.slice(fredRolloutOffset, fredRolloutOffset + fredRolloutCommands.length),
   );
@@ -5229,11 +4819,6 @@ export async function handleHealth(req, ctx, options = {}) {
     for (const [name, redisKey] of Object.entries(registry)) {
       totalChecks++;
       let entry = classifyKey(name, redisKey, opts, classifyCtx);
-      if (name === 'globalTendersContractsFinder') {
-        const composed = composeContractsFinderHealth(entry, contractsFinderMeta, contractsFinderSnapshot, contractsFinderReadFailed, evaluationNow);
-        entry = composed.entry;
-        containmentEvidenceByName.set(name, composed.evidence);
-      }
       if (name === 'chinaCoverage') {
         entry = composeChinaCoverageStatus(
           entry,
@@ -5248,13 +4833,6 @@ export async function handleHealth(req, ctx, options = {}) {
           && !entry.problems?.some((problem) => problem.status === 'unavailable')) {
           evidence.status = entry.status;
         }
-      }
-      if (name === 'scorecardFiveFactor') {
-        entry = composeScorecardReadModelStatus(
-          entry,
-          scorecardReadModelResult?.result,
-          Boolean(scorecardReadModelResult?.error),
-        );
       }
       checks[name] = entry;
       if (typeof entry.contentFreshnessPendingUntil === 'string') {
@@ -5472,7 +5050,7 @@ export async function handleHealth(req, ctx, options = {}) {
   // 401 pins an auth failure; a cached 503 masks outage or refresh recovery).
   // Persistence can cross a retention deadline after classification. The cached
   // snapshot is already rejected at that deadline; recheck the cold response too.
-  for (const name of ['globalTendersContractsFinder', 'humanitarianSummary']) {
+  for (const name of ['humanitarianSummary']) {
     const entry = checks[name];
     if (entry?.containmentUntil
       && isContainedHealthWarning(entry, containmentEvidenceByName.get(name), evaluationNow)
@@ -5493,7 +5071,6 @@ export default async function handler(req, ctx) {
 // the classifier without standing up the full bootstrap-keys + Redis pipeline.
 // 2026-05-04 health-readiness plan, Sprint 1 test plan (Codex round 2 P1).
 export const __testing__ = {
-  composeContractsFinderHealth,
   readSeedMeta,
   classifyKey,
   healthResponseBody,
@@ -5566,7 +5143,6 @@ export const __testing__ = {
   projectChinaCoverageStatus,
   composeChinaCoverageStatus,
   composeChinaDecisionSignalsStatus,
-  composeScorecardReadModelStatus,
   healthVerdictRedisKey,
   parseHealthVerdictSnapshot,
   // U7 (Tier 3 parity test): exposed for tests/mcp-bootstrap-parity.test.mjs

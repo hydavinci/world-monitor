@@ -1,205 +1,198 @@
+import { sanitizePublicLayers } from '@/services/public-preferences';
 /**
  * DeckGLMap - WebGL-accelerated map visualization for desktop
  * Uses deck.gl for high-performance rendering of large datasets
  * Mobile devices gracefully degrade to the D3/SVG-based Map component
  */
-import { MapLibreOverlay } from '@deck.gl/maplibre';
-import type { Layer, LayersList, PickingInfo } from '@deck.gl/core';
-import { GeoJsonLayer, ScatterplotLayer, PathLayer, IconLayer, TextLayer, PolygonLayer } from '@deck.gl/layers';
-import * as maplibregl from 'maplibre-gl';
-import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import type { StyleSpecification } from 'maplibre-gl';
-import { FALLBACK_DARK_STYLE, FALLBACK_LIGHT_STYLE, getMapProvider, getMapTheme, isLightMapTheme } from '@/config/basemap';
+import { FALLBACK_DARK_STYLE,FALLBACK_LIGHT_STYLE,getMapProvider,getMapTheme,isLightMapTheme } from '@/config/basemap';
 import { getStyleForProvider } from '@/config/basemap-styles';
-import Supercluster from 'supercluster';
-import type {
-  MapLayers,
-  Hotspot,
-  NewsItem,
-  NewsLocationMarker,
-  InternetOutage,
-  RelatedAsset,
-  AssetType,
-  AisDisruptionEvent,
-  AisDensityZone,
-  CableAdvisory,
-  RepairShip,
-  SocialUnrestEvent,
-  AIDataCenter,
-  MilitaryFlight,
-  MilitaryVessel,
-  MilitaryFlightCluster,
-  MilitaryVesselCluster,
-  NaturalEvent,
-  UcdpGeoEvent,
-  MapProtestCluster,
-  MapTechHQCluster,
-  MapTechEventCluster,
-  MapDatacenterCluster,
-  CyberThreat,
-  CableHealthRecord,
-  MilitaryBaseEnriched,
-  NuclearFacility,
-} from '@/types';
-import { fetchMilitaryBases, type MilitaryBaseCluster as ServerBaseCluster } from '@/services/military-bases';
-import type { AirportDelayAlert, PositionSample } from '@/services/aviation';
-import { fetchAircraftPositions } from '@/services/aviation';
-import { type IranEvent, getIranEventColor, getIranEventRadius } from '@/services/conflict';
+import { CII_LEVEL_COLORS,type CiiLevel } from '@/config/cii-colors';
 import { getMilitaryBaseColor } from '@/config/military-base-colors';
 import { getMineralColor } from '@/config/mineral-colors';
 import { getWindColor } from '@/config/wind-colors';
-import { CII_LEVEL_COLORS, type CiiLevel } from '@/config/cii-colors';
-import type { GpsJamHex } from '@/services/gps-interference';
-import { fetchImageryScenes } from '@/services/imagery';
+import type { DdosLocationHit,TrafficAnomaly as ProtoTrafficAnomaly } from '@/generated/client/worldmonitor/infrastructure/v1/service_client';
 import type { ImageryScene } from '@/generated/server/worldmonitor/imagery/v1/service_server';
-import type { TrafficAnomaly as ProtoTrafficAnomaly, DdosLocationHit } from '@/generated/client/worldmonitor/infrastructure/v1/service_client';
+import type { AirportDelayAlert,PositionSample } from '@/services/aviation';
+import { fetchAircraftPositions } from '@/services/aviation';
+import type { CanadaAlert } from '@/services/canada-alerts';
+import type { CanadaRoadRecord } from '@/services/canada-roads';
+import type { ClimateAnomaly } from '@/services/climate';
+import { getIranEventColor,getIranEventRadius,type IranEvent } from '@/services/conflict';
 import type { DisplacementFlow } from '@/services/displacement';
 import type { Earthquake } from '@/services/earthquakes';
-import type { ClimateAnomaly } from '@/services/climate';
+import type { GpsJamHex } from '@/services/gps-interference';
+import { fetchImageryScenes } from '@/services/imagery';
+import { fetchMilitaryBases,type MilitaryBaseCluster as ServerBaseCluster } from '@/services/military-bases';
 import type { RadiationObservation } from '@/services/radiation';
-import { ArcLayer } from '@deck.gl/layers';
 import type { WeatherAlert } from '@/services/weather';
-import type { CanadaRoadRecord } from '@/services/canada-roads';
-import type { CanadaAlert } from '@/services/canada-alerts';
-import { escapeHtml } from '@/utils/sanitize';
+import { getCachedFuelShortageRegistry } from '@/shared/fuel-shortage-registry-store';
 import {
-  derivePipelinePublicBadge,
-  type PipelineEvidenceInput,
-  type PipelinePublicBadge,
+derivePipelinePublicBadge,
+type PipelineEvidenceInput,
+type PipelinePublicBadge,
 } from '@/shared/pipeline-evidence';
 import { getCachedPipelineRegistries } from '@/shared/pipeline-registry-store';
 import {
-  deriveStoragePublicBadge,
-  type StorageEvidenceInput,
-  type StoragePublicBadge,
+deriveStoragePublicBadge,
+type StorageEvidenceInput,
+type StoragePublicBadge,
 } from '@/shared/storage-evidence';
 import { getCachedStorageFacilityRegistry } from '@/shared/storage-facility-registry-store';
-import { getCachedFuelShortageRegistry } from '@/shared/fuel-shortage-registry-store';
+import type {
+AIDataCenter,
+AisDensityZone,
+AisDisruptionEvent,
+AssetType,
+CableAdvisory,
+CableHealthRecord,
+CyberThreat,
+Hotspot,
+InternetOutage,
+MapDatacenterCluster,
+MapLayers,
+MapProtestCluster,
+MapTechEventCluster,
+MapTechHQCluster,
+MilitaryBaseEnriched,
+MilitaryFlight,
+MilitaryFlightCluster,
+MilitaryVessel,
+MilitaryVesselCluster,
+NaturalEvent,
+NewsItem,
+NewsLocationMarker,
+NuclearFacility,
+RelatedAsset,
+RepairShip,
+SocialUnrestEvent,
+UcdpGeoEvent,
+} from '@/types';
+import { escapeHtml } from '@/utils/sanitize';
+import type { Layer,LayersList,PickingInfo } from '@deck.gl/core';
+import { ArcLayer,GeoJsonLayer,IconLayer,PathLayer,PolygonLayer,ScatterplotLayer,TextLayer,type ScatterplotLayerProps } from '@deck.gl/layers';
+import { MAP_MARKER_ICON_ATLAS,MAP_MARKER_ICON_MAPPING,getMapMarkerDataUrl,getMapMarkerSvg,type MapMarkerIconKind } from '@/config/map-marker-icons';
+import { MapLibreOverlay } from '@deck.gl/maplibre';
+import type { StyleSpecification } from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import Supercluster from 'supercluster';
 // getCountryCentroid is imported lower in the file alongside other
 // country-geometry helpers; don't re-import it here.
-import { tokenizeForMatch, matchKeyword, matchesAnyKeyword, findMatchingKeywords } from '@/utils/keyword-match';
+import {
+CENTRAL_BANKS,
+COMMODITY_PORTS as COMMODITY_GEO_PORTS,
+COMMODITY_HUBS,
+CONFLICT_ZONES,
+FINANCIAL_CENTERS,
+GAMMA_IRRADIATORS,
+GULF_INVESTMENTS,
+INTEL_HOTSPOTS,
+MINING_SITES,
+PIPELINES,
+PIPELINE_COLORS,
+PORTS,
+PROCESSING_PLANTS,
+SITE_VARIANT,
+STOCK_EXCHANGES,
+STRATEGIC_WATERWAYS,
+} from '@/config';
 import { t } from '@/services/i18n';
-import { debounce, rafSchedule, getCurrentTheme } from '@/utils/index';
-import { isInputPending, scheduleYield } from '@/utils/after-paint';
+import { getCachedMilitaryBases,preloadMilitaryBases } from '@/services/military-base-config';
+import { isInputPending,scheduleYield } from '@/utils/after-paint';
+import { debounce,getCurrentTheme,rafSchedule } from '@/utils/index';
+import { findMatchingKeywords,matchKeyword,matchesAnyKeyword,tokenizeForMatch } from '@/utils/keyword-match';
 import { showLayerWarning } from '@/utils/layer-warning';
 import { localizeMapLabels } from '@/utils/map-locale';
 import {
-  createCountryHoverQueryController,
-  resolveCountryForPointerInteraction,
-  shouldRenderTradeAnimationFrame,
-  shouldRunInputSensitiveMapWork,
-  type CountryHoverQueryController,
+createCountryHoverQueryController,
+resolveCountryForPointerInteraction,
+shouldRenderTradeAnimationFrame,
+shouldRunInputSensitiveMapWork,
+type CountryHoverQueryController,
 } from './map/input-delay-interactions';
-import { getCachedMilitaryBases, preloadMilitaryBases } from '@/services/military-base-config';
-import {
-  INTEL_HOTSPOTS,
-  CONFLICT_ZONES,
-  GAMMA_IRRADIATORS,
-  PIPELINES,
-  PIPELINE_COLORS,
-  STRATEGIC_WATERWAYS,
-  SITE_VARIANT,
-  PORTS,
-  STOCK_EXCHANGES,
-  FINANCIAL_CENTERS,
-  CENTRAL_BANKS,
-  COMMODITY_HUBS,
-  GULF_INVESTMENTS,
-  MINING_SITES,
-  PROCESSING_PLANTS,
-  COMMODITY_PORTS as COMMODITY_GEO_PORTS,
-} from '@/config';
 // Tech-geo + ai-datacenters + geo-map tables imported directly so their chunks stay
 // off the eager @/config barrel and load only with this lazy renderer (#4404).
-import { STARTUP_HUBS, ACCELERATORS, TECH_HQS, CLOUD_REGIONS } from '@/config/tech-geo';
 import { AI_DATA_CENTERS } from '@/config/ai-datacenters';
-import { UNDERSEA_CABLES, NUCLEAR_FACILITIES, ECONOMIC_CENTERS, SPACEPORTS, CRITICAL_MINERALS, SANCTIONED_COUNTRIES_ALPHA2 } from '@/config/geo-map';
-import type { GulfInvestment } from '@/types';
-import { resolveTradeRouteSegments, TRADE_ROUTES as TRADE_ROUTES_LIST, type TradeRouteSegment, type TradeRouteStatus } from '@/config/trade-routes';
-import type { ScenarioVisualState } from '@/config/scenario-templates';
+import { CRITICAL_MINERALS,ECONOMIC_CENTERS,NUCLEAR_FACILITIES,SANCTIONED_COUNTRIES_ALPHA2,SPACEPORTS,UNDERSEA_CABLES } from '@/config/geo-map';
 import {
-  getLayersForVariant,
-  resolveLayerLabel,
-  bindLayerSearch,
-  getLayerExplanation,
-  hasCuratedLayerExplanation,
-  isLayerEntitled,
-  isLayerToggleAllowed,
-  sanitizeLockedLayers,
-  type MapVariant,
+bindLayerSearch,
+getLayerExplanation,
+getLayersForVariant,
+hasCuratedLayerExplanation,
+isPublicLayer,
+isLayerToggleAllowed,
+resolveLayerLabel,
+resolveLayerIcon,
+resolveLayerMarkerIcon,
+type MapVariant,
 } from '@/config/map-layer-definitions';
-import { isProTierResolved } from '@/services/widget-store';
-import { renderLayerExplanationCard } from '@/utils/layer-explanation-card';
-import { getAuthState, subscribeAuthState } from '@/services/auth-state';
-import { onEntitlementChange } from '@/services/entitlements';
-import { hasPremiumAccess } from '@/services/panel-gating';
-import { trackGateHit } from '@/services/analytics';
-import { MapPopup, type PopupType } from './MapPopup';
-import { renderMilitaryVesselTooltipHtml } from './deckgl-tooltip-renderers';
-import type { GetChokepointStatusResponse } from '@/services/supply-chain';
-import type { ChinaCorridorControlTower } from '../../shared/china-corridor-control-towers';
-import {
-  projectChinaCorridorOverlay,
-  type ChinaCorridorOverlayProjection,
-} from './map/china-corridor-overlay';
-import {
-  updateHotspotEscalation,
-  getHotspotEscalation,
-  setMilitaryData,
-  setCIIGetter,
-  setGeoAlertGetter,
-} from '@/services/hotspot-escalation';
+import type { ScenarioVisualState } from '@/config/scenario-templates';
+import { ACCELERATORS,CLOUD_REGIONS,STARTUP_HUBS,TECH_HQS } from '@/config/tech-geo';
+import { TRADE_ROUTES as TRADE_ROUTES_LIST,resolveTradeRouteSegments,type TradeRouteSegment,type TradeRouteStatus } from '@/config/trade-routes';
+
 import { getCachedCountryScoreValue } from '@/services/cached-risk-scores';
-import { getAlertsNearLocation } from '@/services/geo-convergence';
-import type { PositiveGeoEvent } from '@/services/positive-events-geo';
-import type { KindnessPoint } from '@/services/kindness-data';
-import type { HappinessData } from '@/services/happiness-data';
-import type { RenewableInstallation } from '@/services/renewable-installations';
 import type { SpeciesRecovery } from '@/services/conservation-data';
 import {
-  canonicalizeCountryCode,
-  getCountriesGeoJson,
-  getCountryAtCoordinates,
-  getCountryBbox,
-  getCountryCentroid,
+canonicalizeCountryCode,
+getCountriesGeoJson,
+getCountryAtCoordinates,
+getCountryBbox,
+getCountryCentroid,
 } from '@/services/country-geometry';
 import type { DiseaseOutbreakItem } from '@/services/disease-outbreaks';
-import type { FeatureCollection, Geometry } from 'geojson';
-import type { ResilienceRankingItem } from '@/services/resilience';
+import { getAlertsNearLocation } from '@/services/geo-convergence';
+import type { HappinessData } from '@/services/happiness-data';
 import {
-  RESILIENCE_CHOROPLETH_COLORS,
-  buildResilienceChoroplethMap,
-  formatResilienceChoroplethLevel,
-  normalizeExclusiveChoropleths,
+getHotspotEscalation,
+setCIIGetter,
+setGeoAlertGetter,
+setMilitaryData,
+updateHotspotEscalation,
+} from '@/services/hotspot-escalation';
+import type { KindnessPoint } from '@/services/kindness-data';
+import type { PositiveGeoEvent } from '@/services/positive-events-geo';
+import type { RenewableInstallation } from '@/services/renewable-installations';
+import type { GetChokepointStatusResponse } from '@/services/supply-chain';
+import type { GulfInvestment } from '@/types';
+import { renderLayerExplanationCard } from '@/utils/layer-explanation-card';
+import type { FeatureCollection,Geometry } from 'geojson';
+import type { ChinaCorridorControlTower } from '../../shared/china-corridor-control-towers';
+import { MapPopup,type PopupType } from './MapPopup';
+import { renderMilitaryVesselTooltipHtml } from './deckgl-tooltip-renderers';
+import {
+projectChinaCorridorOverlay,
+type ChinaCorridorOverlayProjection,
+} from './map/china-corridor-overlay';
+import {
+normalizeExclusiveChoropleths,
 } from './resilience-choropleth-utils';
-import { formatResilienceServerLevel } from './resilience-widget-utils';
 
-import { isAllowedPreviewUrl } from '@/utils/imagery-preview';
-import { pinWebcam, isPinned } from '@/services/webcams/pinned-store';
-import type { WebcamEntry, WebcamCluster } from '@/generated/client/worldmonitor/webcam/v1/service_client';
-import { fetchWebcamImage } from '@/services/webcams';
-import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
-import { summarizeRenderTiming, formatRenderTiming } from '@/components/map/render-timing';
-import { DeferredHeavyCommit } from '@/components/map/deferred-layer-commit';
-import { ZoomHintGuard } from '@/components/map/zoom-hint-guard';
-import { dispatchWebcamLayerClick, resolveWebcamStreamUrl, type WebcamLeafLike } from '@/components/map/webcam-click';
 import {
-  type BBox,
-  type BoundedFeature,
-  culledIndices,
-  geometryBounds,
-  simplifyGeometry,
-  zoomToSimplifyTolerance,
+culledIndices,
+geometryBounds,
+simplifyGeometry,
+zoomToSimplifyTolerance,
+type BBox,
+type BoundedFeature,
 } from '@/components/map/conflict-zone-cull';
+import { DeferredHeavyCommit } from '@/components/map/deferred-layer-commit';
+import { formatRenderTiming,summarizeRenderTiming } from '@/components/map/render-timing';
+import { dispatchWebcamLayerClick,resolveWebcamStreamUrl,type WebcamLeafLike } from '@/components/map/webcam-click';
+import { ZoomHintGuard } from '@/components/map/zoom-hint-guard';
+import type { WebcamCluster,WebcamEntry } from '@/generated/client/worldmonitor/webcam/v1/service_client';
+import { fetchWebcamImage } from '@/services/webcams';
+import { isPinned,pinWebcam } from '@/services/webcams/pinned-store';
+import { setTrustedHtml,trustedHtml } from '@/utils/dom-utils';
+import { isAllowedPreviewUrl } from '@/utils/imagery-preview';
 import {
-  createCountryClickGestureTracker,
-  finishCountryClickGesture,
-  markCountryClickDrag,
-  refreshCountryClickDragSuppression,
-  shouldSuppressCountryClick,
-  startCountryClickGesture,
-  updateCountryClickGestureDrag,
-  type CountryClickGestureTracker,
+createCountryClickGestureTracker,
+finishCountryClickGesture,
+markCountryClickDrag,
+refreshCountryClickDragSuppression,
+shouldSuppressCountryClick,
+startCountryClickGesture,
+updateCountryClickGestureDrag,
+type CountryClickGestureTracker,
 } from './map-interaction-guard';
 
 
@@ -359,25 +352,25 @@ let COLORS = getOverlayColors();
 
 // SVG icons as data URLs for different marker shapes
 const MARKER_ICONS = {
-  // Square - for datacenters
-  square: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="3" fill="white"/></svg>`),
+  // Server rack - for datacenters
+  datacenter: getMapMarkerDataUrl('datacenter-site'),
   // Diamond - for hotspots
   diamond: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><polygon points="16,2 30,16 16,30 2,16" fill="white"/></svg>`),
   // Triangle up - for military bases
-  triangleUp: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><polygon points="16,2 30,28 2,28" fill="white"/></svg>`),
-  // Hexagon - for nuclear
-  hexagon: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><polygon points="16,2 28,9 28,23 16,30 4,23 4,9" fill="white"/></svg>`),
+  triangleUp: getMapMarkerDataUrl('military-base'),
+  // Nuclear trefoil
+  nuclear: getMapMarkerDataUrl('nuclear-site'),
   // Circle - fallback
   circle: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="white"/></svg>`),
   // Star - for special markers
   star: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><polygon points="16,2 20,12 30,12 22,19 25,30 16,23 7,30 10,19 2,12 12,12" fill="white"/></svg>`),
   // Airplane silhouette - top-down with wings and tail (pointing north, rotated by trackDeg)
-  plane: 'data:image/svg+xml;base64,' + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M16 2 L17.5 10 L17 12 L27 17 L27 19 L17 16 L17 24 L20 26.5 L20 28 L16 27 L12 28 L12 26.5 L15 24 L15 16 L5 19 L5 17 L15 12 L14.5 10 Z" fill="white"/></svg>`),
+  plane: getMapMarkerDataUrl('aircraft-position'),
 };
 
 const BASES_ICON_MAPPING = { triangleUp: { x: 0, y: 0, width: 32, height: 32, mask: true } };
-const NUCLEAR_ICON_MAPPING = { hexagon: { x: 0, y: 0, width: 32, height: 32, mask: true } };
-const DATACENTER_ICON_MAPPING = { square: { x: 0, y: 0, width: 32, height: 32, mask: true } };
+const NUCLEAR_ICON_MAPPING = { nuclear: { x: 0, y: 0, width: 32, height: 32, mask: true } };
+const DATACENTER_ICON_MAPPING = { datacenter: { x: 0, y: 0, width: 32, height: 32, mask: true } };
 const AIRCRAFT_ICON_MAPPING = { plane: { x: 0, y: 0, width: 32, height: 32, mask: true } };
 
 const CONFLICT_COUNTRY_ISO: Record<string, string[]> = {
@@ -700,8 +693,6 @@ export class DeckGLMap {
   // CII choropleth data
   private ciiScoresMap: Map<string, { score: number; level: string }> = new Map();
   private ciiScoresVersion = 0;
-  private resilienceScoresMap: ReturnType<typeof buildResilienceChoroplethMap> = new Map();
-  private resilienceScoresVersion = 0;
 
   // Country highlight state
   private countryGeoJsonLoaded = false;
@@ -2080,7 +2071,7 @@ export class DeckGLMap {
       layers.push(...this.createHotspotsLayers());
     }
 
-    // Datacenters layer - SQUARE icons at zoom >= 5, cluster dots at zoom < 5
+    // Datacenters use server-rack icons at every zoom without map count labels.
     const currentZoom = this.maplibreMap?.getZoom() || 2;
     if (mapLayers.datacenters) {
       if (currentZoom >= 5) {
@@ -2361,10 +2352,6 @@ export class DeckGLMap {
       const ciiLayer = this.createCIIChoroplethLayer();
       if (ciiLayer) layers.push(ciiLayer);
     }
-    if (mapLayers.resilienceScore) {
-      const resilienceLayer = this.createResilienceChoroplethLayer();
-      if (resilienceLayer) layers.push(resilienceLayer);
-    }
     // Sanctions choropleth
     if (mapLayers.sanctions) {
       const sanctionsLayer = this.createSanctionsChoroplethLayer();
@@ -2388,7 +2375,7 @@ export class DeckGLMap {
 
     // Webcam layer (server-side clustered markers)
     if (mapLayers.webcams && this.webcamData.length > 0) {
-      layers.push(new ScatterplotLayer<WebcamMarker>({
+      layers.push(...this.createSingletonPointLayers(new ScatterplotLayer<WebcamMarker>({
         id: 'webcam-layer',
         data: this.webcamData,
         getPosition: (d) => [d.lng, d.lat],
@@ -2399,7 +2386,7 @@ export class DeckGLMap {
         // Consume the pick (return true) so MapLibreOverlay onClick → handleClick
         // does not double-fire. Cluster vs leaf is routed in handleWebcamLayerClick.
         onClick: (info) => this.handleWebcamLayerClick(info),
-      }));
+      }), 'camera', marker => !('count' in marker)));
     }
 
     // News geo-locations (always shown if data exists)
@@ -2416,6 +2403,47 @@ export class DeckGLMap {
   }
 
   // Layer creation methods
+  private createPointIconLayer<T>(
+    kind: MapMarkerIconKind | ((point: T) => MapMarkerIconKind),
+    props: ScatterplotLayerProps<T>,
+  ): IconLayer<T> {
+    const radius = props.getRadius ?? 1000;
+    return new IconLayer<T>({
+      ...props,
+      iconAtlas: MAP_MARKER_ICON_ATLAS,
+      iconMapping: MAP_MARKER_ICON_MAPPING,
+      getIcon: typeof kind === 'function' ? kind : () => kind,
+      getColor: props.getFillColor,
+      getSize: typeof radius === 'function' ? (point, info) => radius(point, info) * 2 : radius * 2,
+      sizeUnits: props.radiusUnits ?? 'meters',
+      sizeScale: props.radiusScale ?? 1,
+      sizeMinPixels: (props.radiusMinPixels ?? 0) * 2,
+      sizeMaxPixels: (props.radiusMaxPixels ?? Number.MAX_SAFE_INTEGER) * 2,
+      alphaCutoff: 0,
+      updateTriggers: {
+        ...props.updateTriggers,
+        getSize: props.updateTriggers?.getRadius,
+        getColor: props.updateTriggers?.getFillColor,
+      },
+    });
+  }
+
+  private createSingletonPointLayers<T>(
+    layer: ScatterplotLayer<T>,
+    kind: MapMarkerIconKind | ((point: T) => MapMarkerIconKind),
+    isSingleton: (point: T) => boolean,
+  ): Layer[] {
+    const data = layer.props.data as T[];
+    return [
+      layer.clone({ data: data.filter(point => !isSingleton(point)) }),
+      this.createPointIconLayer(kind, {
+        ...layer.props,
+        id: `${layer.id}-singletons`,
+        data: data.filter(isSingleton),
+      }),
+    ];
+  }
+
   private createCablesLayer(): PathLayer {
     const highlightedCables = this.highlightedAssets.cable;
     const cacheKey = 'cables-layer';
@@ -2625,7 +2653,7 @@ export class DeckGLMap {
    * Chiren (6.5 TWh) without blowing out small sites to invisibility.
    * Color = derived publicBadge, same deriver as the server handler.
    */
-  private createEnergyStorageLayer(): ScatterplotLayer | null {
+  private createEnergyStorageLayer(): IconLayer | null {
     const cacheKey = 'storage-facilities-layer';
 
     interface RawEntry {
@@ -2704,7 +2732,7 @@ export class DeckGLMap {
       }
     };
 
-    return new ScatterplotLayer<EnergyStorageDot>({
+    return this.createPointIconLayer<EnergyStorageDot>('storage', {
       id: cacheKey,
       data,
       getPosition: d => d.position,
@@ -2742,7 +2770,7 @@ export class DeckGLMap {
    * Multiple shortages in the same country stack with a small angular
    * offset so they don't render as one overlapping dot.
    */
-  private createEnergyShortagePinsLayer(): ScatterplotLayer | null {
+  private createEnergyShortagePinsLayer(): IconLayer | null {
     const cacheKey = 'fuel-shortages-layer';
 
     interface RawEntry {
@@ -2804,7 +2832,7 @@ export class DeckGLMap {
       }
     };
 
-    return new ScatterplotLayer<ShortagePin>({
+    return this.createPointIconLayer<ShortagePin>('fuel-shortage', {
       id: cacheKey,
       data,
       getPosition: d => d.position,
@@ -3106,13 +3134,12 @@ export class DeckGLMap {
     const data = this.getActiveNuclearFacilities();
     const highlightSignature = this.getSetSignature(highlightedNuclear);
 
-    // Nuclear: HEXAGON icons - yellow/orange color, semi-transparent
     return new IconLayer({
       id: 'nuclear-layer',
       data,
       getPosition: (d) => [d.lon, d.lat],
-      getIcon: () => 'hexagon',
-      iconAtlas: MARKER_ICONS.hexagon,
+      getIcon: () => 'nuclear',
+      iconAtlas: MARKER_ICONS.nuclear,
       iconMapping: NUCLEAR_ICON_MAPPING,
       getSize: (d) => highlightedNuclear.has(d.id) ? 15 : 11,
       getColor: (d) => {
@@ -3127,13 +3154,14 @@ export class DeckGLMap {
       sizeScale: 1,
       sizeMinPixels: 6,
       sizeMaxPixels: 15,
+      alphaCutoff: 0,
       pickable: true,
       updateTriggers: { getSize: highlightSignature, getColor: highlightSignature },
     });
   }
 
-  private createIrradiatorsLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createIrradiatorsLayer(): IconLayer {
+    return this.createPointIconLayer('irradiator', {
       id: 'irradiators-layer',
       data: GAMMA_IRRADIATORS,
       getPosition: (d) => [d.lon, d.lat],
@@ -3145,8 +3173,8 @@ export class DeckGLMap {
     });
   }
 
-  private createSpaceportsLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createSpaceportsLayer(): IconLayer {
+    return this.createPointIconLayer('spaceport', {
       id: 'spaceports-layer',
       data: SPACEPORTS,
       getPosition: (d) => [d.lon, d.lat],
@@ -3158,8 +3186,8 @@ export class DeckGLMap {
     });
   }
 
-  private createPortsLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createPortsLayer(): IconLayer {
+    return this.createPointIconLayer('port', {
       id: 'ports-layer',
       data: PORTS,
       getPosition: (d) => [d.lon, d.lat],
@@ -3182,8 +3210,8 @@ export class DeckGLMap {
     });
   }
 
-  private createFlightDelaysLayer(delays: AirportDelayAlert[]): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createFlightDelaysLayer(delays: AirportDelayAlert[]): IconLayer {
+    return this.createPointIconLayer('airport-delay', {
       id: 'flight-delays-layer',
       data: delays,
       getPosition: (d) => [d.lon, d.lat],
@@ -3277,13 +3305,12 @@ export class DeckGLMap {
     const data = this.getActiveDatacenters();
     const highlightSignature = this.getSetSignature(highlightedDC);
 
-    // Datacenters: SQUARE icons - purple color, semi-transparent for layering
     return new IconLayer({
       id: 'datacenters-layer',
       data,
       getPosition: (d) => [d.lon, d.lat],
-      getIcon: () => 'square',
-      iconAtlas: MARKER_ICONS.square,
+      getIcon: () => 'datacenter',
+      iconAtlas: MARKER_ICONS.datacenter,
       iconMapping: DATACENTER_ICON_MAPPING,
       getSize: (d) => highlightedDC.has(d.id) ? 14 : 10,
       getColor: (d) => {
@@ -3298,13 +3325,14 @@ export class DeckGLMap {
       sizeScale: 1,
       sizeMinPixels: 6,
       sizeMaxPixels: 14,
+      alphaCutoff: 0,
       pickable: true,
       updateTriggers: { getSize: highlightSignature, getColor: highlightSignature },
     });
   }
 
-  private createEarthquakesLayer(earthquakes: Earthquake[]): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createEarthquakesLayer(earthquakes: Earthquake[]): IconLayer {
+    return this.createPointIconLayer('earthquake', {
       id: 'earthquakes-layer',
       data: earthquakes,
       getPosition: (d) => [d.location?.longitude ?? 0, d.location?.latitude ?? 0],
@@ -3327,7 +3355,16 @@ export class DeckGLMap {
     const layers: Layer[] = [];
 
     if (nonTC.length > 0) {
-      layers.push(new ScatterplotLayer({
+      layers.push(this.createPointIconLayer<NaturalEvent>((event: NaturalEvent) => {
+        switch (event.category) {
+          case 'volcanoes': return 'volcano';
+          case 'wildfires': return 'fire';
+          case 'floods': return 'flood';
+          case 'earthquakes': return 'earthquake';
+          case 'severeStorms': return 'cyclone';
+          default: return 'natural-event';
+        }
+      }, {
         id: 'natural-events-layer',
         data: nonTC,
         getPosition: (d: NaturalEvent) => [d.lon, d.lat],
@@ -3449,7 +3486,7 @@ export class DeckGLMap {
     }
 
     // Storm center markers (on top)
-    layers.push(new ScatterplotLayer({
+    layers.push(this.createPointIconLayer<NaturalEvent>('cyclone', {
       id: 'storm-centers-layer',
       data: cyclones,
       getPosition: (d: NaturalEvent) => [d.lon, d.lat],
@@ -3466,8 +3503,8 @@ export class DeckGLMap {
     return layers;
   }
 
-  private createFiresLayer(items: typeof this.firmsFireData): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createFiresLayer(items: typeof this.firmsFireData): IconLayer {
+    return this.createPointIconLayer('fire', {
       id: 'fires-layer',
       data: items,
       getPosition: (d: (typeof this.firmsFireData)[0]) => [d.lon, d.lat],
@@ -3483,8 +3520,8 @@ export class DeckGLMap {
     });
   }
 
-  private createIranEventsLayer(items: IranEvent[]): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createIranEventsLayer(items: IranEvent[]): IconLayer {
+    return this.createPointIconLayer('conflict', {
       id: 'iran-events-layer',
       data: items,
       getPosition: (d: IranEvent) => [d.longitude, d.latitude],
@@ -3506,7 +3543,7 @@ export class DeckGLMap {
       return COLORS.canadaRoads;
     };
     const layers: Layer[] = [];
-    layers.push(new ScatterplotLayer<CanadaRoadRecord>({
+    layers.push(this.createPointIconLayer<CanadaRoadRecord>('road-closure', {
       id: 'canada-roads-layer',
       data: withCentroid,
       getPosition: (d) => d.centroid as [number, number],
@@ -3530,9 +3567,9 @@ export class DeckGLMap {
     }
     return layers;
   }
-  private createCanadaAlertsLayer(alerts: CanadaAlert[]): ScatterplotLayer {
+  private createCanadaAlertsLayer(alerts: CanadaAlert[]): IconLayer {
     const alertsWithCoords = alerts.filter(a => a.centroid && a.centroid.length === 2);
-    return new ScatterplotLayer({
+    return this.createPointIconLayer('regional-alert', {
       id: 'canada-alerts-layer',
       data: alertsWithCoords,
       getPosition: (d: CanadaAlert) => d.centroid as [number, number],
@@ -3549,11 +3586,11 @@ export class DeckGLMap {
     });
   }
 
-  private createWeatherLayer(alerts: WeatherAlert[]): ScatterplotLayer {
+  private createWeatherLayer(alerts: WeatherAlert[]): IconLayer {
     // Filter weather alerts that have centroid coordinates
     const alertsWithCoords = alerts.filter(a => a.centroid && a.centroid.length === 2);
 
-    return new ScatterplotLayer({
+    return this.createPointIconLayer('weather-alert', {
       id: 'weather-layer',
       data: alertsWithCoords,
       getPosition: (d) => d.centroid as [number, number], // centroid is [lon, lat]
@@ -3570,8 +3607,8 @@ export class DeckGLMap {
     });
   }
 
-  private createOutagesLayer(outages: InternetOutage[]): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createOutagesLayer(outages: InternetOutage[]): IconLayer {
+    return this.createPointIconLayer('outage', {
       id: 'outages-layer',
       data: outages,
       getPosition: (d) => [d.lon, d.lat],
@@ -3583,8 +3620,8 @@ export class DeckGLMap {
     });
   }
 
-  private createTrafficAnomaliesLayer(anomalies: ProtoTrafficAnomaly[]): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createTrafficAnomaliesLayer(anomalies: ProtoTrafficAnomaly[]): IconLayer {
+    return this.createPointIconLayer('traffic-anomaly', {
       id: 'traffic-anomalies-layer',
       data: anomalies.filter(a => a.latitude !== 0 || a.longitude !== 0),
       getPosition: (d) => [d.longitude, d.latitude],
@@ -3596,8 +3633,8 @@ export class DeckGLMap {
     });
   }
 
-  private createDdosLocationsLayer(hits: DdosLocationHit[]): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createDdosLocationsLayer(hits: DdosLocationHit[]): IconLayer {
+    return this.createPointIconLayer('ddos', {
       id: 'ddos-locations-layer',
       data: hits.filter(h => h.latitude !== 0 || h.longitude !== 0),
       getPosition: (d) => [d.longitude, d.latitude],
@@ -3609,8 +3646,8 @@ export class DeckGLMap {
     });
   }
 
-  private createCyberThreatsLayer(threats: CyberThreat[]): ScatterplotLayer<CyberThreat> {
-    return new ScatterplotLayer<CyberThreat>({
+  private createCyberThreatsLayer(threats: CyberThreat[]): IconLayer<CyberThreat> {
+    return this.createPointIconLayer<CyberThreat>('cyber-threat', {
       id: 'cyber-threats-layer',
       data: threats,
       getPosition: (d) => [d.lon, d.lat],
@@ -3639,8 +3676,8 @@ export class DeckGLMap {
     });
   }
 
-  private createRadiationLayer(items: RadiationObservation[]): ScatterplotLayer<RadiationObservation> {
-    return new ScatterplotLayer<RadiationObservation>({
+  private createRadiationLayer(items: RadiationObservation[]): IconLayer<RadiationObservation> {
+    return this.createPointIconLayer<RadiationObservation>('radiation', {
       id: 'radiation-watch-layer',
       data: items,
       getPosition: (d) => [d.lon, d.lat],
@@ -3666,7 +3703,7 @@ export class DeckGLMap {
     });
   }
 
-  private createDiseaseOutbreaksLayer(items: DiseaseOutbreakItem[]): ScatterplotLayer<{ lon: number; lat: number; item: DiseaseOutbreakItem }> {
+  private createDiseaseOutbreaksLayer(items: DiseaseOutbreakItem[]): IconLayer<{ lon: number; lat: number; item: DiseaseOutbreakItem }> {
     type Point = { lon: number; lat: number; item: DiseaseOutbreakItem };
     const points: Point[] = [];
     for (const item of items) {
@@ -3677,7 +3714,7 @@ export class DeckGLMap {
         if (centroid) points.push({ lon: centroid.lon, lat: centroid.lat, item });
       }
     }
-    return new ScatterplotLayer<Point>({
+    return this.createPointIconLayer<Point>('disease-outbreak', {
       id: 'disease-outbreaks-layer',
       data: points,
       getPosition: (d) => [d.lon, d.lat],
@@ -3720,8 +3757,8 @@ export class DeckGLMap {
     });
   }
 
-  private createLiveTankersLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createLiveTankersLayer(): IconLayer {
+    return this.createPointIconLayer('vessel', {
       id: 'live-tankers-layer',
       data: this.liveTankers,
       getPosition: (d) => [d.lon, d.lat],
@@ -3838,19 +3875,19 @@ export class DeckGLMap {
     });
   }
 
-  private createAisDisruptionsLayer(): ScatterplotLayer {
+  private createAisDisruptionsLayer(): IconLayer {
     // AIS spoofing/jamming events
-    return new ScatterplotLayer({
+    return this.createPointIconLayer('ais-disruption', {
       id: 'ais-disruptions-layer',
       data: this.aisDisruptions,
       getPosition: (d) => [d.lon, d.lat],
       getRadius: 12000,
       getFillColor: (d) => {
         // Color by severity/type
-        if (d.severity === 'high' || d.type === 'spoofing') {
+        if (d.severity === 'high' || (d.type as string) === 'spoofing') {
           return [255, 50, 50, 220] as [number, number, number, number]; // Red
         }
-        if (d.severity === 'medium') {
+        if ((d.severity as string) === 'medium') {
           return [255, 150, 0, 200] as [number, number, number, number]; // Orange
         }
         return [255, 200, 100, 180] as [number, number, number, number]; // Yellow
@@ -3864,9 +3901,9 @@ export class DeckGLMap {
     });
   }
 
-  private createCableAdvisoriesLayer(advisories: CableAdvisory[]): ScatterplotLayer {
+  private createCableAdvisoriesLayer(advisories: CableAdvisory[]): IconLayer {
     // Cable fault/maintenance advisories
-    return new ScatterplotLayer({
+    return this.createPointIconLayer('cable-fault', {
       id: 'cable-advisories-layer',
       data: advisories,
       getPosition: (d) => [d.lon, d.lat],
@@ -3886,9 +3923,9 @@ export class DeckGLMap {
     });
   }
 
-  private createRepairShipsLayer(): ScatterplotLayer {
+  private createRepairShipsLayer(): IconLayer {
     // Cable repair ships
-    return new ScatterplotLayer({
+    return this.createPointIconLayer('repair-vessel', {
       id: 'repair-ships-layer',
       data: this.repairShips,
       getPosition: (d) => [d.lon, d.lat],
@@ -3900,8 +3937,8 @@ export class DeckGLMap {
     });
   }
 
-  private createMilitaryVesselsLayer(vessels: MilitaryVessel[]): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createMilitaryVesselsLayer(vessels: MilitaryVessel[]): IconLayer {
+    return this.createPointIconLayer('military-vessel', {
       id: 'military-vessels-layer',
       data: vessels,
       getPosition: (d) => [d.lon, d.lat],
@@ -3941,8 +3978,8 @@ export class DeckGLMap {
     });
   }
 
-  private createMilitaryFlightsLayer(flights: MilitaryFlight[]): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createMilitaryFlightsLayer(flights: MilitaryFlight[]): IconLayer {
+    return this.createPointIconLayer('military-aircraft', {
       id: 'military-flights-layer',
       data: flights,
       getPosition: (d) => [d.lon, d.lat],
@@ -3989,8 +4026,8 @@ export class DeckGLMap {
     });
   }
 
-  private createWaterwaysLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createWaterwaysLayer(): IconLayer {
+    return this.createPointIconLayer('waterway', {
       id: 'waterways-layer',
       data: STRATEGIC_WATERWAYS,
       getPosition: (d) => [d.lon, d.lat],
@@ -4002,8 +4039,8 @@ export class DeckGLMap {
     });
   }
 
-  private createEconomicCentersLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createEconomicCentersLayer(): IconLayer {
+    return this.createPointIconLayer('financial-center', {
       id: 'economic-centers-layer',
       data: ECONOMIC_CENTERS,
       getPosition: (d) => [d.lon, d.lat],
@@ -4015,8 +4052,8 @@ export class DeckGLMap {
     });
   }
 
-  private createStockExchangesLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createStockExchangesLayer(): IconLayer {
+    return this.createPointIconLayer('stock-exchange', {
       id: 'stock-exchanges-layer',
       data: STOCK_EXCHANGES,
       getPosition: (d) => [d.lon, d.lat],
@@ -4032,8 +4069,8 @@ export class DeckGLMap {
     });
   }
 
-  private createFinancialCentersLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createFinancialCentersLayer(): IconLayer {
+    return this.createPointIconLayer('financial-center', {
       id: 'financial-centers-layer',
       data: FINANCIAL_CENTERS,
       getPosition: (d) => [d.lon, d.lat],
@@ -4049,8 +4086,8 @@ export class DeckGLMap {
     });
   }
 
-  private createCentralBanksLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createCentralBanksLayer(): IconLayer {
+    return this.createPointIconLayer('central-bank', {
       id: 'central-banks-layer',
       data: CENTRAL_BANKS,
       getPosition: (d) => [d.lon, d.lat],
@@ -4066,8 +4103,8 @@ export class DeckGLMap {
     });
   }
 
-  private createCommodityHubsLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createCommodityHubsLayer(): IconLayer {
+    return this.createPointIconLayer('commodity-hub', {
       id: 'commodity-hubs-layer',
       data: COMMODITY_HUBS,
       getPosition: (d) => [d.lon, d.lat],
@@ -4090,10 +4127,10 @@ export class DeckGLMap {
     this.render();
   }
 
-  private createAPTGroupsLayer(): ScatterplotLayer {
+  private createAPTGroupsLayer(): IconLayer {
     // APT Groups - cyber threat actor markers (geopolitical variant only)
     // Made subtle to avoid visual clutter - small orange dots
-    return new ScatterplotLayer({
+    return this.createPointIconLayer('threat-actor', {
       id: 'apt-groups-layer',
       data: this.aptGroups,
       getPosition: (d) => [d.lon, d.lat],
@@ -4106,9 +4143,9 @@ export class DeckGLMap {
     });
   }
 
-  private createMineralsLayer(): ScatterplotLayer {
+  private createMineralsLayer(): IconLayer {
     // Critical minerals projects
-    return new ScatterplotLayer({
+    return this.createPointIconLayer('mineral', {
       id: 'minerals-layer',
       data: CRITICAL_MINERALS,
       getPosition: (d) => [d.lon, d.lat],
@@ -4130,8 +4167,8 @@ export class DeckGLMap {
   }
 
   // Commodity variant layers
-  private createMiningSitesLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createMiningSitesLayer(): IconLayer {
+    return this.createPointIconLayer('mine', {
       id: 'mining-sites-layer',
       data: MINING_SITES,
       getPosition: (d) => [d.lon, d.lat],
@@ -4146,8 +4183,8 @@ export class DeckGLMap {
     });
   }
 
-  private createProcessingPlantsLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createProcessingPlantsLayer(): IconLayer {
+    return this.createPointIconLayer('processing-plant', {
       id: 'processing-plants-layer',
       data: PROCESSING_PLANTS,
       getPosition: (d) => [d.lon, d.lat],
@@ -4170,13 +4207,13 @@ export class DeckGLMap {
     });
   }
 
-  private createCommodityPortsLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createCommodityPortsLayer(): IconLayer {
+    return this.createPointIconLayer('commodity-port', {
       id: 'commodity-ports-layer',
       data: COMMODITY_GEO_PORTS,
       getPosition: (d) => [d.lon, d.lat],
       getRadius: 12000,
-      getFillColor: (d) => getMineralColor(d.commodities[0]),
+      getFillColor: (d) => getMineralColor(d.commodities[0]!),
       radiusMinPixels: 6,
       radiusMaxPixels: 14,
       pickable: true,
@@ -4187,8 +4224,8 @@ export class DeckGLMap {
   }
 
   // Tech variant layers
-  private createStartupHubsLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createStartupHubsLayer(): IconLayer {
+    return this.createPointIconLayer('startup', {
       id: 'startup-hubs-layer',
       data: STARTUP_HUBS,
       getPosition: (d) => [d.lon, d.lat],
@@ -4200,8 +4237,8 @@ export class DeckGLMap {
     });
   }
 
-  private createAcceleratorsLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createAcceleratorsLayer(): IconLayer {
+    return this.createPointIconLayer('accelerator', {
       id: 'accelerators-layer',
       data: ACCELERATORS,
       getPosition: (d) => [d.lon, d.lat],
@@ -4213,8 +4250,8 @@ export class DeckGLMap {
     });
   }
 
-  private createCloudRegionsLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createCloudRegionsLayer(): IconLayer {
+    return this.createPointIconLayer('cloud-region', {
       id: 'cloud-regions-layer',
       data: CLOUD_REGIONS,
       getPosition: (d) => [d.lon, d.lat],
@@ -4230,7 +4267,7 @@ export class DeckGLMap {
     this.updateClusterData();
     const layers: Layer[] = [];
 
-    layers.push(new ScatterplotLayer<MapProtestCluster>({
+    layers.push(...this.createSingletonPointLayers(new ScatterplotLayer<MapProtestCluster>({
       id: 'protest-clusters-layer',
       data: this.protestClusters,
       getPosition: d => [d.lon, d.lat],
@@ -4245,7 +4282,7 @@ export class DeckGLMap {
       },
       pickable: true,
       updateTriggers: { getRadius: this.lastSCZoom, getFillColor: this.lastSCZoom },
-    }));
+    }), 'protest', point => point.count === 1));
 
     const multiClusters = this.protestClusters.filter(c => c.count > 1);
     if (multiClusters.length > 0) {
@@ -4295,7 +4332,7 @@ export class DeckGLMap {
     const layers: Layer[] = [];
     const zoom = this.maplibreMap?.getZoom() || 2;
 
-    layers.push(new ScatterplotLayer<MapTechHQCluster>({
+    layers.push(...this.createSingletonPointLayers(new ScatterplotLayer<MapTechHQCluster>({
       id: 'tech-hq-clusters-layer',
       data: this.techHQClusters,
       getPosition: d => [d.lon, d.lat],
@@ -4309,7 +4346,7 @@ export class DeckGLMap {
       },
       pickable: true,
       updateTriggers: { getRadius: this.lastSCZoom },
-    }));
+    }), 'tech-hq', point => point.count === 1));
 
     const multiClusters = this.techHQClusters.filter(c => c.count > 1);
     if (multiClusters.length > 0) {
@@ -4355,7 +4392,7 @@ export class DeckGLMap {
     this.updateClusterData();
     const layers: Layer[] = [];
 
-    layers.push(new ScatterplotLayer<MapTechEventCluster>({
+    layers.push(...this.createSingletonPointLayers(new ScatterplotLayer<MapTechEventCluster>({
       id: 'tech-event-clusters-layer',
       data: this.techEventClusters,
       getPosition: d => [d.lon, d.lat],
@@ -4368,7 +4405,7 @@ export class DeckGLMap {
       },
       pickable: true,
       updateTriggers: { getRadius: this.lastSCZoom },
-    }));
+    }), 'calendar', point => point.count === 1));
 
     const multiClusters = this.techEventClusters.filter(c => c.count > 1);
     if (multiClusters.length > 0) {
@@ -4397,39 +4434,20 @@ export class DeckGLMap {
     this.updateClusterData();
     const layers: Layer[] = [];
 
-    layers.push(new ScatterplotLayer<MapDatacenterCluster>({
+    layers.push(this.createPointIconLayer<MapDatacenterCluster>('datacenter-site', {
       id: 'datacenter-clusters-layer',
       data: this.datacenterClusters,
       getPosition: d => [d.lon, d.lat],
-      getRadius: d => 15000 + d.count * 2000,
+      getRadius: 6,
+      radiusUnits: 'pixels',
       radiusMinPixels: 6,
-      radiusMaxPixels: 20,
+      radiusMaxPixels: 6,
       getFillColor: d => {
         if (d.majorityExisting) return [160, 80, 255, 180] as [number, number, number, number];
         return [80, 160, 255, 180] as [number, number, number, number];
       },
       pickable: true,
-      updateTriggers: { getRadius: this.lastSCZoom },
     }));
-
-    const multiClusters = this.datacenterClusters.filter(c => c.count > 1);
-    if (multiClusters.length > 0) {
-      layers.push(new TextLayer<MapDatacenterCluster>({
-        id: 'datacenter-clusters-badge',
-        data: multiClusters,
-        getText: d => String(d.count),
-        getPosition: d => [d.lon, d.lat],
-        background: true,
-        getBackgroundColor: [0, 0, 0, 180],
-        backgroundPadding: [4, 2, 4, 2],
-        getColor: [255, 255, 255, 255],
-        getSize: 12,
-        getPixelOffset: [0, -14],
-        pickable: false,
-        fontFamily: 'system-ui, sans-serif',
-        fontWeight: 700,
-      }));
-    }
 
     layers.push(this.createEmptyGhost('datacenter-clusters-layer'));
     return layers;
@@ -4442,7 +4460,7 @@ export class DeckGLMap {
     const baseOpacity = zoom < 2.5 ? 0.5 : zoom < 4 ? 0.7 : 1.0;
     const layers: Layer[] = [];
 
-    layers.push(new ScatterplotLayer({
+    layers.push(this.createPointIconLayer<(typeof this.hotspots)[number]>('regional-alert', {
       id: 'hotspots-layer',
       data: this.hotspots,
       getPosition: (d) => [d.lon, d.lat],
@@ -4497,8 +4515,8 @@ export class DeckGLMap {
     return layers;
   }
 
-  private createGulfInvestmentsLayer(): ScatterplotLayer {
-    return new ScatterplotLayer<GulfInvestment>({
+  private createGulfInvestmentsLayer(): IconLayer {
+    return this.createPointIconLayer<GulfInvestment>('investment', {
       id: 'gulf-investments-layer',
       data: GULF_INVESTMENTS,
       getPosition: (d: GulfInvestment) => [d.lon, d.lat],
@@ -4587,7 +4605,7 @@ export class DeckGLMap {
     }
   }
 
-  private createNewsLocationsLayer(): ScatterplotLayer[] {
+  private createNewsLocationsLayer(): Layer[] {
     const zoom = this.maplibreMap?.getZoom() || 2;
     const alphaScale = zoom < 2.5 ? 0.4 : zoom < 4 ? 0.7 : 1.0;
     const filteredNewsLocations = this.filterByTime(this.newsLocations, (location) => location.timestamp);
@@ -4609,8 +4627,8 @@ export class DeckGLMap {
     const now = this.pulseTime || Date.now();
     const PULSE_DURATION = 30_000;
 
-    const layers: ScatterplotLayer[] = [
-      new ScatterplotLayer({
+    const layers: Layer[] = [
+      this.createPointIconLayer<NewsLocationMarker>('news', {
         id: 'news-locations-layer',
         data: filteredNewsLocations,
         getPosition: (d) => [d.lon, d.lat],
@@ -4681,7 +4699,17 @@ export class DeckGLMap {
     };
 
     // Dot layer (tooltip on hover via getTooltip)
-    layers.push(new ScatterplotLayer({
+    layers.push(this.createPointIconLayer<PositiveGeoEvent>((event: PositiveGeoEvent) => {
+      switch (event.category) {
+        case 'nature-wildlife': return 'wildlife';
+        case 'humanity-kindness': return 'kindness';
+        case 'science-health': return 'science-health';
+        case 'innovation-tech': return 'innovation';
+        case 'climate-wins': return 'climate';
+        case 'culture-community': return 'community';
+        default: return 'kindness';
+      }
+    }, {
       id: 'positive-events-layer',
       data: items,
       getPosition: (d: PositiveGeoEvent) => [d.lon, d.lat],
@@ -4721,7 +4749,7 @@ export class DeckGLMap {
     if (items.length === 0) return layers;
 
     // Dot layer (tooltip on hover via getTooltip)
-    layers.push(new ScatterplotLayer<KindnessPoint>({
+    layers.push(this.createPointIconLayer<KindnessPoint>('kindness', {
       id: 'kindness-layer',
       data: items,
       getPosition: (d: KindnessPoint) => [d.lon, d.lat],
@@ -4807,27 +4835,6 @@ export class DeckGLMap {
     });
   }
 
-  private createResilienceChoroplethLayer(): GeoJsonLayer | null {
-    if (!this.countriesGeoJsonData || this.resilienceScoresMap.size === 0) return null;
-    const scores = this.resilienceScoresMap;
-    return new GeoJsonLayer({
-      id: 'resilience-choropleth-layer',
-      data: this.getCulledCountriesGeoJson() ?? this.countriesGeoJsonData,
-      filled: true,
-      stroked: true,
-      getFillColor: (feature: { properties?: Record<string, unknown> }) => {
-        const code = feature.properties?.['ISO3166-1-Alpha-2'] as string | undefined;
-        const entry = code ? scores.get(code) : undefined;
-        return entry ? RESILIENCE_CHOROPLETH_COLORS[entry.level] : [0, 0, 0, 0];
-      },
-      getLineColor: [80, 80, 80, 80] as [number, number, number, number],
-      getLineWidth: 1,
-      lineWidthMinPixels: 0.5,
-      pickable: true,
-      updateTriggers: { getFillColor: [this.resilienceScoresVersion] },
-    });
-  }
-
   private createSanctionsChoroplethLayer(): GeoJsonLayer | null {
     if (!this.countriesGeoJsonData) return null;
     return new GeoJsonLayer({
@@ -4864,8 +4871,8 @@ export class DeckGLMap {
     });
   }
 
-  private createSpeciesRecoveryLayer(): ScatterplotLayer {
-    return new ScatterplotLayer({
+  private createSpeciesRecoveryLayer(): IconLayer {
+    return this.createPointIconLayer('species-recovery', {
       id: 'species-recovery-layer',
       data: this.speciesRecoveryZones,
       getPosition: (d: (typeof this.speciesRecoveryZones)[number]) => [d.recoveryZone.lon, d.recoveryZone.lat],
@@ -4880,7 +4887,7 @@ export class DeckGLMap {
     });
   }
 
-  private createRenewableInstallationsLayer(): ScatterplotLayer {
+  private createRenewableInstallationsLayer(): IconLayer {
     const typeColors: Record<string, [number, number, number, number]> = {
       solar: [255, 200, 50, 200],
       wind: [100, 200, 255, 200],
@@ -4893,7 +4900,15 @@ export class DeckGLMap {
       hydro: [0, 180, 180, 255],
       geothermal: [255, 150, 80, 255],
     };
-    return new ScatterplotLayer({
+    return this.createPointIconLayer<RenewableInstallation>((point: RenewableInstallation) => {
+      switch (point.type) {
+        case 'solar': return 'solar';
+        case 'wind': return 'wind';
+        case 'hydro': return 'hydro';
+        case 'geothermal': return 'geothermal';
+        default: return 'climate';
+      }
+    }, {
       id: 'renewable-installations-layer',
       data: this.renewableInstallations,
       getPosition: (d: RenewableInstallation) => [d.lon, d.lat],
@@ -4943,7 +4958,7 @@ export class DeckGLMap {
     if (!info.object) return null;
 
     const rawLayerId = info.layer?.id || '';
-    const layerId = rawLayerId.endsWith('-ghost') ? rawLayerId.slice(0, -6) : rawLayerId;
+    const layerId = rawLayerId.replace(/-(ghost|singletons)$/, '');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const obj = info.object as any;
     const text = (value: unknown): string => escapeHtml(String(value ?? ''));
@@ -5199,29 +5214,6 @@ export class DeckGLMap {
         const levelColor = DeckGLMap.CII_LEVEL_HEX[ciiEntry.level] ?? '#888';
         return { html: `<div class="deckgl-tooltip"><strong>${text(ciiName)}</strong><br/>CII: <span style="color:${levelColor};font-weight:600">${numericLabel(ciiEntry.score)}/100</span><br/><span style="text-transform:capitalize;opacity:.7">${text(ciiEntry.level)}</span></div>` };
       }
-      case 'resilience-choropleth-layer': {
-        const resilienceName = obj.properties?.name ?? 'Unknown';
-        const resilienceCode = obj.properties?.['ISO3166-1-Alpha-2'];
-        const resilienceEntry = resilienceCode ? this.resilienceScoresMap.get(resilienceCode as string) : undefined;
-        if (!resilienceEntry) {
-          return { html: `<div class="deckgl-tooltip"><strong>${text(resilienceName)}</strong><br/><span style="opacity:.7">No resilience data</span></div>` };
-        }
-        if (resilienceEntry.level === 'insufficient_data') {
-          return { html: `<div class="deckgl-tooltip"><strong>${text(resilienceName)}</strong><br/><span style="opacity:.7">Insufficient data</span></div>` };
-        }
-        const [red, green, blue] = RESILIENCE_CHOROPLETH_COLORS[resilienceEntry.level];
-        const levelColor = `rgb(${red}, ${green}, ${blue})`;
-        const visualBand = formatResilienceChoroplethLevel(resilienceEntry.level);
-        const serverLevel = formatResilienceServerLevel(resilienceEntry.serverLevel);
-        const confidenceNote = resilienceEntry.lowConfidence
-          ? '<br/><span style="opacity:.7">Low confidence</span>'
-          : resilienceEntry.outsideHeadlineRanking
-            ? '<br/><span style="opacity:.7">Outside headline ranking</span>'
-            : '';
-        return {
-          html: `<div class="deckgl-tooltip"><strong>${text(resilienceName)}</strong><br/>Resilience: <span style="color:${levelColor};font-weight:600">${numericLabel(resilienceEntry.overallScore, 1)}/100</span><br/><span style="text-transform:capitalize;opacity:.7">Visual band: ${text(visualBand)}</span><br/><span style="text-transform:capitalize;opacity:.7">API level: ${text(serverLevel)}</span>${confidenceNote}</div>`,
-        };
-      }
       case 'species-recovery-layer': {
         return { html: `<div class="deckgl-tooltip"><strong>${text(obj.commonName)}</strong><br/>${text(obj.recoveryZone?.name ?? obj.region)}<br/><span style="opacity:.7">Status: ${text(obj.recoveryStatus)}</span></div>` };
       }
@@ -5269,7 +5261,6 @@ export class DeckGLMap {
   private static readonly CHOROPLETH_LAYER_IDS = new Set([
     'cii-choropleth-layer',
     'happiness-choropleth-layer',
-    'resilience-choropleth-layer',
   ]);
 
   private handleClick(info: PickingInfo): void {
@@ -5311,7 +5302,7 @@ export class DeckGLMap {
     }
 
     const rawClickLayerId = info.layer?.id || '';
-    const layerId = rawClickLayerId.endsWith('-ghost') ? rawClickLayerId.slice(0, -6) : rawClickLayerId;
+    const layerId = rawClickLayerId.replace(/-(ghost|singletons)$/, '');
 
     if (layerId === 'news-locations-layer') {
       this.onNewsClick?.(info.object as NewsLocationMarker);
@@ -5473,9 +5464,7 @@ export class DeckGLMap {
     }
 
     if (layerId === 'trade-routes-layer') {
-      const segment = info.object as TradeRouteSegment;
-      if (!hasPremiumAccess(getAuthState())) {
-        trackGateHit('trade-arc-intel');
+      const segment = info.object as TradeRouteSegment;{
         return;
       }
       const waypoints = ROUTE_WAYPOINTS_MAP.get(segment.routeId) ?? [];
@@ -5790,12 +5779,10 @@ export class DeckGLMap {
     toggles.className = 'layer-toggles deckgl-layer-toggles';
 
     const layerDefs = getLayersForVariant((SITE_VARIANT || 'full') as MapVariant, 'deck');
-    const premiumUnlocked = hasPremiumAccess(getAuthState());
     const layerConfig = layerDefs.map(def => ({
       key: def.key,
       label: resolveLayerLabel(def, t),
-      icon: def.icon,
-      premium: def.premium,
+      icon: resolveLayerIcon(def, 'deck'),
       explainLabel: escapeHtml(`Explain ${resolveLayerLabel(def, t)} layer`),
       hasExplanation: hasCuratedLayerExplanation(def.key),
     }));
@@ -5808,15 +5795,13 @@ export class DeckGLMap {
       </div>
       <input type="text" class="layer-search" placeholder="${t('components.deckgl.layerSearch')}" autocomplete="off" spellcheck="false" />
       <div class="toggle-list" style="max-height: 32vh; overflow-y: auto; scrollbar-width: thin;">
-        ${layerConfig.map(({ key, label, icon, premium, explainLabel, hasExplanation }) => {
-          const isLocked = premium === 'locked' && !premiumUnlocked;
-          const isEnhanced = premium === 'enhanced' && !premiumUnlocked;
+        ${layerConfig.map(({ key, label, icon, explainLabel, hasExplanation }) => {
           return `
           <div class="layer-toggle-row" data-layer="${key}">
-            <label class="layer-toggle${isLocked ? ' layer-toggle-locked' : ''}" data-layer="${key}">
-              <input type="checkbox" ${this.state.layers[key as keyof MapLayers] ? 'checked' : ''}${isLocked ? ' disabled' : ''}>
+            <label class="layer-toggle" data-layer="${key}">
+              <input type="checkbox" ${this.state.layers[key as keyof MapLayers] ? 'checked' : ''}>
               <span class="toggle-icon">${icon}</span>
-              <span class="toggle-label">${label}${isLocked ? ' \uD83D\uDD12' : ''}${isEnhanced ? ' <span class="layer-pro-badge">PRO</span>' : ''}</span>
+              <span class="toggle-label">${label}</span>
             </label>
             <button type="button" class="layer-explain-btn${hasExplanation ? ' has-layer-explanation' : ''}" data-layer="${key}" aria-label="${explainLabel}">i</button>
           </div>`;
@@ -5824,70 +5809,7 @@ export class DeckGLMap {
       </div>
     `, "legacy direct innerHTML migration"));
 
-    const authorBadge = document.createElement('div');
-    authorBadge.className = 'map-author-badge';
-    authorBadge.textContent = '© Elie Habib · Someone™';
-    toggles.appendChild(authorBadge);
-
     this.container.appendChild(toggles);
-
-    const lockedLayerControls = layerConfig
-      .filter(({ premium }) => premium === 'locked')
-      .map(({ key, label }) => {
-        const control = toggles.querySelector(`.layer-toggle[data-layer="${key}"]`);
-        return {
-          key,
-          label,
-          control,
-          input: control?.querySelector('input') as HTMLInputElement | null,
-          labelSpan: control?.querySelector('.toggle-label') as HTMLElement | null,
-        };
-      });
-    let lastPremiumUnlocked: boolean | null = null;
-    let lastSettledFree: boolean | null = null;
-
-    // Reconcile premium controls whenever either entitlement signal changes.
-    // Pro can come from Clerk role or the Convex entitlement snapshot, and
-    // both subscriptions must remain live: a user can later downgrade or sign
-    // out after unlocking a layer. The initial pending state stays visually
-    // locked, but it must not be persisted as free until the tier settles (or
-    // App's bounded fallback explicitly heals it).
-    const syncPremiumLayerControls = (): void => {
-      const premiumUnlocked = hasPremiumAccess(getAuthState());
-      const settledFree = isProTierResolved() && !premiumUnlocked;
-      if (premiumUnlocked === lastPremiumUnlocked && settledFree === lastSettledFree) return;
-      lastPremiumUnlocked = premiumUnlocked;
-      lastSettledFree = settledFree;
-      let stateChanged = false;
-
-      for (const { key, label: layerLabel, control, input, labelSpan } of lockedLayerControls) {
-        if (!control) continue;
-        const locked = !premiumUnlocked;
-        control.classList.toggle('layer-toggle-locked', locked);
-        if (input) {
-          input.disabled = locked;
-          if (settledFree && this.state.layers[key]) {
-            this.state.layers[key] = false;
-            input.checked = false;
-            this.setLayerReady(key, false);
-            this.onLayerChange?.(key, false, 'programmatic');
-            stateChanged = true;
-          }
-        }
-
-        if (labelSpan) {
-          labelSpan.textContent = locked ? `${layerLabel} 🔒` : layerLabel;
-        }
-      }
-
-      if (stateChanged) {
-        this.render();
-        this.updateLegend();
-        this.enforceLayerLimit();
-      }
-    };
-    this._unsubscribeAuthState = subscribeAuthState(syncPremiumLayerControls);
-    this._unsubscribeEntitlement = onEntitlementChange(syncPremiumLayerControls);
 
     // Bind toggle events
     toggles.querySelectorAll('.layer-toggle input').forEach(input => {
@@ -5895,22 +5817,12 @@ export class DeckGLMap {
         const layer = (input as HTMLInputElement).closest('.layer-toggle')?.getAttribute('data-layer') as keyof MapLayers;
         if (layer) {
           const enabled = (input as HTMLInputElement).checked;
-          if (!isLayerToggleAllowed(layer, this.state.layers[layer], hasPremiumAccess(getAuthState()))) {
+          if (!isLayerToggleAllowed(layer, this.state.layers[layer])) {
             (input as HTMLInputElement).checked = Boolean(this.state.layers[layer]);
             return;
           }
           const prevRadar = this.state.layers.weather;
           const prevCyber = this.state.layers.cyberThreats;
-          if (enabled && (layer === 'resilienceScore' || layer === 'ciiChoropleth')) {
-            const conflictingLayer = layer === 'resilienceScore' ? 'ciiChoropleth' : 'resilienceScore';
-            if (this.state.layers[conflictingLayer]) {
-              this.state.layers[conflictingLayer] = false;
-              const conflictingToggle = this.container.querySelector(`.layer-toggle[data-layer="${conflictingLayer}"] input`) as HTMLInputElement | null;
-              if (conflictingToggle) conflictingToggle.checked = false;
-              this.setLayerReady(conflictingLayer, false);
-              this.onLayerChange?.(conflictingLayer, false, 'programmatic');
-            }
-          }
           this.state.layers[layer] = enabled;
           if (layer === 'military' && !enabled) this.clearFlightTrails();
           if (layer === 'flights') this.manageAircraftTimer(enabled);
@@ -6172,27 +6084,20 @@ export class DeckGLMap {
       triangle: (color: string) => `<svg width="12" height="12" viewBox="0 0 12 12"><polygon points="6,1 11,10 1,10" fill="${color}"/></svg>`,
       square: (color: string) => `<svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="1" fill="${color}"/></svg>`,
       hexagon: (color: string) => `<svg width="12" height="12" viewBox="0 0 12 12"><polygon points="6,1 10.5,3.5 10.5,8.5 6,11 1.5,8.5 1.5,3.5" fill="${color}"/></svg>`,
+      line: (color: string) => `<svg width="12" height="12" viewBox="0 0 12 12"><path d="M1 8C4 2 8 10 11 4" fill="none" stroke="${color}" stroke-width="2"/></svg>`,
     };
 
     const isLight = getCurrentTheme() === 'light';
-    const resilienceLegendItems: { shape: string; label: string; layerKey: keyof MapLayers }[] = [
-      { shape: shapes.square('rgb(239, 68, 68)'), label: 'Resilience: Very Low', layerKey: 'resilienceScore' },
-      { shape: shapes.square('rgb(249, 115, 22)'), label: 'Resilience: Low', layerKey: 'resilienceScore' },
-      { shape: shapes.square('rgb(234, 179, 8)'), label: 'Resilience: Moderate', layerKey: 'resilienceScore' },
-      { shape: shapes.square('rgb(132, 204, 22)'), label: 'Resilience: High', layerKey: 'resilienceScore' },
-      { shape: shapes.square('rgb(34, 197, 94)'), label: 'Resilience: Very High', layerKey: 'resilienceScore' },
-    ];
-    const legendItems: { shape: string; label: string; layerKey: keyof MapLayers }[] = SITE_VARIANT === 'tech'
+    const legendItems: { shape: string; label: string; layerKey: keyof MapLayers; markerKinds?: MapMarkerIconKind[]; markerColors?: Partial<Record<MapMarkerIconKind, string>> }[] = SITE_VARIANT === 'tech'
       ? [
         { shape: shapes.circle(isLight ? 'rgb(22, 163, 74)' : 'rgb(0, 255, 150)'), label: t('components.deckgl.legend.startupHub'), layerKey: 'startupHubs' },
         { shape: shapes.circle('rgb(100, 200, 255)'), label: t('components.deckgl.legend.techHQ'), layerKey: 'techHQs' },
         { shape: shapes.circle(isLight ? 'rgb(180, 120, 0)' : 'rgb(255, 200, 0)'), label: t('components.deckgl.legend.accelerator'), layerKey: 'accelerators' },
         { shape: shapes.circle('rgb(150, 100, 255)'), label: t('components.deckgl.legend.cloudRegion'), layerKey: 'cloudRegions' },
-        { shape: shapes.square('rgb(136, 68, 255)'), label: t('components.deckgl.legend.datacenter'), layerKey: 'datacenters' },
+        { shape: shapes.square('currentColor'), label: t('components.deckgl.layers.aiDataCenters'), layerKey: 'datacenters' },
         { shape: shapes.circle('rgb(231, 76, 60)'), label: t('components.deckgl.legend.diseaseAlert'), layerKey: 'diseaseOutbreaks' },
         { shape: shapes.circle('rgb(230, 126, 34)'), label: t('components.deckgl.legend.diseaseWarning'), layerKey: 'diseaseOutbreaks' },
         { shape: shapes.circle('rgb(241, 196, 15)'), label: t('components.deckgl.legend.diseaseWatch'), layerKey: 'diseaseOutbreaks' },
-        ...resilienceLegendItems,
       ]
       : SITE_VARIANT === 'finance'
         ? [
@@ -6204,54 +6109,61 @@ export class DeckGLMap {
           { shape: shapes.circle('rgb(231, 76, 60)'), label: t('components.deckgl.legend.diseaseAlert'), layerKey: 'diseaseOutbreaks' },
           { shape: shapes.circle('rgb(230, 126, 34)'), label: t('components.deckgl.legend.diseaseWarning'), layerKey: 'diseaseOutbreaks' },
           { shape: shapes.circle('rgb(241, 196, 15)'), label: t('components.deckgl.legend.diseaseWatch'), layerKey: 'diseaseOutbreaks' },
-          ...resilienceLegendItems,
         ]
         : SITE_VARIANT === 'happy'
           ? [
-            { shape: shapes.circle('rgb(34, 197, 94)'), label: 'Positive Event', layerKey: 'positiveEvents' },
-            { shape: shapes.circle('rgb(234, 179, 8)'), label: 'Breakthrough', layerKey: 'positiveEvents' },
+            { shape: shapes.circle('rgb(34, 197, 94)'), label: 'Positive Event', layerKey: 'positiveEvents', markerKinds: ['wildlife', 'kindness'] },
+            { shape: shapes.circle('rgb(234, 179, 8)'), label: 'Breakthrough', layerKey: 'positiveEvents', markerKinds: ['science-health', 'innovation', 'climate'] },
+            { shape: shapes.circle('rgb(139, 92, 246)'), label: 'Community', layerKey: 'positiveEvents', markerKinds: ['community'] },
             { shape: shapes.circle('rgb(74, 222, 128)'), label: 'Act of Kindness', layerKey: 'kindness' },
-            { shape: shapes.circle('rgb(255, 100, 50)'), label: 'Natural Event', layerKey: 'natural' },
+            { shape: shapes.circle('rgb(255, 100, 50)'), label: 'Natural Event', layerKey: 'natural', markerKinds: ['earthquake', 'volcano', 'fire', 'flood', 'cyclone', 'natural-event'] },
             { shape: shapes.square('rgb(34, 180, 100)'), label: 'Happy Country', layerKey: 'happiness' },
             { shape: shapes.circle('rgb(74, 222, 128)'), label: 'Species Recovery Zone', layerKey: 'speciesRecovery' },
-            { shape: shapes.circle('rgb(255, 200, 50)'), label: 'Renewable Installation', layerKey: 'renewableInstallations' },
+            { shape: shapes.circle('rgb(255, 200, 50)'), label: 'Renewable Installation', layerKey: 'renewableInstallations', markerKinds: ['solar', 'wind', 'hydro', 'geothermal'], markerColors: { wind: 'rgb(100, 200, 255)', hydro: 'rgb(0, 180, 180)', geothermal: 'rgb(255, 150, 80)' } },
             { shape: shapes.circle('rgb(160, 100, 255)'), label: t('components.deckgl.legend.aircraft'), layerKey: 'flights' },
             { shape: shapes.circle('rgb(231, 76, 60)'), label: t('components.deckgl.legend.diseaseAlert'), layerKey: 'diseaseOutbreaks' },
             { shape: shapes.circle('rgb(230, 126, 34)'), label: t('components.deckgl.legend.diseaseWarning'), layerKey: 'diseaseOutbreaks' },
             { shape: shapes.circle('rgb(241, 196, 15)'), label: t('components.deckgl.legend.diseaseWatch'), layerKey: 'diseaseOutbreaks' },
-            ...resilienceLegendItems,
           ]
           : SITE_VARIANT === 'commodity'
             ? [
               { shape: shapes.hexagon(isLight ? 'rgb(180, 120, 0)' : 'rgb(255, 200, 0)'), label: t('components.deckgl.legend.commodityHub'), layerKey: 'commodityHubs' },
               { shape: shapes.circle('rgb(180, 80, 80)'), label: t('components.deckgl.legend.miningSite'), layerKey: 'miningSites' },
               { shape: shapes.square('rgb(80, 160, 220)'), label: t('components.deckgl.legend.commodityPort'), layerKey: 'commodityPorts' },
-              { shape: shapes.circle('rgb(255, 150, 50)'), label: t('components.deckgl.legend.pipeline'), layerKey: 'pipelines' },
+              { shape: shapes.line('rgb(255, 150, 50)'), label: t('components.deckgl.legend.pipeline'), layerKey: 'pipelines' },
               { shape: shapes.triangle('rgb(80, 170, 255)'), label: t('components.deckgl.legend.waterway'), layerKey: 'waterways' },
               { shape: shapes.circle('rgb(200, 100, 255)'), label: t('components.deckgl.legend.processingPlant'), layerKey: 'processingPlants' },
               { shape: shapes.circle('rgb(231, 76, 60)'), label: t('components.deckgl.legend.diseaseAlert'), layerKey: 'diseaseOutbreaks' },
               { shape: shapes.circle('rgb(230, 126, 34)'), label: t('components.deckgl.legend.diseaseWarning'), layerKey: 'diseaseOutbreaks' },
               { shape: shapes.circle('rgb(241, 196, 15)'), label: t('components.deckgl.legend.diseaseWatch'), layerKey: 'diseaseOutbreaks' },
-              ...resilienceLegendItems,
             ]
             : [
               { shape: shapes.circle('rgb(255, 68, 68)'), label: t('components.deckgl.legend.highAlert'), layerKey: 'hotspots' },
               { shape: shapes.circle('rgb(255, 165, 0)'), label: t('components.deckgl.legend.elevated'), layerKey: 'hotspots' },
               { shape: shapes.circle(isLight ? 'rgb(180, 120, 0)' : 'rgb(255, 255, 0)'), label: t('components.deckgl.legend.monitoring'), layerKey: 'hotspots' },
-              { shape: shapes.circle('rgb(255, 100, 100)'), label: t('components.deckgl.legend.conflict'), layerKey: 'conflicts' },
-              { shape: shapes.triangle('rgb(68, 136, 255)'), label: t('components.deckgl.legend.base'), layerKey: 'bases' },
+              { shape: shapes.circle('rgb(255, 100, 100)'), label: t('components.deckgl.legend.conflict'), layerKey: 'conflicts', markerKinds: ['conflict'] },
+              { shape: shapes.triangle('currentColor'), label: t('components.deckgl.layers.militaryBases'), layerKey: 'bases' },
               { shape: shapes.hexagon(isLight ? 'rgb(180, 120, 0)' : 'rgb(255, 220, 0)'), label: t('components.deckgl.legend.nuclear'), layerKey: 'nuclear' },
-              { shape: shapes.square('rgb(136, 68, 255)'), label: t('components.deckgl.legend.datacenter'), layerKey: 'datacenters' },
+              { shape: shapes.square('currentColor'), label: t('components.deckgl.layers.aiDataCenters'), layerKey: 'datacenters' },
               { shape: shapes.circle('rgb(160, 100, 255)'), label: t('components.deckgl.legend.aircraft'), layerKey: 'flights' },
               { shape: shapes.circle('rgb(231, 76, 60)'), label: t('components.deckgl.legend.diseaseAlert'), layerKey: 'diseaseOutbreaks' },
               { shape: shapes.circle('rgb(230, 126, 34)'), label: t('components.deckgl.legend.diseaseWarning'), layerKey: 'diseaseOutbreaks' },
               { shape: shapes.circle('rgb(241, 196, 15)'), label: t('components.deckgl.legend.diseaseWatch'), layerKey: 'diseaseOutbreaks' },
-              ...resilienceLegendItems,
             ];
 
     setTrustedHtml(legend, trustedHtml(`
       <span class="legend-label-title">${t('components.deckgl.legend.title')}</span>
-      ${legendItems.map(({ shape, label, layerKey }) => `<span class="legend-item" data-layer="${layerKey}">${shape}<span class="legend-label">${label}</span></span>`).join('')}
+      ${legendItems.map(({ shape, label, layerKey, markerKinds, markerColors }) => {
+        const kind = resolveLayerMarkerIcon(layerKey, 'deck');
+        const kinds = markerKinds ?? (kind ? [kind] : []);
+        if (kinds.length > 0) {
+          const color = shape.match(/fill="([^"]+)"/)?.[1];
+          if (!color) throw new Error(`Map legend symbol missing color: ${layerKey}`);
+          shape = kinds.map(markerKind => getMapMarkerSvg(markerKind)
+            .replace('width="32" height="32"', `width="12" height="12" style="color:${markerColors?.[markerKind] ?? color}"`)).join('');
+        }
+        return `<span class="legend-item" data-layer="${layerKey}">${shape}<span class="legend-label">${label}</span></span>`;
+      }).join('')}
     `, "legacy direct innerHTML migration"));
 
     // CII choropleth gradient legend (shown when layer is active)
@@ -6548,9 +6460,8 @@ export class DeckGLMap {
     // #6045 — strip locked premium layers for settled free users before
     // checkbox force-sync (prevents checked+disabled stuck state from any
     // bulk path: mission presets, layers:all, URL, cloud prefs).
-    let next = layers;
-    if (isProTierResolved() && !hasPremiumAccess(getAuthState())) {
-      next = sanitizeLockedLayers(layers, false);
+    let next = layers;{
+      next = sanitizePublicLayers(layers);
     }
     const prevRadar = this.state.layers.weather;
     const prevCyber = this.state.layers.cyberThreats;
@@ -6596,8 +6507,8 @@ export class DeckGLMap {
     this.setView('global');
   }
 
-  private createUcdpEventsLayer(events: UcdpGeoEvent[]): ScatterplotLayer<UcdpGeoEvent> {
-    return new ScatterplotLayer<UcdpGeoEvent>({
+  private createUcdpEventsLayer(events: UcdpGeoEvent[]): IconLayer<UcdpGeoEvent> {
+    return this.createPointIconLayer<UcdpGeoEvent>('conflict', {
       id: 'ucdp-events-layer',
       data: events,
       getPosition: (d) => [d.longitude, d.latitude],
@@ -6656,11 +6567,7 @@ export class DeckGLMap {
 
   private createTradeRoutesLayer(): ArcLayer<TradeRouteSegment> {
     const active: [number, number, number, number] = getCurrentTheme() === 'light' ? [30, 100, 180, 200] : [100, 200, 255, 160];
-    const disrupted: [number, number, number, number] = getCurrentTheme() === 'light' ? [200, 40, 40, 220] : [255, 80, 80, 200];
-    const highRisk: [number, number, number, number] = getCurrentTheme() === 'light' ? [200, 140, 20, 200] : [255, 180, 50, 180];
     const scenario: [number, number, number, number] = getCurrentTheme() === 'light' ? [220, 100, 20, 230] : [255, 140, 50, 210];
-    const colorFor = (status: string): [number, number, number, number] =>
-      status === 'disrupted' ? disrupted : status === 'high_risk' ? highRisk : active;
 
     // When a scenario is active, override colors for routes that transit disrupted chokepoints.
     // ROUTE_WAYPOINTS_MAP is module-level so getColor() is O(1) per segment instead of O(n) per frame.
@@ -6680,15 +6587,11 @@ export class DeckGLMap {
         const waypoints = ROUTE_WAYPOINTS_MAP.get(d.routeId);
         if (waypoints && waypoints.some(wp => scenarioDisrupted.has(wp))) {
           base = scenario;
-        } else if (!hasPremiumAccess(getAuthState())) {
+        } else{
           base = active;
-        } else {
-          base = colorFor(d.status);
         }
-      } else if (!hasPremiumAccess(getAuthState())) {
+      } else{
         base = active;
-      } else {
-        base = colorFor(d.status);
       }
       if (hlActive && !hlIds.has(d.routeId)) return dimColor(base);
       return base;
@@ -6714,11 +6617,8 @@ export class DeckGLMap {
 
   private buildTradeTrips(): void {
     const activeColor: [number, number, number, number] = [100, 200, 255, 140];
-    const disruptedColor: [number, number, number, number] = [255, 80, 80, 180];
-    const highRiskColor: [number, number, number, number] = [255, 180, 50, 160];
     const scenarioColor: [number, number, number, number] = [255, 140, 50, 170];
 
-    const isPremium = hasPremiumAccess(getAuthState());
 
     const scenarioDisrupted = this.scenarioState
       ? new Set(this.scenarioState.disruptedChokepointIds)
@@ -6727,21 +6627,17 @@ export class DeckGLMap {
     const hlActive = this.highlightedRouteIds.size > 0;
     const hlIds = this.highlightedRouteIds;
 
-    const colorForRoute = (routeId: string, status: string): [number, number, number, number] => {
+    const colorForRoute = (routeId: string): [number, number, number, number] => {
       let base: [number, number, number, number];
       if (scenarioDisrupted && scenarioDisrupted.size > 0) {
         const waypoints = ROUTE_WAYPOINTS_MAP.get(routeId);
         if (waypoints && waypoints.some(wp => scenarioDisrupted.has(wp))) {
           base = scenarioColor;
-        } else if (!isPremium) {
+        } else{
           base = activeColor;
-        } else {
-          base = status === 'disrupted' ? disruptedColor : status === 'high_risk' ? highRiskColor : activeColor;
         }
-      } else if (!isPremium) {
+      } else{
         base = activeColor;
-      } else {
-        base = status === 'disrupted' ? disruptedColor : status === 'high_risk' ? highRiskColor : activeColor;
       }
       if (hlActive && !hlIds.has(routeId)) return [base[0], base[1], base[2], 40];
       return base;
@@ -6780,7 +6676,7 @@ export class DeckGLMap {
       trips.push({
         path: fullPath,
         phase: stableTradeRoutePhase(first.routeId),
-        color: colorForRoute(first.routeId, first.status),
+        color: colorForRoute(first.routeId),
         width: widthFor(first.category),
       });
     }
@@ -6847,7 +6743,7 @@ export class DeckGLMap {
     this.tradeAnimationFrameCount = 0;
   }
 
-  private createTradeChokepointsLayer(): ScatterplotLayer {
+  private createTradeChokepointsLayer(): IconLayer {
     const routeWaypointIds = new Set<string>();
     for (const seg of this.tradeRouteSegments) {
       const waypoints = ROUTE_WAYPOINTS_MAP.get(seg.routeId);
@@ -6856,7 +6752,7 @@ export class DeckGLMap {
     const chokepoints = STRATEGIC_WATERWAYS.filter(w => routeWaypointIds.has(w.id));
     const isLight = getCurrentTheme() === 'light';
 
-    return new ScatterplotLayer({
+    return this.createPointIconLayer('waterway', {
       id: 'trade-chokepoints-layer',
       data: chokepoints,
       getPosition: (d: { lon: number; lat: number }) => [d.lon, d.lat],
@@ -6886,12 +6782,12 @@ export class DeckGLMap {
       });
   }
 
-  private createHighlightedChokepointMarkers(): ScatterplotLayer | null {
+  private createHighlightedChokepointMarkers(): IconLayer | null {
     if (this.highlightedMarkers.length === 0) return null;
 
     const pulse = Math.sin(this.tradeAnimationTime * CHOKEPOINT_PULSE_FREQ) * CHOKEPOINT_PULSE_AMP + 1;
 
-    return new ScatterplotLayer({
+    return this.createPointIconLayer<HighlightedMarker>('waterway', {
       id: 'highlighted-chokepoint-markers',
       data: this.highlightedMarkers,
       getPosition: (d: HighlightedMarker) => [d.lon, d.lat],
@@ -7013,7 +6909,7 @@ export class DeckGLMap {
 
   private createChinaCorridorSelectionLayers(
     overlay: ChinaCorridorOverlayProjection,
-  ): [PolygonLayer, ScatterplotLayer] {
+  ): [PolygonLayer, IconLayer] {
     return [
       new PolygonLayer({
         id: `china-corridor-boundary-${overlay.id}`,
@@ -7027,7 +6923,7 @@ export class DeckGLMap {
         lineWidthUnits: 'pixels' as const,
         pickable: false,
       }),
-      new ScatterplotLayer({
+      this.createPointIconLayer('transport-node', {
         id: `china-corridor-nodes-${overlay.id}`,
         data: overlay.nodes,
         getPosition: (item: { position: [number, number] }) => item.position,
@@ -7502,12 +7398,6 @@ export class DeckGLMap {
     this.render();
   }
 
-  public setResilienceRanking(items: ResilienceRankingItem[], greyedOut: ResilienceRankingItem[] = []): void {
-    this.resilienceScoresMap = buildResilienceChoroplethMap(items, greyedOut);
-    this.resilienceScoresVersion++;
-    this.render();
-  }
-
   public setSpeciesRecoveryZones(species: SpeciesRecovery[]): void {
     this.speciesRecoveryZones = species.filter(
       (s): s is SpeciesRecovery & { recoveryZone: { name: string; lat: number; lon: number } } =>
@@ -7707,14 +7597,14 @@ export class DeckGLMap {
 
   public setLayerLoading(layer: keyof MapLayers, loading: boolean): void {
     const toggle = this.container.querySelector(`.layer-toggle[data-layer="${layer}"]`);
-    if (toggle) toggle.classList.toggle('loading', loading);
+    if (toggle) toggle.classList.toggle('layer-loading', loading);
   }
 
   public setLayerReady(layer: keyof MapLayers, hasData: boolean): void {
     const toggle = this.container.querySelector(`.layer-toggle[data-layer="${layer}"]`);
     if (!toggle) return;
 
-    toggle.classList.remove('loading');
+    toggle.classList.remove('layer-loading');
     // Match old Map.ts behavior: set 'active' only when layer enabled AND has data
     if (this.state.layers[layer] && hasData) {
       toggle.classList.add('active');
@@ -7739,7 +7629,7 @@ export class DeckGLMap {
     // Defense in depth for CMD+K / agent / deep-link paths: locked premium
     // layers stay off for free users (#6045). search-manager also gates
     // before calling here; this catches any remaining enableLayer callers.
-    if (!isLayerEntitled(layer, hasPremiumAccess(getAuthState()))) return;
+    if (!isPublicLayer(layer)) return;
     if (!this.state.layers[layer]) {
       if (layer === 'resilienceScore' && this.state.layers.ciiChoropleth) {
         this.state.layers.ciiChoropleth = false;
@@ -7773,7 +7663,7 @@ export class DeckGLMap {
     const prevRadar = this.state.layers.weather;
     const prevCyber = this.state.layers.cyberThreats;
     const nextEnabled = !this.state.layers[layer];
-    if (!isLayerToggleAllowed(layer, this.state.layers[layer], hasPremiumAccess(getAuthState()))) return;
+    if (!isLayerToggleAllowed(layer, this.state.layers[layer])) return;
     if (nextEnabled && layer === 'resilienceScore' && this.state.layers.ciiChoropleth) {
       this.state.layers.ciiChoropleth = false;
       const ciiToggle = this.container.querySelector(`.layer-toggle[data-layer="ciiChoropleth"] input`) as HTMLInputElement | null;

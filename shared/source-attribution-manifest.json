@@ -136,9 +136,6 @@
       "references": [
         {
           "path": "scripts/check-analytics-collector.mjs"
-        },
-        {
-          "path": "src/services/analytics.ts"
         }
       ]
     },
@@ -557,18 +554,10 @@
       "host": "api.clerk.com",
       "provider": "Clerk identity service",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: authentication/control-plane service",
       "attribution": "Excluded from the provider count: identity-control-plane request.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "api/user/passkey-offer.ts"
-        },
-        {
-          "path": "server/auth-session.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "api.cloudflare.com",
@@ -634,15 +623,10 @@
       "host": "api.data.apps.fao.org",
       "provider": "FAOSTAT",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "FAOSTAT CC-BY; attribution to FAO required",
       "attribution": "FAO. FAOSTAT. https://www.fao.org/faostat/",
-      "status": "reviewed",
-      "references": [
-        {
-          "path": "scripts/seed-food-stocks.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "api.data.gov.my",
@@ -745,9 +729,6 @@
           "path": "scripts/ais-relay.cjs"
         },
         {
-          "path": "scripts/lib/company-monitoring-exa.mjs"
-        },
-        {
           "path": "scripts/seed-bigmac.mjs"
         },
         {
@@ -762,15 +743,10 @@
       "host": "api.fas.usda.gov",
       "provider": "USDA FAS PSD",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "U.S. government public-domain PSD Open Data",
       "attribution": "USDA Foreign Agricultural Service, Production, Supply and Distribution (PSD).",
-      "status": "reviewed",
-      "references": [
-        {
-          "path": "scripts/seed-food-stocks.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "api.firecrawl.dev",
@@ -798,9 +774,6 @@
       "attribution": "Credit api.fiscaldata.treasury.gov and link to the original upstream API/dataset.",
       "status": "terms-review",
       "references": [
-        {
-          "path": "scripts/seed-national-debt.mjs"
-        },
         {
           "path": "scripts/seed-supply-chain-trade.mjs"
         }
@@ -1059,9 +1032,6 @@
       "status": "excluded",
       "references": [
         {
-          "path": "server/worldmonitor/leads/v1/register-interest.ts"
-        },
-        {
           "path": "server/worldmonitor/leads/v1/submit-contact.ts"
         }
       ]
@@ -1098,15 +1068,10 @@
       "host": "api.sam.gov",
       "provider": "api.sam.gov",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit api.sam.gov and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/seed-global-tenders.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "api.scrapecreators.com",
@@ -1191,46 +1156,28 @@
       "host": "api.ted.europa.eu",
       "provider": "api.ted.europa.eu",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit api.ted.europa.eu and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/seed-global-tenders.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "api.telegram.org",
       "provider": "api.telegram.org",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit api.telegram.org and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/notification-relay.cjs"
-        },
-        {
-          "path": "scripts/seed-digest-notifications.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "api.travelpayouts.com",
       "provider": "Travelpayouts flight-price data",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Travelpayouts API terms; commercial use and redistribution require review",
       "attribution": "Travelpayouts; link to the returned flight-price response.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "server/worldmonitor/aviation/v1/_providers/travelpayouts_data.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "api.typesafe.ai",
@@ -1374,12 +1321,6 @@
       "status": "reviewed",
       "references": [
         {
-          "path": "scripts/_defense-industrial-source.mjs"
-        },
-        {
-          "path": "scripts/_demographics-capability-source.mjs"
-        },
-        {
           "path": "scripts/ais-relay.cjs"
         },
         {
@@ -1414,12 +1355,6 @@
         },
         {
           "path": "server/worldmonitor/economic/v1/list-world-bank-indicators.ts"
-        },
-        {
-          "path": "server/worldmonitor/resilience/v1/_dimension-scorers.ts"
-        },
-        {
-          "path": "server/worldmonitor/resilience/v1/_indicator-source-policy.ts"
         }
       ]
     },
@@ -1433,25 +1368,10 @@
       "status": "excluded",
       "references": [
         {
-          "path": "api/a2a.ts"
-        },
-        {
-          "path": "api/internal/mcp-grant-mint.ts"
-        },
-        {
-          "path": "api/mcp/downstream.ts"
-        },
-        {
-          "path": "api/mcp/skill-extension/generated.ts"
-        },
-        {
           "path": "scripts/_widget-data-policy.cjs"
         },
         {
           "path": "scripts/ais-relay.cjs"
-        },
-        {
-          "path": "scripts/audit-resilience-cohorts.mjs"
         },
         {
           "path": "scripts/capture-seed-recovery.mjs"
@@ -1460,16 +1380,7 @@
           "path": "scripts/check-seed-freshness.mjs"
         },
         {
-          "path": "scripts/freeze-resilience-ranking.mjs"
-        },
-        {
           "path": "scripts/openapi-inject-servers.mjs"
-        },
-        {
-          "path": "scripts/post-pr3427-force-refresh.mjs"
-        },
-        {
-          "path": "scripts/post-pr3487-force-refresh.mjs"
         },
         {
           "path": "scripts/seed-china-decision-signals.mjs"
@@ -1482,9 +1393,6 @@
         },
         {
           "path": "scripts/seed-military-maritime-news.mjs"
-        },
-        {
-          "path": "scripts/seed-resilience-scores.mjs"
         },
         {
           "path": "scripts/seed-service-statuses.mjs"
@@ -1500,12 +1408,6 @@
         },
         {
           "path": "server/worldmonitor/news/v1/_feeds.ts"
-        },
-        {
-          "path": "src/app/desktop-updater.ts"
-        },
-        {
-          "path": "src/mcp-grant-main.ts"
         },
         {
           "path": "src/services/runtime.ts"
@@ -1538,9 +1440,6 @@
       "attribution": "Credit X and preserve author and source links when the allowed use permits display.",
       "status": "terms-review",
       "references": [
-        {
-          "path": "scripts/lib/company-monitoring-x-provider.mjs"
-        },
         {
           "path": "scripts/lib/x-news-accounts.cjs"
         },
@@ -1774,15 +1673,10 @@
       "host": "atbackend.sipri.org",
       "provider": "SIPRI Arms Transfers Database",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "SIPRI fair use permits limited non-commercial use; commercial use requires prior authorization and may require a royalty",
       "attribution": "Credit the SIPRI Arms Transfers Database and link to SIPRI terms and the public database portal.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/_defense-industrial-source.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "auth.opensky-network.org",
@@ -2099,15 +1993,10 @@
       "host": "browser.mcp.cloudflare.com",
       "provider": "Cloudflare Browser MCP",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: optional rendering/automation connector",
       "attribution": "Excluded from the provider count: user-configured MCP connector.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/services/mcp-store.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "budgetlab.yale.edu",
@@ -2144,15 +2033,10 @@
       "host": "canadabuys.canada.ca",
       "provider": "canadabuys.canada.ca",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit canadabuys.canada.ca and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/seed-global-tenders.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "carnegieendowment.org",
@@ -2246,15 +2130,10 @@
       "host": "cdn.debugbear.com",
       "provider": "cdn.debugbear.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: first-party, control-plane, UI, or rendering transport",
       "attribution": "Excluded from the external-provider count: not an ingested upstream dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/bootstrap/debugbear-rum.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "cdn.jsdelivr.net",
@@ -2267,9 +2146,6 @@
       "references": [
         {
           "path": "scripts/ais-relay.cjs"
-        },
-        {
-          "path": "server/_shared/brief-carousel-render.ts"
         }
       ]
     },
@@ -2427,24 +2303,10 @@
       "host": "cloudflare-dns.com",
       "provider": "cloudflare-dns.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: first-party, control-plane, UI, or rendering transport",
       "attribution": "Excluded from the external-provider count: not an ingested upstream dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "api/_notification-webhook-ssrf.ts"
-        },
-        {
-          "path": "api/mcp-proxy.ts"
-        },
-        {
-          "path": "server/_shared/email-validation.ts"
-        },
-        {
-          "path": "server/worldmonitor/shipping/v2/webhook-shared.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "cnas.org",
@@ -2598,22 +2460,13 @@
       "status": "terms-review",
       "references": [
         {
-          "path": "scripts/seed-comtrade-bilateral-hs4.mjs"
-        },
-        {
           "path": "scripts/seed-recovery-import-hhi.mjs"
         },
         {
           "path": "scripts/seed-recovery-reexport-share.mjs"
         },
         {
-          "path": "scripts/seed-supply-vulnerability.mjs"
-        },
-        {
           "path": "scripts/seed-trade-flows.mjs"
-        },
-        {
-          "path": "server/worldmonitor/supply-chain/v1/_bilateral-hs4-lazy.ts"
         }
       ]
     },
@@ -2782,15 +2635,10 @@
       "host": "customer.dodopayments.com",
       "provider": "customer.dodopayments.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: first-party, control-plane, UI, or rendering transport",
       "attribution": "Excluded from the external-provider count: not an ingested upstream dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/services/billing.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "dai2.xumo.com",
@@ -2870,15 +2718,10 @@
       "host": "data.apps.fao.org",
       "provider": "FAOSTAT",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "FAOSTAT CC-BY; attribution to FAO required",
       "attribution": "FAO. FAOSTAT. https://www.fao.org/faostat/",
-      "status": "reviewed",
-      "references": [
-        {
-          "path": "scripts/seed-food-stocks.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "data.ecb.europa.eu",
@@ -2905,9 +2748,6 @@
       "references": [
         {
           "path": "scripts/_conflict-hapi.mjs"
-        },
-        {
-          "path": "scripts/benchmark-resilience-external.mjs"
         },
         {
           "path": "scripts/seed-resilience-static.mjs"
@@ -3215,18 +3055,10 @@
       "host": "discord.com",
       "provider": "discord.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: first-party, control-plane, UI, or rendering transport",
       "attribution": "Excluded from the external-provider count: not an ingested upstream dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "api/discord/oauth/callback.ts"
-        },
-        {
-          "path": "api/discord/oauth/start.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "discord.gg",
@@ -3300,15 +3132,10 @@
       "host": "drmkc.jrc.ec.europa.eu",
       "provider": "drmkc.jrc.ec.europa.eu",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit drmkc.jrc.ec.europa.eu and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/benchmark-resilience-external.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "dw.com",
@@ -3404,9 +3231,6 @@
       "status": "terms-review",
       "references": [
         {
-          "path": "api/mcp/skill-extension/generated.ts"
-        },
-        {
           "path": "scripts/seed-earthquakes.mjs"
         }
       ]
@@ -3431,9 +3255,6 @@
         },
         {
           "path": "scripts/seed-resilience-static.mjs"
-        },
-        {
-          "path": "server/worldmonitor/resilience/v1/_indicator-source-policy.ts"
         },
         {
           "path": "src/config/feeds.ts"
@@ -3593,15 +3414,10 @@
       "host": "en.sge.com.cn",
       "provider": "en.sge.com.cn",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit en.sge.com.cn and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/seed-physical-premiums.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "en.sse.net.cn",
@@ -3925,9 +3741,6 @@
         },
         {
           "path": "scripts/openapi-inject-examples.mjs"
-        },
-        {
-          "path": "src/services/mcp-store.ts"
         },
         {
           "path": "src/utils/sanitize.ts"
@@ -4389,9 +4202,6 @@
         },
         {
           "path": "server/worldmonitor/market/v1/_quote-provider.ts"
-        },
-        {
-          "path": "server/worldmonitor/market/v1/get-insider-transactions.ts"
         }
       ]
     },
@@ -4554,15 +4364,10 @@
       "host": "gain.nd.edu",
       "provider": "gain.nd.edu",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit gain.nd.edu and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/benchmark-resilience-external.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "gamma-api.polymarket.com",
@@ -4703,12 +4508,6 @@
         },
         {
           "path": "scripts/seed-research.mjs"
-        },
-        {
-          "path": "src/app/desktop-updater.ts"
-        },
-        {
-          "path": "src/services/analytics.ts"
         },
         {
           "path": "src/services/preferences-content.ts"
@@ -4976,15 +4775,10 @@
       "host": "hdr.undp.org",
       "provider": "UNDP Human Development Report",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "UNDP data terms; dataset-specific license applies",
       "attribution": "United Nations Development Programme (UNDP) Human Development Report.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/benchmark-resilience-external.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "health.aws.amazon.com",
@@ -5293,15 +5087,10 @@
       "host": "internal.example.com",
       "provider": "Internal example placeholder",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: documentation/test placeholder",
       "attribution": "Excluded from the provider count: placeholder URL.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "api/notification-channels.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "investing.com",
@@ -5518,15 +5307,10 @@
       "host": "jmespath.org",
       "provider": "jmespath.org",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: first-party, control-plane, UI, or rendering transport",
       "attribution": "Excluded from the external-provider count: not an ingested upstream dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "api/mcp/constants.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "justice.gov",
@@ -5897,18 +5681,10 @@
       "host": "live.dodopayments.com",
       "provider": "live.dodopayments.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: first-party, control-plane, UI, or rendering transport",
       "attribution": "Excluded from the external-provider count: not an ingested upstream dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "api/product-catalog.js"
-        },
-        {
-          "path": "scripts/ais-relay.cjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "live.livetvstream.co.uk",
@@ -6164,29 +5940,19 @@
       "host": "mcp.linear.app",
       "provider": "Linear MCP",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: optional user-configured MCP connector",
       "attribution": "Excluded from the provider count: user-configured MCP connector.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/services/mcp-store.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "mcp.robtex.com",
       "provider": "Robtex MCP",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: optional user-configured MCP connector",
       "attribution": "Excluded from the provider count: user-configured MCP connector.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/services/mcp-store.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "meduza.io",
@@ -6595,9 +6361,6 @@
           "path": "scripts/validate-rss-feeds.mjs"
         },
         {
-          "path": "server/worldmonitor/intelligence/v1/_country-coverage-feeds.ts"
-        },
-        {
           "path": "server/worldmonitor/market/v1/stock-news-search.ts"
         },
         {
@@ -6927,15 +6690,10 @@
       "host": "ogcapi.bgs.ac.uk",
       "provider": "British Geological Survey World Mineral Statistics",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "BGS mineral statistics terms; attribution required; redistribution restricted",
       "attribution": "British Geological Survey (BGS) World Mineral Production; credit BGS and link to https://www.bgs.ac.uk/mineralsuk/statistics/world-mineral-statistics/.",
-      "status": "reviewed",
-      "references": [
-        {
-          "path": "scripts/seed-mineral-production.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "oglobo.globo.com",
@@ -7009,15 +6767,10 @@
       "host": "open-meteo.caseyjhand.com",
       "provider": "open-meteo.caseyjhand.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Community-hosted MCP service. Open-Meteo weather data is CC BY 4.0; free API access is non-commercial only. Commercial access requires a paid Open-Meteo plan and compatible hosting.",
       "attribution": "Weather data by Open-Meteo.com. MCP server hosted by cyanheads at open-meteo.caseyjhand.com. Preserve the attribution returned with weather results.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "src/services/mcp-store.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "open.alberta.ca",
@@ -7087,12 +6840,6 @@
         },
         {
           "path": "scripts/lib/brief-dedup-consts.mjs"
-        },
-        {
-          "path": "scripts/lib/company-monitoring-classifier-client.mjs"
-        },
-        {
-          "path": "scripts/regional-snapshot/weekly-brief.mjs"
         }
       ]
     },
@@ -7189,12 +6936,6 @@
       "references": [
         {
           "path": "scripts/seed-low-carbon-generation.mjs"
-        },
-        {
-          "path": "server/worldmonitor/resilience/v1/_dimension-scorers.ts"
-        },
-        {
-          "path": "server/worldmonitor/resilience/v1/_indicator-source-policy.ts"
         }
       ]
     },
@@ -7378,9 +7119,6 @@
       "status": "terms-review",
       "references": [
         {
-          "path": "api/mcp/skill-extension/generated.ts"
-        },
-        {
           "path": "scripts/_bet-templates-markets.mjs"
         },
         {
@@ -7392,15 +7130,10 @@
       "host": "population.un.org",
       "provider": "United Nations Population Division",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "UN World Population Prospects 2024 is licensed under CC BY 3.0 IGO.",
       "attribution": "United Nations, Department of Economic and Social Affairs, Population Division (2024). World Population Prospects 2024.",
-      "status": "reviewed",
-      "references": [
-        {
-          "path": "scripts/_demographics-capability-source.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "portfolio.hu",
@@ -7536,9 +7269,6 @@
       "status": "excluded",
       "references": [
         {
-          "path": "api/widget-agent.ts"
-        },
-        {
           "path": "scripts/seed-security-advisories.mjs"
         },
         {
@@ -7571,6 +7301,20 @@
       "references": [
         {
           "path": "scripts/seed-regulatory-actions.mjs"
+        }
+      ]
+    },
+    {
+      "host": "public.invalid",
+      "provider": "public.invalid",
+      "kind": "structured",
+      "observed": true,
+      "license": "Excluded: first-party, control-plane, UI, or rendering transport",
+      "attribution": "Excluded from the external-provider count: not an ingested upstream dataset.",
+      "status": "excluded",
+      "references": [
+        {
+          "path": "src/services/public-rpc-policy.ts"
         }
       ]
     },
@@ -7654,9 +7398,6 @@
       "status": "reviewed",
       "references": [
         {
-          "path": "scripts/freeze-resilience-ranking.mjs"
-        },
-        {
           "path": "server/worldmonitor/intelligence/v1/get-country-facts.ts"
         }
       ]
@@ -7707,9 +7448,6 @@
           "path": "scripts/seed-market-quotes.mjs"
         },
         {
-          "path": "server/worldmonitor/market/v1/analyze-stock.ts"
-        },
-        {
           "path": "server/worldmonitor/market/v1/get-country-stock-index.ts"
         },
         {
@@ -7721,29 +7459,19 @@
       "host": "radar.cloudflare.com",
       "provider": "radar.cloudflare.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit radar.cloudflare.com and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "server/worldmonitor/resilience/v1/_indicator-source-policy.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "radar.mcp.cloudflare.com",
       "provider": "Cloudflare Radar MCP",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: optional user-configured MCP connector",
       "attribution": "Excluded from the provider count: user-configured MCP connector.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/services/mcp-store.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "radnet.epa.gov",
@@ -8250,9 +7978,6 @@
       "status": "terms-review",
       "references": [
         {
-          "path": "api/ask.ts"
-        },
-        {
           "path": "scripts/build-accuracy-page.mjs"
         },
         {
@@ -8298,15 +8023,10 @@
       "host": "sdmx.ilo.org",
       "provider": "ILOSTAT",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "ILOSTAT datasets and metadata published from 3 May 2023 are licensed under CC BY 4.0.",
       "attribution": "International Labour Organization, ILOSTAT database; include the dataset and extraction date.",
-      "status": "reviewed",
-      "references": [
-        {
-          "path": "scripts/_demographics-capability-source.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "sdmx.oecd.org",
@@ -8335,15 +8055,10 @@
       "host": "search.parallel.ai",
       "provider": "Parallel Search MCP",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: optional user-configured MCP connector",
       "attribution": "Excluded from the provider count: user-configured MCP connector.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "src/services/mcp-store.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "search.seznam.cz",
@@ -8363,15 +8078,10 @@
       "host": "search.worldbank.org",
       "provider": "search.worldbank.org",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit search.worldbank.org and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/seed-global-tenders.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "search.yahoo.com",
@@ -8685,18 +8395,10 @@
       "host": "slack.com",
       "provider": "slack.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: first-party, control-plane, UI, or rendering transport",
       "attribution": "Excluded from the external-provider count: not an ingested upstream dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "api/slack/oauth/callback.ts"
-        },
-        {
-          "path": "api/slack/oauth/start.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "slidstvo.info",
@@ -9076,9 +8778,6 @@
           "path": "scripts/ais-relay.cjs"
         },
         {
-          "path": "server/worldmonitor/leads/v1/register-interest.ts"
-        },
-        {
           "path": "src/services/story-share.ts"
         },
         {
@@ -9322,18 +9021,10 @@
       "host": "test.dodopayments.com",
       "provider": "test.dodopayments.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: first-party, control-plane, UI, or rendering transport",
       "attribution": "Excluded from the external-provider count: not an ingested upstream dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "api/product-catalog.js"
-        },
-        {
-          "path": "scripts/ais-relay.cjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "th.usembassy.gov",
@@ -9950,15 +9641,10 @@
       "host": "uis.unesco.org",
       "provider": "uis.unesco.org",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit uis.unesco.org and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "server/worldmonitor/resilience/v1/_indicator-source-policy.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "ukrinform.net",
@@ -10219,9 +9905,6 @@
       "status": "excluded",
       "references": [
         {
-          "path": "server/worldmonitor/leads/v1/register-interest.ts"
-        },
-        {
           "path": "src/services/story-share.ts"
         }
       ]
@@ -10380,15 +10063,10 @@
       "host": "workos.com",
       "provider": "workos.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: first-party, control-plane, UI, or rendering transport",
       "attribution": "Excluded from the external-provider count: not an ingested upstream dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "api/oauth-authorization-server.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "worldmonitor.app",
@@ -10400,37 +10078,16 @@
       "status": "excluded",
       "references": [
         {
-          "path": "api/_agent-metadata.ts"
-        },
-        {
-          "path": "api/a2a.ts"
-        },
-        {
-          "path": "api/ask.ts"
-        },
-        {
           "path": "api/fwdstart.js"
         },
         {
-          "path": "api/mcp/skill-extension/generated.ts"
-        },
-        {
           "path": "api/miit-news.js"
-        },
-        {
-          "path": "api/notification-suppressions.js"
-        },
-        {
-          "path": "api/oauth/authorize.js"
         },
         {
           "path": "api/og-story.js"
         },
         {
           "path": "api/opensky.js"
-        },
-        {
-          "path": "api/referral/me.ts"
         },
         {
           "path": "api/reverse-geocode.js"
@@ -10440,9 +10097,6 @@
         },
         {
           "path": "api/story.js"
-        },
-        {
-          "path": "api/telegram-feed.js"
         },
         {
           "path": "scripts/_upstash-rest.mjs"
@@ -10469,9 +10123,6 @@
           "path": "scripts/lib/brief-embedding.mjs"
         },
         {
-          "path": "scripts/lib/company-monitoring-classifier-client.mjs"
-        },
-        {
           "path": "scripts/lib/x-news-accounts.cjs"
         },
         {
@@ -10484,16 +10135,7 @@
           "path": "scripts/measure-mobile-mainthread.mjs"
         },
         {
-          "path": "scripts/measure-tools-list-compression.mjs"
-        },
-        {
           "path": "scripts/publish-mcp-registry.mjs"
-        },
-        {
-          "path": "scripts/seed-digest-notifications.mjs"
-        },
-        {
-          "path": "scripts/seed-five-factor-scorecard.mjs"
         },
         {
           "path": "scripts/seed-hyperliquid-flow.mjs"
@@ -10514,22 +10156,7 @@
           "path": "scripts/seed-wb-indicators.mjs"
         },
         {
-          "path": "scripts/shared/notify-fields.cjs"
-        },
-        {
           "path": "scripts/validate-seed-migration.mjs"
-        },
-        {
-          "path": "server/_shared/brief-url.ts"
-        },
-        {
-          "path": "server/_shared/intel-history-embed.ts"
-        },
-        {
-          "path": "server/_shared/notify-fields.ts"
-        },
-        {
-          "path": "server/gateway.ts"
         },
         {
           "path": "server/worldmonitor/infrastructure/v1/reverse-geocode.ts"
@@ -10538,13 +10165,7 @@
           "path": "src/bootstrap/web-vitals-utils.ts"
         },
         {
-          "path": "src/components/UnifiedSettings.ts"
-        },
-        {
           "path": "src/config/web-origin.ts"
-        },
-        {
-          "path": "src/services/premium-fetch.ts"
         },
         {
           "path": "src/services/runtime.ts"
@@ -11058,15 +10679,10 @@
       "host": "www.bgs.ac.uk",
       "provider": "British Geological Survey World Mineral Statistics",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "BGS mineral statistics terms; attribution required; redistribution restricted",
       "attribution": "British Geological Survey (BGS) World Mineral Production; credit BGS and link to https://www.bgs.ac.uk/mineralsuk/statistics/world-mineral-statistics/.",
-      "status": "reviewed",
-      "references": [
-        {
-          "path": "scripts/seed-supply-vulnerability.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "www.bild.de",
@@ -11448,15 +11064,10 @@
       "host": "www.contractsfinder.service.gov.uk",
       "provider": "www.contractsfinder.service.gov.uk",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit www.contractsfinder.service.gov.uk and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/seed-global-tenders.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "www.corriere.it",
@@ -12084,15 +11695,10 @@
       "host": "www.gets.govt.nz",
       "provider": "www.gets.govt.nz",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit www.gets.govt.nz and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/seed-global-tenders.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "www.gitex.com",
@@ -12204,9 +11810,6 @@
       "references": [
         {
           "path": "scripts/ais-relay.cjs"
-        },
-        {
-          "path": "src/components/AviationCommandBar.ts"
         },
         {
           "path": "src/components/MapPopup.ts"
@@ -12709,9 +12312,6 @@
       "attribution": "Excluded from the external-provider count: not an ingested upstream dataset.",
       "status": "excluded",
       "references": [
-        {
-          "path": "server/worldmonitor/leads/v1/register-interest.ts"
-        },
         {
           "path": "src/services/story-share.ts"
         }
@@ -13610,18 +13210,10 @@
       "host": "www.sciencebase.gov",
       "provider": "USGS ScienceBase (Mineral Commodity Summaries)",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "U.S. government public-domain mineral statistics (USGS MCS data release)",
       "attribution": "U.S. Geological Survey Mineral Commodity Summaries; link to the ScienceBase data release (https://doi.org/10.5066/P1WKQ63T).",
-      "status": "reviewed",
-      "references": [
-        {
-          "path": "scripts/seed-mineral-production.mjs"
-        },
-        {
-          "path": "scripts/seed-supply-vulnerability.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "www.sciencedaily.com",
@@ -13811,15 +13403,10 @@
       "host": "www.statcan.gc.ca",
       "provider": "www.statcan.gc.ca",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit www.statcan.gc.ca and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "server/worldmonitor/resilience/v1/_indicator-source-policy.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "www.stats.gov.cn",
@@ -14091,15 +13678,10 @@
       "host": "www.tenders.gov.au",
       "provider": "AusTender",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Australian Government data and feed terms",
       "attribution": "Australian Government AusTender; link to the original notice/feed.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/seed-global-tenders.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "www.theglobeandmail.com",
@@ -14536,9 +14118,6 @@
       "status": "terms-review",
       "references": [
         {
-          "path": "api/mcp/skill-extension/generated.ts"
-        },
-        {
           "path": "server/worldmonitor/webcam/v1/get-webcam-image.ts"
         },
         {
@@ -14584,15 +14163,10 @@
       "host": "www.worldbank.org",
       "provider": "www.worldbank.org",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit www.worldbank.org and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "server/worldmonitor/resilience/v1/_indicator-source-policy.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "www.worldmonitor.app",
@@ -14605,18 +14179,6 @@
       "references": [
         {
           "path": "api/_cors.js"
-        },
-        {
-          "path": "api/a2a.ts"
-        },
-        {
-          "path": "api/ask.ts"
-        },
-        {
-          "path": "api/mcp/skill-extension/generated.ts"
-        },
-        {
-          "path": "api/mcp/ui/news-dashboard-app.ts"
         },
         {
           "path": "api/not-found.ts"
@@ -14649,9 +14211,6 @@
           "path": "scripts/build-use-cases.mjs"
         },
         {
-          "path": "scripts/capture-resilience-energy-v2-acceptance.mjs"
-        },
-        {
           "path": "scripts/check-live-video-sources.mjs"
         },
         {
@@ -14659,9 +14218,6 @@
         },
         {
           "path": "scripts/freeze-crawlable-live-pulse.mjs"
-        },
-        {
-          "path": "scripts/freeze-resilience-ranking.mjs"
         },
         {
           "path": "scripts/generate-sandbox-fixtures.mjs"
@@ -14685,9 +14241,6 @@
           "path": "scripts/measure-desktop-mainthread.mjs"
         },
         {
-          "path": "scripts/notification-relay.cjs"
-        },
-        {
           "path": "scripts/seo-indexnow-submit.mjs"
         },
         {
@@ -14698,9 +14251,6 @@
         },
         {
           "path": "server/_shared/deprecation-policy.ts"
-        },
-        {
-          "path": "server/worldmonitor/intelligence/v1/_country-brief-evidence.ts"
         },
         {
           "path": "src/app/panel-layout.ts"
@@ -14899,12 +14449,6 @@
       "references": [
         {
           "path": "scripts/lib/statcan-wds.mjs"
-        },
-        {
-          "path": "server/worldmonitor/resilience/v1/_canada-national-overlay.ts"
-        },
-        {
-          "path": "server/worldmonitor/resilience/v1/_indicator-source-policy.ts"
         }
       ]
     },
@@ -14943,15 +14487,10 @@
       "host": "x.com",
       "provider": "x.com",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Excluded: first-party, control-plane, UI, or rendering transport",
       "attribution": "Excluded from the external-provider count: not an ingested upstream dataset.",
-      "status": "excluded",
-      "references": [
-        {
-          "path": "server/worldmonitor/leads/v1/register-interest.ts"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "xinhuanet.com",
@@ -15022,15 +14561,10 @@
       "host": "your-app.convex.site",
       "provider": "your-app.convex.site",
       "kind": "structured",
-      "observed": true,
+      "observed": false,
       "license": "Provider terms for this upstream API/dataset; verify before redistribution",
       "attribution": "Credit your-app.convex.site and link to the original upstream API/dataset.",
-      "status": "terms-review",
-      "references": [
-        {
-          "path": "scripts/import-bounced-emails.mjs"
-        }
-      ]
+      "status": "excluded"
     },
     {
       "host": "yourstory.com",

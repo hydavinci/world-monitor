@@ -1,9 +1,5 @@
 // @ts-expect-error — JS module, no declaration file
 import { getHeaderApiKey } from '../../api/_api-key.js';
-import {
-  INTERNAL_MCP_VERIFIED_HEADER,
-  getInternalMcpVerifiedNonce,
-} from './mcp-internal-hmac';
 export {
   hasRedistributableProviderAttribution,
   isOpenSkyProvider,
@@ -16,9 +12,6 @@ export {
  */
 export function requiresRedistributableProviders(request: Request | undefined): boolean {
   if (!request) return false;
-
-  const verifiedMcpMarker = request.headers.get(INTERNAL_MCP_VERIFIED_HEADER);
-  if (verifiedMcpMarker && verifiedMcpMarker === getInternalMcpVerifiedNonce()) return true;
 
   const apiKey = getHeaderApiKey(request);
   return apiKey.length > 0 && !apiKey.startsWith('wms_');

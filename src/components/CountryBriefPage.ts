@@ -1,32 +1,19 @@
-import { escapeHtml, sanitizeUrl } from '@/utils/sanitize';
-import { formatIntelBrief, renderBriefEvidenceFooter, type IntelBriefEvidence } from '@/utils/format-intel-brief';
-import { collectBriefSources, renderBriefSourcesFooter, type BriefSource } from '@/utils/brief-sources';
-import { t } from '@/services/i18n';
-import { getCSSColor, showToast } from '@/utils';
-import type { CountryScore } from '@/services/country-instability';
-import type { NewsItem } from '@/types';
-import type { PredictionMarket } from '@/services/prediction';
-import type { AssetType } from '@/types';
-import type { CountryBriefSignals } from '@/types';
-import type { CountryBriefPanel, CountryIntelData, StockIndexData } from '@/components/CountryBriefPanel';
-import { getNearbyInfrastructure, haversineDistanceKm } from '@/services/related-assets';
+import type { CountryBriefPanel,CountryIntelData,StockIndexData } from '@/components/CountryBriefPanel';
 import { PORTS } from '@/config/ports';
-import type { Port } from '@/types';
-import { exportCountryBriefJSON, exportCountryBriefCSV, exportCountryEvidenceMarkdown } from '@/utils/export';
-import type { CountryBriefExport, CountryEvidenceBundleInput } from '@/utils/export';
 import { ME_STRIKE_BOUNDS } from '@/services/country-geometry';
+import type { CountryScore } from '@/services/country-instability';
+import { t } from '@/services/i18n';
+import type { PredictionMarket } from '@/services/prediction';
+import { getNearbyInfrastructure,haversineDistanceKm } from '@/services/related-assets';
+import type { AssetType,CountryBriefSignals,NewsItem,Port } from '@/types';
+import { getCSSColor } from '@/utils';
+import { collectBriefSources,renderBriefSourcesFooter,type BriefSource } from '@/utils/brief-sources';
 import { toFlagEmoji } from '@/utils/country-flag';
-import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
-import { getAuthState } from '@/services/auth-state';
-import { hasPremiumAccess } from '@/services/panel-gating';
-import {
-  evaluateAvailableExportFormats,
-  evaluateExportGate,
-  exportLockToGateReason,
-} from '@/services/gates/export';
-import { primeExportGateActivation } from '@/services/gates/export-resolver';
-import { exportGateCopy } from '@/components/ExportGateControl';
-import { trackGateHit } from '@/services/analytics';
+import { setTrustedHtml,trustedHtml } from '@/utils/dom-utils';
+import type { CountryBriefExport,CountryEvidenceBundleInput } from '@/utils/export';
+import { exportCountryBriefCSV,exportCountryBriefJSON,exportCountryEvidenceMarkdown } from '@/utils/export';
+import { formatIntelBrief,renderBriefEvidenceFooter,type IntelBriefEvidence } from '@/utils/format-intel-brief';
+import { escapeHtml,sanitizeUrl } from '@/utils/sanitize';
 
 
 type BriefAssetType = AssetType | 'port';
@@ -769,51 +756,13 @@ export class CountryBriefPage implements CountryBriefPanel {
     else exportCountryBriefCSV(data);
   }
 
-  /**
-   * U5: the structured-data exports (JSON/CSV) share the dashboard export
-   * gate. The print button, the image export and the print-based PDF stay
-   * free — they carry no machine-readable payload — and the evidence bundle
-   * keeps its own Pro gate below.
-   */
   private syncStructuredExportOptions(): void {
-    const authState = getAuthState();
-    const verdict = evaluateExportGate(authState);
-    // Keep the locked rows visible so they remain an entry point to the
-    // billing-aware gate. Once unlocked, the catalog is the format allowlist.
-    const availableFormats = verdict.locked
-      ? null
-      : new Set(evaluateAvailableExportFormats(authState));
-
-    this.overlay
-      .querySelectorAll<HTMLButtonElement>('.cb-export-option')
-      .forEach((button) => {
-        const format = button.dataset.format;
-        if (format !== 'json' && format !== 'csv') return;
-        button.hidden = availableFormats !== null && !availableFormats.has(format);
-      });
+    this.overlay.querySelectorAll<HTMLButtonElement>('.cb-export-option').forEach(button => {
+      button.hidden = button.dataset.format === 'evidence-md';
+    });
   }
-
-  private canExportStructuredData(format: 'json' | 'csv'): boolean {
-    const authState = getAuthState();
-    const verdict = evaluateExportGate(authState);
-    if (!verdict.locked) {
-      if (verdict.pendingActivation) void primeExportGateActivation();
-      // Re-evaluate at click time so a stale/open menu cannot bypass a live
-      // entitlement change.
-      return evaluateAvailableExportFormats(authState).includes(format);
-    }
-    trackGateHit('export');
-    showToast(exportGateCopy(exportLockToGateReason(verdict.reason)).desc);
-    return false;
-  }
-
-  private canExportEvidenceBundle(): boolean {
-    if (hasPremiumAccess(getAuthState())) return true;
-    trackGateHit('evidence-export');
-    showToast('Evidence export is available on Pro.');
-    return false;
-  }
-
+  private canExportStructuredData(format: 'json' | 'csv'): boolean { return format === 'json' || format === 'csv'; }
+  private canExportEvidenceBundle(): boolean { return false; }
   private exportPdf(): void {
     const content = this.overlay.querySelector('.cb-body');
     const header = this.overlay.querySelector('.cb-header');

@@ -988,8 +988,8 @@ function dirHasFiles(rel) {
 
 function computeStats({ sourceAttribution: suppliedAttribution } = {}) {
   const makefile = read('Makefile');
-  const serverCard = parseJson('public/.well-known/mcp/server-card.json');
-  const mcpApps = parseMcpAppsInventory();
+  // Subscription MCP and its UI apps are not implemented in this public-only fork.
+  const mcpApps = { apps: [], uiResources: [], linkedTools: [], toolLinks: [] };
 
   // ---- Map layers (src/config/map-layer-definitions.ts) ----
   const mld = read('src/config/map-layer-definitions.ts');
@@ -1174,7 +1174,7 @@ function computeStats({ sourceAttribution: suppliedAttribution } = {}) {
     leaderNames,
     populationPriorityCountries,
     sebufVersion: makefileVar(makefile, 'SEBUF_VERSION'),
-    mcpToolCount: Array.isArray(serverCard.tools) ? serverCard.tools.length : 0,
+    mcpToolCount: 0,
     mcpApps,
     mcpAppCount: mcpApps.apps.length,
     mcpAppUiResources: mcpApps.uiResources,
@@ -2000,10 +2000,8 @@ export function validateCategoryExplainerCopy(stats, readFile = read) {
 const DOC_VALIDATORS = [
   validateIndexLanguageMetadata,
   validateSupportedLanguagesRegistry,
-  validateMcpAppsDocs,
   validateBootstrapCacheDocs,
   validateHealthSummaryDocs,
-  validatePlanLayerEntitlementCopy,
   validateCategoryExplainerCopy,
   validateVolatileInventoryClaims,
 ];

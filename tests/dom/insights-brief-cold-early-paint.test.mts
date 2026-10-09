@@ -446,6 +446,9 @@ describe('early paint awaits insights hydration (#7464)', () => {
 });
 
 describe('client render does not hold the brief behind parallel analysis (#7464)', () => {
+  beforeEach(() => localStorage.setItem('wm-ai-flow-browser-model', 'true'));
+  afterEach(() => localStorage.removeItem('wm-ai-flow-browser-model'));
+
   it('paints the brief before analyzeHeadlines resolves', async () => {
     mockGetPersistentCache.mockResolvedValue(null);
     mockGetServerInsights.mockReturnValue(null);

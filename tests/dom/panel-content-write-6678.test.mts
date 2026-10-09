@@ -112,13 +112,7 @@ function countdownText(panel: object): string | null {
   return internals(panel).content.querySelector('.panel-error-countdown')?.textContent ?? null;
 }
 
-/**
- * Drive one panel's real success write twice — once unlocked to prove the write
- * is live, once locked to prove it bails — and assert the upgrade CTA survives.
- *
- * `successSelector` must be markup only THIS panel's success branch produces, or
- * the locked assertion could be satisfied by leftovers from another render.
- */
+/** Repeated successful public updates must remain visible without an account gate. */
 async function expectSuccessWriteRespectsLock(
   panel: object,
   driveSuccess: () => void | Promise<void>,
@@ -128,18 +122,9 @@ async function expectSuccessWriteRespectsLock(
   await driveSuccess();
   expect(internals(panel).content.querySelector(successSelector)).not.toBeNull();
 
-  (panel as { showLocked(features?: string[]): void }).showLocked(['Premium feature']);
-
-  // Precondition: the lock really did take the content over.
-  expect(lockedCta(panel)).not.toBeNull();
-  expect(internals(panel).content.querySelector(successSelector)).toBeNull();
-
   await driveSuccess();
-
-  // The bail is the whole point. A success write that lands here paints panel
-  // content over the upgrade CTA — the paywall hole `setContentNodes` closes.
-  expect(lockedCta(panel)).not.toBeNull();
-  expect(internals(panel).content.querySelector(successSelector)).toBeNull();
+  expect(lockedCta(panel)).toBeNull();
+  expect(internals(panel).content.querySelector(successSelector)).not.toBeNull();
 }
 
 beforeAll(async () => {
@@ -157,7 +142,7 @@ afterEach(() => {
 });
 
 describe('ServiceStatusPanel', () => {
-  it('does not paint the service list over a locked panel', async () => {
+  it('repeatedly paints the public service list without an account lock', async () => {
     const panel = new ServiceStatusPanel();
     mount(panel);
 
@@ -176,7 +161,7 @@ describe('ServiceStatusPanel', () => {
 });
 
 describe('TechEventsPanel', () => {
-  it('does not paint the events list over a locked panel', async () => {
+  it('repeatedly paints public events without an account lock', async () => {
     vi.spyOn(
       TechEventsPanel.prototype as unknown as { fetchEvents(): Promise<void> },
       'fetchEvents',
@@ -200,7 +185,7 @@ describe('TechEventsPanel', () => {
 });
 
 describe('DefensePatentsPanel', () => {
-  it('does not paint the patents list over a locked panel', async () => {
+  it('repeatedly paints public patents without an account lock', async () => {
     vi.spyOn(
       DefensePatentsPanel.prototype as unknown as { fetchPatents(): Promise<void> },
       'fetchPatents',
@@ -239,7 +224,7 @@ describe('GdeltIntelPanel', () => {
     return panel;
   }
 
-  it('does not paint the article list over a locked panel', async () => {
+  it('repeatedly paints public articles without an account lock', async () => {
     const panel = await newPanel();
     const articles = [{
       url: 'https://example.com/story',
@@ -260,7 +245,7 @@ describe('GdeltIntelPanel', () => {
     panel.destroy();
   });
 
-  it('does not paint the empty state over a locked panel', async () => {
+  it('repeatedly paints the public empty state without an account lock', async () => {
     const panel = await newPanel();
 
     await expectSuccessWriteRespectsLock(
@@ -270,42 +255,6 @@ describe('GdeltIntelPanel', () => {
       },
       '.empty-state',
     );
-
-    panel.destroy();
-  });
-
-  /**
-   * `renderTopicSummary` is the one write #6678 deliberately did NOT migrate: it
-   * inserts a SIBLING before `this.content`, so the wiping helpers would destroy
-   * the articles it sits above. Staying off the helper costs the `_locked` bail,
-   * and `showLocked` only sweeps siblings once — at lock time — so a summary
-   * inserted afterwards would paint above the upgrade CTA. The panel honours the
-   * lock by hand instead; this pins that, because nothing else does.
-   */
-  it('does not show the topic summary over a locked panel', async () => {
-    const timeline = {
-      tone: [{ value: -2 }, { value: -1 }, { value: 0.5 }],
-      vol: [{ value: 10 }, { value: 20 }, { value: 30 }],
-    };
-    const panel = await newPanel();
-    const render = (panel as unknown as { renderTopicSummary(t: unknown): void });
-    const summary = () => internals(panel).element.querySelector<HTMLElement>('.gdelt-topic-summary');
-
-    // Non-vacuity: unlocked, this timeline really does paint a visible summary.
-    render.renderTopicSummary(timeline);
-    expect(summary()).not.toBeNull();
-    expect(summary()!.style.display).not.toBe('none');
-
-    (panel as unknown as { showLocked(f?: string[]): void }).showLocked(['Premium feature']);
-    expect(lockedCta(panel)).not.toBeNull();
-
-    // A refresh landing while locked must not paint a sparkline over the CTA.
-    render.renderTopicSummary(timeline);
-    expect(summary()?.style.display).toBe('none');
-
-    // ...and unlocking must not strand it hidden.
-    (panel as unknown as { unlockPanel(): void }).unlockPanel();
-    expect(summary()!.style.display).not.toBe('none');
 
     panel.destroy();
   });
@@ -398,7 +347,7 @@ describe('loading branches keep the backoff rung after the success migration', (
  * five that cannot use `setContentNodes`.
  */
 describe('GivingPanel', () => {
-  it('does not paint the summary over a locked panel', async () => {
+  it('repeatedly paints the public giving summary without an account lock', async () => {
     mockAvailableGivingTabs.mockReturnValue(['platforms']);
     mockRenderGivingPanelContent.mockReturnValue('<div class="giving-body"></div>');
 
@@ -416,62 +365,6 @@ describe('GivingPanel', () => {
       '.giving-body',
     );
 
-    panel.destroy();
-  });
-});
-
-// ── #6714: a locked panel's success render must still clear the error state ──
-//
-// The helpers bail on _locked before any WRITE (pinned above), but the
-// error-state clear now runs ahead of the bail: clearing the chip and the
-// backoff rung paints nothing, so it cannot reopen the paywall hole. Before
-// #6714 the bail came first, so a fail -> lock -> recover sequence left a red
-// header over the lock CTA and a stale retryAttempt rung after unlock.
-describe('locked-panel error-state clear (#6714)', () => {
-  it('clears the error chip and backoff rung even though the success write bails', async () => {
-    vi.spyOn(
-      TechEventsPanel.prototype as unknown as { fetchEvents(): Promise<void> },
-      'fetchEvents',
-    ).mockResolvedValue(undefined);
-
-    const panel = new TechEventsPanel('tech-events');
-    mount(panel);
-
-    // 1. Fail: paint the error state and climb the backoff ladder.
-    flags(panel).loading = false;
-    flags(panel).error = 'source down';
-    (panel as unknown as { render(): void }).render();
-    expect(countdownText(panel), 'precondition: the error state is visible').not.toBeNull();
-    expect(internals(panel).retryAttempt, 'precondition: the backoff rung advanced').toBeGreaterThan(0);
-
-    // 2. Lock the panel (the fail -> lock half of the sequence).
-    panel.showLocked(['Premium feature']);
-    expect(lockedCta(panel)).not.toBeNull();
-
-    // 3. The source recovers and the success write lands — it must bail
-    //    (CTA survives) yet still clear the error state.
-    flags(panel).loading = false;
-    flags(panel).error = null;
-    (panel as unknown as { render(): void }).render();
-
-    expect(lockedCta(panel), 'the write still bails on the lock').not.toBeNull();
-    expect(internals(panel).retryAttempt, 'the backoff rung is cleared, not stranded').toBe(0);
-    expect(countdownText(panel), 'the error chip is cleared, not latched over the CTA').toBeNull();
-
-    panel.destroy();
-  });
-
-  it('isLocked is the base-class accessor, not a class-name proxy', () => {
-    // The accessor exists so positional writers (GdeltIntelPanel's summary
-    // hide) can honour the lock without mirroring private state through
-    // classList. Reading it before/after showLocked pins the contract.
-    const panel = new ServiceStatusPanel();
-    mount(panel);
-    expect((panel as unknown as { isLocked: boolean }).isLocked).toBe(false);
-    panel.showLocked(['Premium feature']);
-    expect((panel as unknown as { isLocked: boolean }).isLocked).toBe(true);
-    panel.unlockPanel();
-    expect((panel as unknown as { isLocked: boolean }).isLocked).toBe(false);
     panel.destroy();
   });
 });

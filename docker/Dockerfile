@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-# Multi-stage build for the World Monitor web app (frontend only).
+# Multi-stage build for static frontend assets only; no API service or proxy.
 
 # Stage 1: Build the frontend with TypeScript + Vite.
 FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS builder
@@ -22,10 +22,8 @@ RUN npm ci --include=dev --ignore-scripts
 # Build-time configuration. Pass via --build-arg. Other VITE_* vars (e.g. VITE_PMTILES_URL)
 # can be added here or via --build-arg for custom builds; see .env.example for the full list.
 ARG VITE_VARIANT=full
-ARG VITE_WS_API_URL=https://api.worldmonitor.app
 
 ENV VITE_VARIANT=${VITE_VARIANT}
-ENV VITE_WS_API_URL=${VITE_WS_API_URL}
 
 # The crawlable-corpus step runs the source-attribution drift gate. Inventory
 # facts write untracked .js into api/, so the gate must see the pristine
@@ -37,22 +35,11 @@ RUN npm run build:crawlable-corpus && npm run build:sitemap
 # clean release image before Vite copies public/ into dist/.
 RUN node scripts/generate-inventory-facts.mjs
 
-# public/pro/ is a build product, not committed bytes (#6898), and
-# docker/nginx.conf.template routes `location ^~ /pro` + `/pro/assets/` — so
-# unlike /blog (deliberately skipped here) the image must build pro-test or it
-# serves a 404 behind a live route. build:pro installs pro-test's own lockfile.
-RUN npm run build:pro
-
 # tsc + vite build directly like the sidecar image's builder. `npm run build`
 # would chain build:blog (blog-site has its own lockfile, not installed here)
 # and the prebuild openapi/agent-skills generators.
 RUN npx tsc && npx vite build
 RUN test -s dist/product-facts.json
-# Assert the /pro pages survived the public/ -> dist/ copy. build:pro succeeding
-# proves public/pro/ exists; it does NOT prove Vite copied it, and nginx routes
-# `location ^~ /pro` regardless (#6898). Without this an outDir/publicDir change
-# ships a green image that 404s behind a live route.
-RUN test -s dist/pro/index.html && test -s dist/pro/welcome.html
 
 
 # Stage 2: Serve the built assets from nginx.
@@ -60,11 +47,9 @@ FROM nginx:alpine@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5
 
 WORKDIR /usr/share/nginx/html
 
-ENV API_UPSTREAM=https://api.worldmonitor.app
-
-# Copy built assets, nginx template (API_UPSTREAM substituted at startup), and entrypoint.
+# Copy built assets, fixed nginx configuration, and entrypoint.
 COPY --from=builder /app/dist/ ./
-COPY docker/nginx.conf.template /etc/nginx/nginx.conf.template
+COPY docker/nginx.conf.template /etc/nginx/nginx.conf
 COPY docker/nginx-security-headers.conf /etc/nginx/security_headers.conf
 COPY docker/nginx-embed-security-headers.conf /etc/nginx/embed_security_headers.conf
 COPY docker/docker-entrypoint.sh /docker-entrypoint.sh

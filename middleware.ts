@@ -11,6 +11,8 @@ import {
 import { getRootlessDocsDestination } from './src/config/docs-root-redirects';
 import agentRequestPolicy from './shared/agent-request-policy.json';
 import { isMcpAliasRequest, normalizeMcpHost } from './shared/mcp-host-policy';
+import { retiredRouteResponse } from './api/_retired-routes.js';
+import { getCorsHeaders } from './api/_cors.js';
 
 const AGENT_UA = new RegExp(`(?:^|[^a-z0-9-])(?:${agentRequestPolicy.userAgents.join('|')})(?:$|[^a-z0-9-])`, 'i');
 
@@ -186,6 +188,12 @@ function uaConditionedRedirectHeaders(location: URL): Record<string, string> {
 }
 
 export default function middleware(request: Request) {
+  const cors = getCorsHeaders(request);
+  const retired = retiredRouteResponse(request, cors);
+  if (retired) {
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+    return retired;
+  }
   const url = new URL(request.url);
   const ua = request.headers.get('user-agent') ?? '';
   const path = url.pathname;
@@ -254,7 +262,7 @@ export default function middleware(request: Request) {
   ) {
     return new Response(null, {
       headers: {
-        'x-middleware-rewrite': new URL('/pro/home.md', url).toString(),
+        'x-middleware-rewrite': new URL('/world-monitor.md', url).toString(),
         'Content-Type': 'text/markdown; charset=utf-8',
         Vary: 'User-Agent, Accept',
         'Cache-Control': 'private, no-store',
@@ -438,6 +446,15 @@ async function proxyDocsLocaleHtml(request: Request, url: URL, host: string): Pr
 export const config = {
   matcher: [
     '/mcp',
+    '/pro/:path*',
+    '/pricing/:path*',
+    '/mcp-grant.html',
+    '/.well-known/oauth-protected-resource/:path*',
+    '/.well-known/oauth-authorization-server/:path*',
+    '/.well-known/mcp',
+    '/.well-known/mcp.json',
+    '/.well-known/mcp/server.json',
+    '/.well-known/mcp/server-card.json',
     '/api/:path*',
     '/((?!api(?:/|$)|mcp(?:/|$)|.*\\.[^/]+$).*)',
   ],

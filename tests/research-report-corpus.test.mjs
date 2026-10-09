@@ -313,7 +313,7 @@ describe('research report corpus (#5668)', () => {
         `missing analytics funnel target: ${target}`,
       );
     }
-    assert.match(html, /abacus\.worldmonitor\.app\/script\.js/, 'research pages must load analytics');
+    assert.doesNotMatch(html, /abacus\.worldmonitor\.app\/script\.js/, 'personal research pages must not load analytics');
     assert.match(html, /nonce="wm-static-bootstrap"/);
   });
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import http, { createServer } from 'node:http';
 import https from 'node:https';
-import { createHmac } from 'node:crypto';
 import dns from 'node:dns/promises';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
@@ -16,11 +15,11 @@ const sharedResourceRoot = process.env.LOCAL_API_RESOURCE_DIR
 const { getConfiguredLlmHealthProviders } = await import(
   pathToFileURL(path.join(sharedResourceRoot, 'shared/llm-health-providers.js')).href
 );
+const { retiredRouteResponse } = await import(
+  pathToFileURL(path.join(sharedResourceRoot, 'api/_retired-routes.js')).href
+);
 
 const brotliCompressAsync = promisify(brotliCompress);
-const DESKTOP_AUTH_SECRET_ENV = 'WM_DESKTOP_SHARED_SECRET';
-const DESKTOP_AUTH_TIMESTAMP_HEADER = 'X-WorldMonitor-Desktop-Timestamp';
-const DESKTOP_AUTH_SIGNATURE_HEADER = 'X-WorldMonitor-Desktop-Signature';
 const LOCAL_API_TRANSPORT_HEADER = 'x-worldmonitor-local-token';
 
 // Monkey-patch globalThis.fetch to force IPv4 for HTTPS requests.
@@ -67,22 +66,6 @@ function buildSafeResponse(statusCode, statusText, headers, bodyBuffer) {
   const status = Number.isInteger(statusCode) ? statusCode : 500;
   const body = (status === 204 || status === 205 || status === 304) ? null : bodyBuffer;
   return new Response(body, { status, statusText, headers });
-}
-
-function canonicalizeDesktopAuthPayload(payload) {
-  return JSON.stringify({
-    email: typeof payload?.email === 'string' ? payload.email : '',
-    source: typeof payload?.source === 'string' ? payload.source : '',
-    appVersion: typeof payload?.appVersion === 'string' ? payload.appVersion : '',
-    referredBy: typeof payload?.referredBy === 'string' ? payload.referredBy : '',
-    website: typeof payload?.website === 'string' ? payload.website : '',
-    turnstileToken: typeof payload?.turnstileToken === 'string' ? payload.turnstileToken : '',
-  });
-}
-
-function signDesktopAuthPayload(secret, timestamp, payload) {
-  const message = `${timestamp}\n${canonicalizeDesktopAuthPayload(payload)}`;
-  return `sha256=${createHmac('sha256', secret).update(message).digest('hex')}`;
 }
 
 function isTransientVerificationError(error) {
@@ -330,7 +313,7 @@ const ALLOWED_ENV_KEYS = new Set([
   'VITE_OPENSKY_RELAY_URL', 'OPENSKY_CLIENT_ID', 'OPENSKY_CLIENT_SECRET',
   'AISSTREAM_API_KEY', 'VITE_WS_RELAY_URL', 'FINNHUB_API_KEY', 'ALPHA_VANTAGE_API_KEY', 'NASA_FIRMS_API_KEY',
   'OLLAMA_API_URL', 'OLLAMA_MODEL', 'WORLDMONITOR_API_KEY', 'WTO_API_KEY',
-  'AVIATIONSTACK_API', 'ICAO_API_KEY', 'UCDP_ACCESS_TOKEN', DESKTOP_AUTH_SECRET_ENV,
+  'AVIATIONSTACK_API', 'ICAO_API_KEY', 'UCDP_ACCESS_TOKEN',
 ]);
 
 const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -700,53 +683,6 @@ async function proxyToCloud(requestUrl, req, remoteBase) {
     headers,
     body,
   });
-}
-
-async function proxyRegisterInterestToCloud(requestUrl, req, context) {
-  const target = `${context.remoteBase}${requestUrl.pathname}${requestUrl.search}`;
-  const bodyBuffer = await readBody(req);
-  let payload = {};
-  if (bodyBuffer?.length) {
-    try {
-      payload = JSON.parse(bodyBuffer.toString('utf8'));
-    } catch {
-      payload = {};
-    }
-  }
-
-  const normalizedPayload = {
-    ...payload,
-    source: 'desktop-settings',
-  };
-  const body = JSON.stringify(normalizedPayload);
-  const headers = toHeaders(req.headers, { stripOrigin: true });
-  headers.delete(LOCAL_API_TRANSPORT_HEADER);
-  headers.delete('Authorization');
-  headers.delete('If-None-Match');
-  headers.delete('If-Modified-Since');
-  headers.delete('Transfer-Encoding');
-  headers.delete('Content-Encoding');
-  headers.delete('Connection');
-  headers.delete('Expect');
-  headers.delete(DESKTOP_AUTH_TIMESTAMP_HEADER);
-  headers.delete(DESKTOP_AUTH_SIGNATURE_HEADER);
-  headers.set('Origin', 'https://worldmonitor.app');
-  headers.set('User-Agent', CHROME_UA);
-  headers.set('Content-Type', 'application/json');
-  headers.set('Content-Length', String(Buffer.byteLength(body)));
-
-  const secret = process.env[DESKTOP_AUTH_SECRET_ENV];
-  if (secret) {
-    const timestamp = String(Date.now());
-    headers.set(DESKTOP_AUTH_TIMESTAMP_HEADER, timestamp);
-    headers.set(DESKTOP_AUTH_SIGNATURE_HEADER, signDesktopAuthPayload(secret, timestamp, normalizedPayload));
-  }
-
-  return fetchWithTimeout(target, {
-    method: 'POST',
-    headers: Object.fromEntries(headers.entries()),
-    body,
-  }, 15000);
 }
 
 function pickModule(pathname, routes) {
@@ -1406,9 +1342,6 @@ async function validateSecretAgainstProvider(key, rawValue, context = {}) {
     case 'ICAO_API_KEY':
       return ok('ICAO API key stored (verification requires NOTAM endpoint access)');
 
-    case DESKTOP_AUTH_SECRET_ENV:
-      return ok('Desktop shared secret stored');
-
     default:
       return ok('Key stored');
     }
@@ -1430,6 +1363,8 @@ async function dispatch(requestUrl, req, routes, context) {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: makeCorsHeaders(req) });
   }
+  const retired = retiredRouteResponse(new Request(requestUrl, { method: req.method }), makeCorsHeaders(req));
+  if (retired) return retired;
 
   // Liveness probe — exempt from auth so container/orchestrator healthchecks
   // can hit it without the per-session LOCAL_API_TOKEN. Deliberately minimal
@@ -1570,82 +1505,6 @@ async function dispatch(requestUrl, req, routes, context) {
       context.logger.log(`[local-api] verbose logging ${verboseMode ? 'ON' : 'OFF'}`);
     }
     return json({ verboseMode });
-  }
-  // Registration — use the authenticated Convex HTTP bridge when CONVEX_URL is
-  // available (self-hosted), otherwise proxy to cloud (desktop sidecar never
-  // has CONVEX_URL).
-  // Keeps the legacy /api/register-interest local path so older desktop builds
-  // continue to work; cloud fallback rewrites to the new sebuf RPC path.
-  if (requestUrl.pathname === '/api/register-interest' && req.method === 'POST') {
-    const convexUrl = process.env.CONVEX_URL;
-    if (!convexUrl) {
-      const cloudUrl = new URL(requestUrl);
-      cloudUrl.pathname = '/api/leads/v1/register-interest';
-      try {
-        const cloudResponse = await proxyRegisterInterestToCloud(cloudUrl, req, context);
-        if (!cloudResponse.ok) {
-          context.logger.warn(`[local-api] cloud returned ${cloudResponse.status} for ${cloudUrl.pathname}`);
-        }
-        return cloudResponse;
-      } catch (error) {
-        context.logger.error('[local-api] register-interest cloud fallback failed', error);
-      }
-      return json({ error: 'Registration service unavailable' }, 503);
-    }
-    try {
-      const body = await new Promise((resolve, reject) => {
-        const chunks = [];
-        req.on('data', c => chunks.push(c));
-        req.on('end', () => resolve(Buffer.concat(chunks).toString()));
-        req.on('error', reject);
-      });
-      const parsed = JSON.parse(body);
-      const email = parsed.email;
-      if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        return json({ error: 'Invalid email address' }, 400);
-      }
-      const sharedSecret = process.env.CONVEX_SERVER_SHARED_SECRET;
-      if (!sharedSecret) {
-        context.logger.warn('[local-api] self-hosted register-interest bridge is not configured');
-        return json({ error: 'Registration service unavailable' }, 503);
-      }
-      const convexSiteUrl = (
-        process.env.CONVEX_SITE_URL || convexUrl.replace(/\.convex\.cloud\/?$/, '.convex.site')
-      ).replace(/\/$/, '');
-      const args = {
-        email,
-        source: typeof parsed.source === 'string' ? parsed.source : 'desktop',
-        appVersion: typeof parsed.appVersion === 'string' ? parsed.appVersion : 'unknown',
-      };
-      if (typeof parsed.referredBy === 'string') args.referredBy = parsed.referredBy;
-      const response = await fetchWithTimeout(`${convexSiteUrl}/api/internal-register-interest`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'worldmonitor-sidecar/1.0',
-          'x-convex-shared-secret': sharedSecret,
-        },
-        body: JSON.stringify(args),
-      }, 15000);
-      if (!response.ok) {
-        context.logger.warn(`[local-api] self-hosted register-interest bridge returned ${response.status}`);
-        return json({ error: 'Registration failed' }, 502);
-      }
-      const responseBody = await response.text();
-      let result;
-      try {
-        result = JSON.parse(responseBody);
-      } catch {
-        return json({ error: 'Registration failed' }, 502);
-      }
-      if (!result || (result.status !== 'registered' && result.status !== 'already_registered')) {
-        return json({ error: 'Registration failed' }, 502);
-      }
-      return json({ status: 'registered', referralCode: '', referralCount: 0, position: 0, emailSuppressed: false });
-    } catch (e) {
-      context.logger.error(`[register-interest] error: ${e.message}`);
-      return json({ error: 'Registration service unreachable' }, 502);
-    }
   }
 
   // YouTube video naming for channel management (oEmbed). The cloud edge handler owns the

@@ -1,4 +1,5 @@
 import { AwsClient } from 'aws4fetch';
+import { RETIRED_BOOTSTRAP_KEYS } from './_retired-routes.js';
 
 const MINUTE_MS = 60_000;
 const MAX_FUTURE_SKEW_MS = 5 * MINUTE_MS;
@@ -42,7 +43,9 @@ function isValidEnvelope(envelope, tier, nowMs) {
     && envelope.generatedAt <= nowMs + MAX_FUTURE_SKEW_MS
     && isPlainObject(envelope.payload)
     && isPlainObject(envelope.payload.data)
-    && Array.isArray(envelope.payload.missing);
+    && Array.isArray(envelope.payload.missing)
+    && !Object.keys(envelope.payload.data).some(key => RETIRED_BOOTSTRAP_KEYS.has(key))
+    && !envelope.payload.missing.some(key => RETIRED_BOOTSTRAP_KEYS.has(key));
 }
 
 function readConfig(env) {

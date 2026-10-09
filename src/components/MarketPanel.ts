@@ -1,32 +1,30 @@
-import { Panel } from './Panel';
-import { t } from '@/services/i18n';
-import type { MarketData, CryptoData, TokenData } from '@/types';
-import { formatPrice, formatChange, getChangeClass, getHeatmapClass } from '@/utils';
-import { escapeHtml, unsafeRawHtml } from '@/utils/sanitize';
-import { miniSparkline } from '@/utils/sparkline';
 import { SITE_VARIANT } from '@/config';
-import { createWatchlistButton } from './watchlist-modal';
+import type {
+MarketQuoteUnavailable,
+MarketQuoteUnavailableReason,
+} from '@/generated/client/worldmonitor/market/v1/service_client';
+import { t } from '@/services/i18n';
+import type { CryptoData,MarketData,TokenData } from '@/types';
+import { formatChange,formatPrice,getChangeClass,getHeatmapClass } from '@/utils';
+import { escapeHtml,unsafeRawHtml } from '@/utils/sanitize';
+import { miniSparkline } from '@/utils/sparkline';
+import { PHYSICAL_DIVERGENCE_CONTRACT } from '../../shared/physical-divergence-contract.js';
 import {
-  renderChinaCorporateDisclosureSignals,
-  type ChinaCorporateDisclosureSnapshot,
+bindMarketChartActivation,
+getMarketChartRowAttributes,
+} from './market-chart-interactions';
+import { openMarketChartModal } from './market-chart-modal';
+import {
+renderChinaCorporateDisclosureSignals,
+type ChinaCorporateDisclosureSnapshot,
 } from './market-disclosures';
 import {
-  composeMarketPanelContent,
-  groupUnavailableSymbols,
-  type UnavailableSymbolGroup,
+composeMarketPanelContent,
+groupUnavailableSymbols,
+type UnavailableSymbolGroup,
 } from './market-panel-content';
-import type {
-  MarketQuoteUnavailable,
-  MarketQuoteUnavailableReason,
-} from '@/generated/client/worldmonitor/market/v1/service_client';
-import { PHYSICAL_DIVERGENCE_CONTRACT } from '../../shared/physical-divergence-contract.js';
-import { openMarketChartModal } from './market-chart-modal';
-import { navigateToStockResearch } from '@/features/stock-research/stock-research-overlay';
-import { normalizeStockResearchSymbol } from '@/features/stock-research/stock-research-route';
-import {
-  bindMarketChartActivation,
-  getMarketChartRowAttributes,
-} from './market-chart-interactions';
+import { Panel } from './Panel';
+import { createWatchlistButton } from './watchlist-modal';
 
 // Not in the `common` namespace on purpose: `common` ships whole inside the
 // budgeted first-paint shell bundle, and this notice only ever renders after a
@@ -62,18 +60,7 @@ export class MarketPanel extends Panel {
     super({ id: 'markets', title: t('panels.markets'), infoTooltip: t('components.markets.infoTooltip') });
     this.header.appendChild(createWatchlistButton());
 
-    // Delegated once on the persistent content element (each render only swaps
-    // innerHTML): click or Enter/Space on a plottable ticker opens its terminal chart.
-    // Rows are marked role="button" purely on having a plottable series, so
-    // every one of them must lead somewhere. The research route only accepts
-    // /^[A-Z][A-Z0-9.-]{0,14}$/, which rejects the caret-prefixed indices
-    // (^GSPC, ^DJI, ^IXIC …) and digit-leading Asian tickers (0700.HK,
-    // 600519.SS …) that lead this panel — those keep the chart modal rather
-    // than becoming announced-but-inert controls.
-    bindMarketChartActivation(this.content, () => this._markets, (stock) => {
-      if (normalizeStockResearchSymbol(stock.symbol)) navigateToStockResearch(stock.symbol, stock);
-      else openMarketChartModal(stock);
-    });
+    bindMarketChartActivation(this.content, () => this._markets, openMarketChartModal);
   }
 
   public renderMarkets(
@@ -403,15 +390,15 @@ export interface CommoditiesTabSelectionResult {
 // Use the generated types directly — never hand-roll a subset, which silently
 // drifts when the proto gains fields.
 import type {
-  GetPhysicalDivergenceIndexResponse,
-  GetPhysicalPremiumsResponse,
-  GetHyperliquidFlowResponse,
-  HyperliquidAssetFlow,
-  PhysicalDivergenceReading,
-  PhysicalDivergenceState,
-  PhysicalPremiumRegime,
-  PhysicalPremiumTrend,
-  PhysicalPremium,
+GetHyperliquidFlowResponse,
+GetPhysicalDivergenceIndexResponse,
+GetPhysicalPremiumsResponse,
+HyperliquidAssetFlow,
+PhysicalDivergenceReading,
+PhysicalDivergenceState,
+PhysicalPremium,
+PhysicalPremiumRegime,
+PhysicalPremiumTrend,
 } from '@/generated/client/worldmonitor/market/v1/service_client';
 
 function physicalDivergenceStateCopy(

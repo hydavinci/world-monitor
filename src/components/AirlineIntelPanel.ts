@@ -1,27 +1,22 @@
 import {
-    fetchAirportOpsSummary,
-    fetchAirportFlights,
-    fetchCarrierOps,
-    fetchAircraftPositions,
-    fetchFlightStatus,
-    fetchAviationNews,
-    fetchGoogleFlights,
-    fetchGoogleDates,
-    type AirportOpsSummary,
-    type FlightInstance,
-    type CarrierOps,
-    type PositionSample,
-    type AviationNewsItem,
-    type FlightDelaySeverity,
-    type GoogleFlightItinerary,
-    type DatePrice,
+fetchAircraftPositions,
+fetchAirportOpsSummary,
+fetchAviationNews,
+fetchGoogleDates,
+fetchGoogleFlights,
+type AirportOpsSummary,
+type AviationNewsItem,
+type DatePrice,
+type FlightDelaySeverity,
+type FlightInstance,
+type GoogleFlightItinerary,
+type PositionSample
 } from '@/services/aviation';
 import { aviationWatchlist } from '@/services/aviation/watchlist';
-import { flightBoardTime } from '@/services/aviation/board-time';
-import { escapeHtml, sanitizeUrl } from '@/utils/sanitize';
 import { t } from '@/services/i18n';
+import { setTrustedHtml,trustedHtml } from '@/utils/dom-utils';
+import { escapeHtml,sanitizeUrl } from '@/utils/sanitize';
 import { Panel } from './Panel';
-import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 
 
 // ---- Helpers ----
@@ -57,11 +52,11 @@ function localDateStr(): string {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const TABS = ['ops', 'flights', 'airlines', 'tracking', 'news', 'prices'] as const;
+const TABS = ['ops', 'tracking', 'news', 'prices'] as const;
 type Tab = typeof TABS[number];
 
 const TAB_LABELS: Record<Tab, string> = {
-    ops: 'Ops', flights: 'Flights', airlines: 'Airlines',
+    ops: 'Ops',
     tracking: 'Track', news: 'News', prices: 'Prices',
 };
 
@@ -71,11 +66,6 @@ export class AirlineIntelPanel extends Panel {
     private activeTab: Tab = 'ops';
     private airports: string[];
     private opsData: AirportOpsSummary[] = [];
-    private flightsData: FlightInstance[] = [];
-    // The airport the flights board was loaded for. The board mixes departures
-    // and arrivals, and a row's direction is only readable relative to this.
-    private flightsAirport = '';
-    private carriersData: CarrierOps[] = [];
     private trackingData: PositionSample[] = [];
     private trackingFlightData: FlightInstance[] = [];
     private trackingQuery = '';
@@ -288,8 +278,6 @@ export class AirlineIntelPanel extends Panel {
         });
         this.renderTab();
         if ((tab === 'ops' && !this.opsData.length) ||
-            (tab === 'flights' && !this.flightsData.length) ||
-            (tab === 'airlines' && !this.carriersData.length) ||
             (tab === 'tracking' && !this.trackingData.length) ||
             (tab === 'news' && !this.newsData.length)) {
             void this.loadTab(tab);
@@ -320,20 +308,9 @@ export class AirlineIntelPanel extends Panel {
                 case 'ops':
                     this.opsData = await fetchAirportOpsSummary(this.airports);
                     break;
-                case 'flights': {
-                    const boardAirport = this.airports[0] ?? 'IST';
-                    this.flightsData = await fetchAirportFlights(boardAirport, 'both', 30);
-                    this.flightsAirport = boardAirport;
-                    break;
-                }
-                case 'airlines':
-                    this.carriersData = await fetchCarrierOps(this.airports);
-                    break;
                 case 'tracking':
                     if (this.trackingQuery) {
-                        if (/^[A-Z]{2}\d{1,4}$/.test(this.trackingQuery)) {
-                            this.trackingFlightData = await fetchFlightStatus(this.trackingQuery);
-                        } else if (/^[0-9A-F]{6}$/i.test(this.trackingQuery)) {
+                        if (/^[0-9A-F]{6}$/i.test(this.trackingQuery)) {
                             this.trackingData = await fetchAircraftPositions({ icao24: this.trackingQuery.toLowerCase() });
                         } else {
                             this.trackingData = await fetchAircraftPositions({ callsign: this.trackingQuery });
@@ -384,8 +361,6 @@ export class AirlineIntelPanel extends Panel {
         if (this.loading) { this.renderLoading(); return; }
         switch (this.activeTab) {
             case 'ops': this.renderOps(); break;
-            case 'flights': this.renderFlights(); break;
-            case 'airlines': this.renderAirlines(); break;
             case 'tracking': this.renderTracking(); break;
             case 'news': this.renderNews(); break;
             case 'prices': this.renderPrices(); break;
@@ -409,43 +384,6 @@ export class AirlineIntelPanel extends Panel {
         ${s.notamFlags.length ? `<div class="ops-notam">⚠️ NOTAM</div>` : ''}
       </div>`).join('');
         this.setTrustedContent(trustedHtml(`<div class="ops-grid">${rows}</div>`, "legacy direct innerHTML migration"));
-    }
-
-    // ---- Flights tab ----
-    private renderFlights(): void {
-        if (!this.flightsData.length) {
-            this.setTrustedContent(trustedHtml(`<div class="no-data">${t('components.airlineIntel.noFlights')}</div>`, "legacy direct innerHTML migration"));
-            return;
-        }
-        const rows = this.flightsData.map(f => {
-            const color = STATUS_BADGE[f.status] ?? '#6b7280';
-            const when = flightBoardTime(f, this.flightsAirport);
-            return `
-        <div class="flight-row">
-          <div class="flight-num">${escapeHtml(f.flightNumber)}</div>
-          <div class="flight-route">${escapeHtml(f.origin.iata)} → ${escapeHtml(f.destination.iata)}</div>
-          <div class="flight-time">${fmtTime(when)}</div>
-          <div class="flight-delay" style="color:${f.delayMinutes > 0 ? '#f97316' : '#aaa'}">${f.delayMinutes > 0 ? `+${f.delayMinutes}m` : ''}</div>
-          <div class="flight-status" style="color:${color}">${f.status}</div>
-        </div>`;
-        }).join('');
-        this.setTrustedContent(trustedHtml(`<div class="flights-list">${rows}</div>`, "legacy direct innerHTML migration"));
-    }
-
-    // ---- Airlines tab ----
-    private renderAirlines(): void {
-        if (!this.carriersData.length) {
-            this.setTrustedContent(trustedHtml(`<div class="no-data">${t('components.airlineIntel.noCarrierData')}</div>`, "legacy direct innerHTML migration"));
-            return;
-        }
-        const rows = this.carriersData.slice(0, 15).map(c => `
-      <div class="carrier-row">
-        <div class="carrier-name">${escapeHtml(c.carrierName || c.carrierIata)}</div>
-        <div class="carrier-flights">${c.totalFlights} flt</div>
-        <div class="carrier-delay" style="color:${c.delayPct > 30 ? '#ef4444' : '#aaa'}">${c.delayPct.toFixed(1)}% delayed</div>
-        <div class="carrier-cancel">${c.cancellationRate.toFixed(1)}% cxl</div>
-      </div>`).join('');
-        this.setTrustedContent(trustedHtml(`<div class="carriers-list">${rows}</div>`, "legacy direct innerHTML migration"));
     }
 
     // ---- Tracking tab ----

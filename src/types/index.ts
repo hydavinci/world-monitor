@@ -1621,8 +1621,6 @@ export interface CountryBriefSignals {
   gpsJammingHexes: number;
   isTier1: boolean;
   thermalEscalations: number;
-  sanctionsDesignations: number;
-  sanctionsNewDesignations: number;
 }
 
 export type CountrySignalCounts = { [K in keyof CountryBriefSignals]: CountryBriefSignals[K] | null };

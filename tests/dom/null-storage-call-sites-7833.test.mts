@@ -29,40 +29,6 @@ afterEach(() => {
   vi.resetModules();
 });
 
-describe('cloud-prefs-sync under a null localStorage', () => {
-  beforeEach(() => {
-    // `ENABLED` is captured from import.meta.env at module load, so the stub
-    // has to be in place before the dynamic import below.
-    vi.stubEnv('VITE_CLOUD_PREFS_ENABLED', 'true');
-  });
-
-  it('reads sync metadata without throwing', async () => {
-    const sync = await import('@/utils/cloud-prefs-sync');
-    stubNullStorage();
-
-    expect(sync.getSyncVersion()).toBe(0);
-    expect(sync.getSyncState()).toBe('signed-out');
-    expect(sync.getLastSyncAt()).toBe(0);
-  });
-
-  it('reconciles a sign-in without throwing (boot-path ownership sidecars)', async () => {
-    const sync = await import('@/utils/cloud-prefs-sync');
-    expect(sync.isCloudSyncEnabled()).toBe(true);
-    stubNullStorage();
-
-    // onSignIn does its ownership-sidecar reconciliation synchronously before
-    // returning the async attempt; the throw we care about is the sync one.
-    expect(() => { void sync.onSignIn('user-1', 'full').catch(() => {}); }).not.toThrow();
-  });
-
-  it('clears sync metadata on sign-out without throwing', async () => {
-    const sync = await import('@/utils/cloud-prefs-sync');
-    stubNullStorage();
-
-    expect(() => sync.onSignOut()).not.toThrow();
-  });
-});
-
 describe('settings export under a null localStorage', () => {
   // NOT "returns an empty export". The caller does
   // `try { exportSettings(); showToast(exportSuccess) } catch { showToast(exportFailed) }`,

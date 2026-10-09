@@ -7,7 +7,6 @@ import {
   getHydratedData,
   waitForBootstrapSlowTier,
 } from '../src/services/bootstrap';
-import type { BootstrapTransferRumSample } from '../src/bootstrap/bootstrap-transfer-rum';
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -77,16 +76,9 @@ function tierRequests(requests: FetchRequest[], tier: 'fast' | 'slow'): FetchReq
 }
 
 describe('Frontend bootstrap runtime behavior', () => {
-  let rumSamples: BootstrapTransferRumSample[];
-
   beforeEach(() => {
     installLocalStorage();
     bootstrapTesting.resetBootstrapForTests();
-    rumSamples = [];
-    bootstrapTesting.setBootstrapTransferRumTierForTests('fast');
-    bootstrapTesting.setBootstrapTransferRumReporterForTests((sample) => rumSamples.push(sample));
-    bootstrapTesting.setBootstrapTransferRumEnabledForTests(true);
-    bootstrapTesting.setEncodedBodySizeResolverForTests(() => 321);
   });
 
   afterEach(() => {
@@ -222,18 +214,9 @@ describe('Frontend bootstrap runtime behavior', () => {
 
     assert.equal(callbackState.tiers.slow.source, 'live', 'callback should observe updated slow state');
     assert.equal(getHydratedData('slowKey'), 'slow-value');
-    assert.equal(rumSamples.length, 1, 'the unselected slow tier must not overwrite the page sample');
-    assert.equal(rumSamples[0]!.tier, 'fast');
-    assert.equal(rumSamples[0]!.outcome, 'complete');
-    assert.equal(
-      rumSamples[0]!.decoded_bytes,
-      Buffer.byteLength(JSON.stringify({ data: fastData, missing: [] }), 'utf8'),
-    );
-    assert.equal(rumSamples[0]!.encoded_bytes, 321);
   });
 
-  it('keeps the ordinary unsampled startup on the response.json path', async () => {
-    bootstrapTesting.setBootstrapTransferRumEnabledForTests(false);
+  it('hydrates startup directly through response.json without a telemetry body read', async () => {
     const requests = installFetchStub();
     const boot = fetchBootstrapData(() => {});
     await tick();
@@ -252,10 +235,10 @@ describe('Frontend bootstrap runtime behavior', () => {
 
     assert.equal(getHydratedData('fastKey'), 'ordinary');
     assert.equal(textReads, 0);
-    assert.deepEqual(rumSamples, []);
+    assert.equal(getBootstrapHydrationState().tiers.fast.source, 'live');
   });
 
-  it('closes abort, HTTP, network, parse, and persistent-cache outcomes exactly once', async () => {
+  it('preserves abort, HTTP, network, parse, and persistent-cache recovery', async () => {
     const cases = [
       {
         expected: 'abort',
@@ -267,7 +250,7 @@ describe('Frontend bootstrap runtime behavior', () => {
         expected: 'abort',
         settle(request: FetchRequest) {
           const response = new Response(null, { status: 200 });
-          Object.defineProperty(response, 'text', {
+          Object.defineProperty(response, 'json', {
             value: async () => { throw new DOMException('aborted during body', 'AbortError'); },
           });
           request.deferred.resolve(response);
@@ -309,11 +292,6 @@ describe('Frontend bootstrap runtime behavior', () => {
     for (const scenario of cases) {
       bootstrapTesting.resetBootstrapForTests();
       localStorage.clear();
-      rumSamples = [];
-      bootstrapTesting.setBootstrapTransferRumTierForTests('fast');
-      bootstrapTesting.setBootstrapTransferRumReporterForTests((sample) => rumSamples.push(sample));
-      bootstrapTesting.setBootstrapTransferRumEnabledForTests(true);
-      bootstrapTesting.setEncodedBodySizeResolverForTests(() => 321);
       if ('cached' in scenario) {
         localStorage.setItem('worldmonitor-persistent-cache:bootstrap:tier:fast', JSON.stringify({
           key: 'bootstrap:tier:fast',
@@ -328,22 +306,21 @@ describe('Frontend bootstrap runtime behavior', () => {
       scenario.settle(tierRequests(requests, 'fast')[0]!);
       await boot;
 
-      assert.equal(rumSamples.length, 1, `${scenario.expected} must close once`);
-      assert.equal(rumSamples[0]!.outcome, scenario.expected);
-      assert.equal(rumSamples[0]!.decoded_bytes, -1);
-      assert.equal(rumSamples[0]!.encoded_bytes, -1);
+      assert.equal(
+        getBootstrapHydrationState().tiers.fast.source,
+        'cached' in scenario ? 'cached' : 'none',
+        `${scenario.expected} must preserve its recovery outcome`,
+      );
+      assert.equal(getHydratedData('cachedFast'), 'cached' in scenario ? true : undefined);
     }
   });
 
-  it('keeps persistent-cache recovery available when its telemetry reporter throws', async () => {
+  it('keeps persistent-cache recovery available after a network failure', async () => {
     localStorage.setItem('worldmonitor-persistent-cache:bootstrap:tier:fast', JSON.stringify({
       key: 'bootstrap:tier:fast',
       updatedAt: Date.now(),
       data: { cachedFast: true },
     }));
-    bootstrapTesting.setBootstrapTransferRumReporterForTests(() => {
-      throw new Error('telemetry unavailable');
-    });
     const requests = installFetchStub();
 
     const boot = fetchBootstrapData(() => {});
@@ -356,27 +333,23 @@ describe('Frontend bootstrap runtime behavior', () => {
     assert.ok(getBootstrapHydrationState().tiers.fast.updatedAt);
   });
 
-  it('does not emit another custom-field outcome on a later bootstrap generation', async () => {
+  it('hydrates a later bootstrap generation independently', async () => {
     const requests = installFetchStub();
     const first = fetchBootstrapData(() => {});
     await tick();
     tierRequests(requests, 'fast')[0]!.deferred.resolve(jsonResponse({ first: true }));
     await first;
+    assert.equal(getHydratedData('first'), true);
 
     const second = fetchBootstrapData(() => {});
     await tick();
     tierRequests(requests, 'fast')[1]!.deferred.resolve(jsonResponse({ second: true }));
     await second;
 
-    assert.equal(rumSamples.length, 1);
+    assert.equal(getHydratedData('second'), true);
   });
 
-  it('does not let a superseded fast request claim the page RUM sample', async () => {
-    let encodedSizeCalls = 0;
-    bootstrapTesting.setEncodedBodySizeResolverForTests(() => {
-      encodedSizeCalls += 1;
-      return 321;
-    });
+  it('does not let a superseded fast request commit stale hydration', async () => {
     const requests = installFetchStub();
     const first = fetchBootstrapData(() => {});
     await tick();
@@ -386,16 +359,14 @@ describe('Frontend bootstrap runtime behavior', () => {
 
     tierRequests(requests, 'fast')[0]!.deferred.resolve(jsonResponse({ staleFast: true }));
     await first;
-    assert.deepEqual(rumSamples, []);
-    assert.equal(encodedSizeCalls, 0);
+    assert.equal(getHydratedData('staleFast'), undefined);
+    assert.equal(getBootstrapHydrationState().tiers.fast.source, 'none');
 
     tierRequests(requests, 'fast')[1]!.deferred.resolve(jsonResponse({ currentFast: true }));
     await second;
 
-    assert.equal(rumSamples.length, 1);
-    assert.equal(rumSamples[0]!.tier, 'fast');
-    assert.equal(rumSamples[0]!.outcome, 'complete');
-    assert.equal(encodedSizeCalls, 1);
+    assert.equal(getHydratedData('currentFast'), true);
+    assert.equal(getBootstrapHydrationState().tiers.fast.source, 'live');
   });
 
   it('ignores a stale slow-tier completion from an earlier bootstrap generation', async () => {

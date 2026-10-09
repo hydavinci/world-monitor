@@ -84,17 +84,6 @@ jobs:
             --workspace "blog-site" \
             --package-json "blog-site/package.json" \
             --lockfile "blog-site/package-lock.json"
-      - name: Audit pro-test/package-lock.json
-        if: ${{ !cancelled() }}
-        timeout-minutes: 10
-        env:
-          AUDIT_STATUS_FILE: ${{ runner.temp }}/audit-status/pro-test.txt
-        run: |
-          mkdir -p "${{ runner.temp }}/audit-status"
-          node .github/scripts/audit-production-dependencies.mjs \
-            --workspace "pro-test" \
-            --package-json "pro-test/package.json" \
-            --lockfile "pro-test/package-lock.json"
       - name: Audit docker/runtime-package-lock.json
         if: ${{ !cancelled() }}
         timeout-minutes: 10
@@ -180,7 +169,7 @@ jobs:
           RUST_RESULT: ${{ needs.audit-rust.result }}
           # Names must match the audit-lockfile steps exactly; the
           # ci-workflow-coverage test asserts they do.
-          AUDIT_NAMES: 'root scripts consumer-prices-core blog-site pro-test docker-runtime railway-reconcile-control'
+          AUDIT_NAMES: 'root scripts consumer-prices-core blog-site docker-runtime railway-reconcile-control'
           FAIL_ON_OUTAGE: ${{ github.event_name == 'schedule' && '1' || '0' }}
         run: |
           # On a run this workflow's concurrency group evicted (#8443), this

@@ -1,33 +1,31 @@
-import { Panel } from './Panel';
-import { validateUrl } from '@/utils/sanitize';
 import { t } from '@/services/i18n';
 import { isDesktopRuntime } from '@/services/runtime';
-import { hasPremiumAccess, PanelGateReason } from '@/services/panel-gating';
-import { h, replaceChildren, safeHtml } from '@/utils/dom-utils';
 import {
-  TELEGRAM_TOPICS,
-  clearTelegramIntelCache,
-  getTelegramIntelGeneration,
-  fetchTelegramChannelFeed,
-  fetchTelegramChannelPreview,
-  formatTelegramTime,
-  type TelegramChannelPreview,
-  type TelegramFeedResponse,
-  type TelegramItem,
+fetchTelegramChannelFeed,
+fetchTelegramChannelPreview,
+formatTelegramTime,
+getTelegramIntelGeneration,
+TELEGRAM_TOPICS,
+type TelegramChannelPreview,
+type TelegramFeedResponse,
+type TelegramItem,
 } from '@/services/telegram-intel';
 import {
-  getPrimarySourceProvenanceBadges,
-  resolveRegisteredTelegramSourceName,
-} from './news/source-provenance';
-import {
-  addTelegramWatchlistEntry,
-  getTelegramWatchlistEntries,
-  normalizeTelegramUsername,
-  removeTelegramWatchlistEntry,
-  subscribeTelegramWatchlistChange,
-  TELEGRAM_WATCHLIST_MAX_ENTRIES,
-  type TelegramWatchlistEntry,
+addTelegramWatchlistEntry,
+getTelegramWatchlistEntries,
+normalizeTelegramUsername,
+removeTelegramWatchlistEntry,
+subscribeTelegramWatchlistChange,
+TELEGRAM_WATCHLIST_MAX_ENTRIES,
+type TelegramWatchlistEntry,
 } from '@/services/telegram-watchlist';
+import { h,replaceChildren,safeHtml } from '@/utils/dom-utils';
+import { validateUrl } from '@/utils/sanitize';
+import {
+getPrimarySourceProvenanceBadges,
+resolveRegisteredTelegramSourceName,
+} from './news/source-provenance';
+import { Panel } from './Panel';
 
 const LIVE_THRESHOLD_MS = 600_000;
 
@@ -99,7 +97,6 @@ export class TelegramIntelPanel extends Panel {
   private inputEl: HTMLInputElement | null = null;
   private relayEnabled = false;
   private disposed = false;
-  private onAccessGranted: (() => void) | null = null;
   private previewState: PreviewState = { channel: null, error: null, loading: false, username: '' };
   private previewTimer: ReturnType<typeof setTimeout> | null = null;
   private previewRequestId = 0;
@@ -564,50 +561,9 @@ export class TelegramIntelPanel extends Panel {
   }
 
   private canUseFeed(): boolean {
-    return !this.disposed && !this.isLocked && (!isDesktopRuntime() || hasPremiumAccess());
+    return !this.disposed && !this.isLocked && (!isDesktopRuntime() || false);
   }
 
-  private resetFeed(): void {
-    this.relayEnabled = false;
-    this.watchlistRequestId++;
-    this.baseItems = [];
-    this.watchlistItems = [];
-    this.cancelPreviewResolve();
-    if (this.inputEl) {
-      this.inputEl.value = '';
-      this.inputEl.disabled = true;
-    }
-    if (this.previewEl) replaceChildren(this.previewEl);
-    if (this.watchlistPillsEl) replaceChildren(this.watchlistPillsEl);
-    this.setCount(0);
-    this.clearSensitiveContent();
-    clearTelegramIntelCache();
-  }
-
-  public override showLocked(features: string[] = []): void {
-    if (!this.isLocked) this.resetFeed();
-    super.showLocked(features);
-  }
-
-  public override showGatedCta(reason: PanelGateReason, onAction: () => void): void {
-    if (reason !== PanelGateReason.NONE && !this.isLocked) this.resetFeed();
-    super.showGatedCta(reason, onAction);
-  }
-
-  public setAccessGrantedHandler(handler: () => void): void {
-    this.onAccessGranted = handler;
-  }
-
-  public override unlockPanel(): void {
-    if (this.disposed || (isDesktopRuntime() && !hasPremiumAccess())) return;
-    const wasLocked = this.isLocked;
-    super.unlockPanel();
-    if (wasLocked) {
-      this.renderWatchlistPills();
-      this.showLoading(t('components.telegramIntel.loading'));
-      this.onAccessGranted?.();
-    }
-  }
 
   public async refresh(): Promise<void> {
     // Handled by DataLoader + RefreshScheduler
@@ -615,7 +571,6 @@ export class TelegramIntelPanel extends Panel {
 
   public destroy(): void {
     this.disposed = true;
-    this.onAccessGranted = null;
     this.previewRequestId++;
     this.watchlistRequestId++;
     if (this.previewTimer) {

@@ -7,9 +7,8 @@
  * gateway 401'd these requests because the leads paths were missing from
  * PUBLIC_NO_AUTH_RPC_PATHS, so the handler's own anti-abuse stack
  * (server-side Turnstile, honeypot, free-email rejection, per-IP and
- * per-email rate limits) never ran. Same class of breakage for
- * register-interest, which the desktop runtime deliberately calls key-free
- * (src/services/runtime.ts isKeyFreeApiTarget).
+ * per-email rate limits) never ran. The retired Pro waitlist must reject
+ * requests while the independent contact form remains public.
  */
 
 import assert from 'node:assert/strict';
@@ -29,11 +28,10 @@ afterEach(() => {
 });
 
 async function loadLeadsGateway() {
-  const [{ createDomainGateway, PUBLIC_NO_AUTH_RPC_PATHS, serverOptions }, generated, { leadsHandler }, { PREMIUM_RPC_PATHS }] = await Promise.all([
+  const [{ createDomainGateway, PUBLIC_NO_AUTH_RPC_PATHS, serverOptions }, generated, { leadsHandler }] = await Promise.all([
     import('../server/gateway.ts'),
     import('../src/generated/server/worldmonitor/leads/v1/service_server.ts'),
     import('../server/worldmonitor/leads/v1/handler.ts'),
-    import('../src/shared/premium-paths.ts'),
   ]);
   delete process.env.WORLDMONITOR_VALID_KEYS;
   // The endpoint rate limiter fails closed (503) when Redis is unconfigured;
@@ -41,18 +39,14 @@ async function loadLeadsGateway() {
   installRedis({});
   return {
     PUBLIC_NO_AUTH_RPC_PATHS,
-    PREMIUM_RPC_PATHS,
     gateway: createDomainGateway(generated.createLeadsServiceRoutes(leadsHandler, serverOptions)),
   };
 }
 
 describe('leads gateway public access', { concurrency: 1 }, () => {
-  it('declares both leads RPCs public-no-auth and non-premium', async () => {
-    const { PUBLIC_NO_AUTH_RPC_PATHS, PREMIUM_RPC_PATHS } = await loadLeadsGateway();
+  it('declares the independent contact RPC public-no-auth', async () => {
+    const { PUBLIC_NO_AUTH_RPC_PATHS } = await loadLeadsGateway();
     assert.equal(PUBLIC_NO_AUTH_RPC_PATHS.has('/api/leads/v1/submit-contact'), true);
-    assert.equal(PUBLIC_NO_AUTH_RPC_PATHS.has('/api/leads/v1/register-interest'), true);
-    assert.equal(PREMIUM_RPC_PATHS.has('/api/leads/v1/submit-contact'), false);
-    assert.equal(PREMIUM_RPC_PATHS.has('/api/leads/v1/register-interest'), false);
   });
 
   it('accepts an anonymous submit-contact POST (no API key, no session token)', async () => {
@@ -88,12 +82,9 @@ describe('leads gateway public access', { concurrency: 1 }, () => {
     assert.equal(body.status, 'sent');
   });
 
-  it('accepts an anonymous register-interest POST (no API key, no session token)', async () => {
+  it('rejects the retired Pro waitlist, including honeypot submissions', async () => {
     const { gateway } = await loadLeadsGateway();
 
-    // Same honeypot short-circuit as submit-contact: registerInterest returns
-    // a silent success before Turnstile/desktop-HMAC/Convex, isolating the
-    // gateway auth layer for the waitlist path too.
     const res = await gateway(new Request('https://api.worldmonitor.app/api/leads/v1/register-interest', {
       method: 'POST',
       headers: {
@@ -108,9 +99,6 @@ describe('leads gateway public access', { concurrency: 1 }, () => {
       }),
     }));
 
-    assert.notEqual(res.status, 401, 'gateway must not 401 anonymous waitlist signups');
-    assert.equal(res.status, 200);
-    const body = await res.json() as { status?: string };
-    assert.equal(body.status, 'registered');
+    assert.equal(res.status, 403);
   });
 });

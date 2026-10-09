@@ -74,42 +74,12 @@
       "offers": [
         {
           "@type": "Offer",
-          "name": "Free",
+          "name": "Public-only",
           "price": "0",
           "priceCurrency": "USD",
           "availability": "https://schema.org/InStock",
-          "url": "https://www.worldmonitor.app/pro#pricing",
-          "description": "Core dashboard panels, Global news feed, Earthquake & weather alerts, Basic map view, 3 dashboard tabs"
-        },
-        {
-          "@type": "Offer",
-          "name": "Pro Monthly",
-          "price": "39.99",
-          "priceCurrency": "USD",
-          "availability": "https://schema.org/InStock",
-          "url": "https://www.worldmonitor.app/pro#pricing",
-          "description": "Everything in Free — panels, sources & followed countries uncapped, WM Analyst chat + AI stock analysis & backtesting, Cost-shock modelling & supply-chain stress tests, Intel memory — historical search, timelines & similar events, Physical metals divergence, minerals concentration & sovereign debt data, Scheduled AI digest + alert rules engine, MCP + SDK access for Claude Desktop & other AI clients (50 calls/day), Custom widgets & 10 dashboards (vs 3), Personal license, 1 named user",
-          "priceSpecification": {
-            "@type": "UnitPriceSpecification",
-            "price": "39.99",
-            "priceCurrency": "USD",
-            "billingDuration": "P1M"
-          }
-        },
-        {
-          "@type": "Offer",
-          "name": "Pro Annual",
-          "price": "359.99",
-          "priceCurrency": "USD",
-          "availability": "https://schema.org/InStock",
-          "url": "https://www.worldmonitor.app/pro#pricing",
-          "description": "",
-          "priceSpecification": {
-            "@type": "UnitPriceSpecification",
-            "price": "359.99",
-            "priceCurrency": "USD",
-            "billingDuration": "P1Y"
-          }
+          "url": "https://www.worldmonitor.app/dashboard",
+          "description": "Public dashboard with persistent local preferences; no accounts or subscriptions."
         }
       ],
       "author": {
@@ -235,21 +205,13 @@
 
     <!-- Theme: apply stored preference before first paint to prevent FOUC. -->
     <script data-wm-map-prepaint>(function(){var mapCollapsed=true;try{mapCollapsed=localStorage.getItem('mobile-map-collapsed')!=='false';}catch(e){}if(mapCollapsed)document.documentElement.classList.add('wm-map-collapsed');else document.documentElement.classList.remove('wm-map-collapsed');})()</script>
-    <script data-wm-prepaint>(function(){try{var h=location.hostname;var v;if(h.startsWith('happy.'))v='happy';else if(h.startsWith('tech.'))v='tech';else if(h.startsWith('finance.'))v='finance';else if(h.startsWith('commodity.'))v='commodity';else if(h.startsWith('energy.'))v='energy';if(!v&&(h==='localhost'||h==='127.0.0.1'||'__TAURI_INTERNALS__' in window))v=localStorage.getItem('worldmonitor-variant');if(v)document.documentElement.dataset.variant=v;else document.documentElement.removeAttribute('data-variant');var t=localStorage.getItem('worldmonitor-theme');if(t==='dark'||t==='light'){document.documentElement.dataset.theme=t;}else if(v==='happy'){document.documentElement.dataset.theme='light';}else if(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches){document.documentElement.dataset.theme='light';}var mapCollapsed=localStorage.getItem('mobile-map-collapsed')!=='false';if(mapCollapsed)document.documentElement.classList.add('wm-map-collapsed');var dismissKey='wm-pro-banner-launched-dismissed';var legacyDismissKey='wm-pro-banner-dismissed';localStorage.removeItem(legacyDismissKey);var ts=Number(localStorage.getItem(dismissKey)||0);var dismissed=ts>0&&Date.now()-ts<=604800000;if(ts>0&&!dismissed)localStorage.removeItem(dismissKey);var entitledHint=localStorage.getItem('wm-entitlement-hint')==='pro';if(window.self===window.top&&!dismissed&&!entitledHint)document.documentElement.classList.add('wm-pro-banner-reserved');}catch(e){}document.documentElement.classList.add('no-transition');document.documentElement.classList.add('js');})()</script>
+    <script data-wm-prepaint>(function(){try{var h=location.hostname;var v;if(h.startsWith('happy.'))v='happy';else if(h.startsWith('tech.'))v='tech';else if(h.startsWith('finance.'))v='finance';else if(h.startsWith('commodity.'))v='commodity';else if(h.startsWith('energy.'))v='energy';if(!v&&(h==='localhost'||h==='127.0.0.1'||'__TAURI_INTERNALS__' in window))v=localStorage.getItem('worldmonitor-variant');if(v)document.documentElement.dataset.variant=v;else document.documentElement.removeAttribute('data-variant');var t=localStorage.getItem('worldmonitor-theme');if(t==='dark'||t==='light'){document.documentElement.dataset.theme=t;}else if(v==='happy'){document.documentElement.dataset.theme='light';}else if(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches){document.documentElement.dataset.theme='light';}var mapCollapsed=localStorage.getItem('mobile-map-collapsed')!=='false';if(mapCollapsed)document.documentElement.classList.add('wm-map-collapsed');}catch(e){}document.documentElement.classList.add('no-transition');document.documentElement.classList.add('js');})()</script>
     <!-- Critical CSS: inline skeleton visible before JS boots -->
     <style>
-      :root{--wm-pro-banner-slot-height:40px;--dashboard-panel-row-min:200px;--dashboard-panel-row-max:380px;--dashboard-grid-gap:4px;--dashboard-first-grid-reservation:calc(var(--dashboard-panel-row-min) + var(--dashboard-panel-row-min) + var(--dashboard-grid-gap))}
+      :root{--dashboard-panel-row-min:200px;--dashboard-panel-row-max:380px;--dashboard-grid-gap:4px;--dashboard-first-grid-reservation:calc(var(--dashboard-panel-row-min) + var(--dashboard-panel-row-min) + var(--dashboard-grid-gap))}
       html,body{margin:0;height:100%;width:100%;overflow:hidden;background:#0a0a0a}
-      html.wm-pro-banner-reserved #app::before{content:'';display:block;height:var(--wm-pro-banner-slot-height);flex:0 0 var(--wm-pro-banner-slot-height);background:#141414;border-bottom:1px solid #2a2a2a;box-sizing:border-box}
-      html.wm-pro-banner-reserved.wm-layout-hydrated #app::before{content:none;display:none}
-      .pro-banner-slot{flex:0 0 auto;min-height:0;box-sizing:border-box}
-      html.wm-pro-banner-reserved .pro-banner-slot{min-height:var(--wm-pro-banner-slot-height)}
-      .pro-banner-slot .pro-banner{box-sizing:border-box;min-height:var(--wm-pro-banner-slot-height);width:100%}
       #country-deep-dive-panel.country-deep-dive[aria-hidden="true"]{position:fixed;top:0;right:0;width:430px;height:100vh;visibility:hidden;z-index:5000;box-sizing:border-box;transform:translateX(calc(100% + 30px));contain:layout paint}
       @media (max-width:767px){#country-deep-dive-panel.country-deep-dive[aria-hidden="true"]{width:100vw;transform:translateX(100%)}}
-      [data-theme="light"].wm-pro-banner-reserved #app::before{background:#fff;border-bottom-color:#d4d4d4}
-      [data-variant="happy"].wm-pro-banner-reserved #app::before{background:#fff;border-bottom-color:#DDD9CF}
-      [data-variant="happy"][data-theme="dark"].wm-pro-banner-reserved #app::before{background:#222E3E;border-bottom-color:#344050}
       html:not(.js),html:not(.js) body{height:auto;min-height:100%;overflow:auto}
       html:not(.js) #app .skeleton-shell{display:none}
       .app-heading,.app-seo-summary{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
@@ -263,7 +225,6 @@
       /* ---------- skeleton shell (dark default) ---------- */
       .skeleton-shell{display:flex;flex-direction:column;height:100vh;background:#0a0a0a;font-family:'SF Mono','Monaco','Cascadia Code','Fira Code','DejaVu Sans Mono','Liberation Mono',monospace;overflow:hidden}
       .skeleton-shell *{box-sizing:border-box}
-      html.wm-pro-banner-reserved .skeleton-shell{height:calc(100vh - var(--wm-pro-banner-slot-height))}
       .skeleton-header{display:flex;align-items:center;justify-content:space-between;height:40px;padding:8px 16px;background:#141414;border-bottom:1px solid #2a2a2a;flex-shrink:0}
       .skeleton-header-left{display:flex;align-items:center;gap:12px}
       .skeleton-header-right{display:flex;align-items:center;gap:12px}
@@ -431,8 +392,8 @@
          api.worldmonitor.app: credentialed CORS (runtime.ts defaults
          credentials: 'include') — must use `use-credentials` so the
          pre-opened socket lands in the same connection pool as the
-         credentialed fetches. Sentry and Clerk are deferred by their
-         runtime loaders, so they intentionally do not get head preconnects. -->
+         credentialed fetches. Sentry is deferred by its
+         runtime loader, so it intentionally does not get a head preconnect. -->
     <link rel="preconnect" href="https://api.worldmonitor.app" crossorigin="use-credentials">
 
     <!-- Preconnect: map tiles + assets -->
@@ -444,18 +405,18 @@
     <h1 class="app-heading">World Monitor — Real-Time Global Intelligence Dashboard</h1>
     <section class="app-seo-summary">
       <p>World Monitor is the full-spectrum real-time global intelligence dashboard: one browser workspace that combines geopolitical conflict tracking, military and civil aviation, maritime AIS, undersea cable and infrastructure maps, markets, climate hazards, cyber signals, and open-source news into a single live situation picture. Analysts, journalists, researchers, and operators use it to see how distant events connect before they harden into headlines.</p>
-      <p>On the map you can follow conflict zones and protest activity alongside earthquake and wildfire alerts, power-outage clusters, and strategic infrastructure such as military bases, nuclear facilities, and subsea cables. Aviation layers surface military and commercial flights; maritime layers track ships through chokepoints and high-risk waters. Country deep-dives open resilience, risk, and source-backed context for more than 190 states without leaving the dashboard.</p>
+      <p>On the map you can follow conflict zones and protest activity alongside earthquake and wildfire alerts, power-outage clusters, and strategic infrastructure such as military bases, nuclear facilities, and subsea cables. Aviation layers surface military and commercial flights; maritime layers track ships through chokepoints and high-risk waters. Country deep-dives open risk and source-backed context for more than 190 states without leaving the dashboard.</p>
       <p>Market and prediction panels sit beside the geospatial view so price moves, central-bank signals, commodities, and prediction-market odds can be read against the same map context that shows tankers, jets, and crisis corridors. Government-spending and macro indicators help separate noise from policy-relevant shifts. The goal is not another news feed — it is a continuously updating OSINT workbench with auditable upstream sources.</p>
-      <p>Reference surfaces outside the live map keep the same evidence standard: country intelligence pages, maritime chokepoint briefs, crisis trackers, live tools, research reports, and an audited source catalog. Agents and developers can also use the MCP server and REST API documented on the site. World Monitor is open source and free to start; Pro unlocks deeper analysis without hiding the core map. Specialized sibling monitors focus on tech, finance, commodities, energy infrastructure, and constructive global progress; this full dashboard remains the canonical geopolitics and multi-domain intelligence surface at www.worldmonitor.app/dashboard for humans and crawlers alike.</p>
+      <p>Reference surfaces outside the live map keep the same evidence standard: country intelligence pages, maritime chokepoint briefs, crisis trackers, live tools, research reports, and an audited source catalog. Agents and developers can use the public REST API and documentation MCP. This open-source fork contains only public features and stores preferences locally, without accounts or subscriptions. Specialized sibling monitors focus on tech, finance, commodities, energy infrastructure, and constructive global progress; this full dashboard remains the canonical geopolitics and multi-domain intelligence surface at www.worldmonitor.app/dashboard for humans and crawlers alike.</p>
       <p>If you need a single citeable URL for multi-domain situation awareness — conflicts, markets, flights, ships, infrastructure, and climate hazards together — use this full dashboard rather than a specialized sibling. That separation is intentional: tech, finance, commodity, energy, and happy monitors carry their own summaries so crawlers do not treat six shells as near-duplicates.</p>
     </section>
     <noscript>
       <main id="dashboard-noscript" class="dashboard-noscript">
         <h2>World Monitor requires JavaScript for the live map</h2>
         <p>World Monitor is the full-spectrum real-time global intelligence dashboard: one browser workspace that combines geopolitical conflict tracking, military and civil aviation, maritime AIS, undersea cable and infrastructure maps, markets, climate hazards, cyber signals, and open-source news into a single live situation picture. Analysts, journalists, researchers, and operators use it to see how distant events connect before they harden into headlines.</p>
-        <p>On the map you can follow conflict zones and protest activity alongside earthquake and wildfire alerts, power-outage clusters, and strategic infrastructure such as military bases, nuclear facilities, and subsea cables. Aviation layers surface military and commercial flights; maritime layers track ships through chokepoints and high-risk waters. Country deep-dives open resilience, risk, and source-backed context for more than 190 states without leaving the dashboard.</p>
+        <p>On the map you can follow conflict zones and protest activity alongside earthquake and wildfire alerts, power-outage clusters, and strategic infrastructure such as military bases, nuclear facilities, and subsea cables. Aviation layers surface military and commercial flights; maritime layers track ships through chokepoints and high-risk waters. Country deep-dives open risk and source-backed context for more than 190 states without leaving the dashboard.</p>
         <p>Market and prediction panels sit beside the geospatial view so price moves, central-bank signals, commodities, and prediction-market odds can be read against the same map context that shows tankers, jets, and crisis corridors. Government-spending and macro indicators help separate noise from policy-relevant shifts. The goal is not another news feed — it is a continuously updating OSINT workbench with auditable upstream sources.</p>
-        <p>Reference surfaces outside the live map keep the same evidence standard: country intelligence pages, maritime chokepoint briefs, crisis trackers, live tools, research reports, and an audited source catalog. Agents and developers can also use the MCP server and REST API documented on the site. World Monitor is open source and free to start; Pro unlocks deeper analysis without hiding the core map. Specialized sibling monitors focus on tech, finance, commodities, energy infrastructure, and constructive global progress; this full dashboard remains the canonical geopolitics and multi-domain intelligence surface at www.worldmonitor.app/dashboard for humans and crawlers alike.</p>
+        <p>Reference surfaces outside the live map keep the same evidence standard: country intelligence pages, maritime chokepoint briefs, crisis trackers, live tools, research reports, and an audited source catalog. Agents and developers can use the public REST API and documentation MCP. This open-source fork contains only public features and stores preferences locally, without accounts or subscriptions. Specialized sibling monitors focus on tech, finance, commodities, energy infrastructure, and constructive global progress; this full dashboard remains the canonical geopolitics and multi-domain intelligence surface at www.worldmonitor.app/dashboard for humans and crawlers alike.</p>
         <p>If you need a single citeable URL for multi-domain situation awareness — conflicts, markets, flights, ships, infrastructure, and climate hazards together — use this full dashboard rather than a specialized sibling. That separation is intentional: tech, finance, commodity, energy, and happy monitors carry their own summaries so crawlers do not treat six shells as near-duplicates.</p>
         <p>Visit the <a href="/" >World Monitor homepage</a> for the platform overview, or use the indexable reference pages below without enabling JavaScript.</p>
         <nav aria-label="World Monitor references">
@@ -468,7 +429,6 @@
             <li><a href="/accuracy/">Forecast accuracy</a></li>
             <li><a href="/blog/">Blog</a></li>
             <li><a href="/docs/documentation">Documentation</a></li>
-            <li><a href="/pro#pricing">Pricing</a></li>
             <li><a href="https://github.com/koala73/worldmonitor">GitHub</a></li>
           </ul>
         </nav>

@@ -995,6 +995,7 @@ const DYNAMIC_HOSTS = [
 ];
 
 const EXCLUDED_HOSTS = new Set([
+  'public.invalid',
   'test',
   'test.dodopayments.com',
   'live.dodopayments.com',

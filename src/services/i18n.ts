@@ -1,7 +1,6 @@
 import i18next from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 
-import { enqueueSentryCall } from '@/bootstrap/sentry-defer';
 import { resolveLanguageTag } from '@/shared/language-tags';
 import { readQueryLanguage, stripQueryLanguage } from '@/utils/i18n-url';
 import { LatestRequestGuard } from '@/utils/latest-request-guard';
@@ -125,12 +124,8 @@ async function preloadEnglishTranslation(attempt = 0): Promise<void> {
       // shell still renders first paint, but non-shell English keys stay raw for
       // the rest of the session — for the majority (English) cohort. Retry with
       // bounded backoff, then once more when connectivity returns, and surface
-      // the failure to Sentry so the degraded state isn't silent.
+      // the failure locally so the degraded state isn't silent.
       console.warn(`Failed to preload full English locale (attempt ${attempt + 1})`, error);
-      enqueueSentryCall((s) => s.captureException(error, {
-        tags: { module: 'i18n', locale: 'en', action: 'preloadEnglishTranslation' },
-        level: 'warning',
-      }));
 
       if (loadedLanguages.has('en')) return;
       if (attempt + 1 < ENGLISH_PRELOAD_MAX_ATTEMPTS) {

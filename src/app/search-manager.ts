@@ -1,67 +1,61 @@
-import type { AppContext, AppModule } from '@/app/app-context';
-import {
-  searchMatchIdentity,
-  type SearchMatch,
-  type SearchResult,
-} from '@/components/search-types';
-import type { NewsItem, MapLayers, MilitaryBase, MilitaryFlight } from '@/types';
-import type { Command } from '@/config/commands';
-import { SearchModal } from '@/components/SearchModal';
-import type { CIIPanel } from '@/components/CIIPanel';
-import {
-  SITE_VARIANT,
-  ALL_PANELS,
-  FREE_MAX_PANELS,
-  countFreePanelCapUsage,
-  getEffectivePanelConfig,
-  isFreePanelCapCounted,
-  isPanelEntitled,
-} from '@/config';
-import {
-  getAllowedLayerKeys,
-  isLayerCommandAllowed,
-  isLayerExecutable,
-  isLayerEntitled,
-} from '@/config/map-layer-definitions';
-import type { MapVariant, RendererKind } from '@/config/map-layer-definitions';
-import { LAYER_PRESETS, LAYER_KEY_MAP } from '@/config/commands';
-import { TIER1_COUNTRIES } from '@/services/country-instability';
-import { getCachedCountryScores } from '@/services/cached-risk-scores';
-import { getCountryBbox } from '@/services/country-geometry';
-import { INTEL_HOTSPOTS, CONFLICT_ZONES } from '@/config/geo';
-import { getCachedMilitaryBases, preloadMilitaryBases } from '@/services/military-base-config';
-import { UNDERSEA_CABLES, NUCLEAR_FACILITIES } from '@/config/geo-map';
-import { PIPELINES } from '@/config/pipelines';
-import { AI_DATA_CENTERS } from '@/config/ai-datacenters';
-import { GAMMA_IRRADIATORS } from '@/config/irradiators';
-import { TECH_COMPANIES } from '@/config/tech-companies';
-import { AI_RESEARCH_LABS } from '@/config/ai-research-labs';
-import { STARTUP_ECOSYSTEMS } from '@/config/startup-ecosystems';
-import { TECH_HQS, ACCELERATORS } from '@/config/tech-geo';
-import { STOCK_EXCHANGES, FINANCIAL_CENTERS, CENTRAL_BANKS, COMMODITY_HUBS } from '@/config/finance-geo';
-import { trackSearchResultSelected, trackCountrySelected } from '@/services/analytics';
-import { t } from '@/services/i18n';
-import { saveToStorage, setTheme } from '@/utils';
-import { withTimeout } from '@/utils/with-timeout';
+import type { AppContext,AppModule } from '@/app/app-context';
 import { CountryIntelManager } from '@/app/country-intel';
-import type { PositionSample } from '@/services/aviation';
-import { fetchAircraftPositions } from '@/services/aviation';
-import { subscribeWidgetAccess } from '@/services/widget-store';
-import { getAuthState, subscribeAuthState } from '@/services/auth-state';
-import { hasPremiumAccess } from '@/services/panel-gating';
-import { onEntitlementChange } from '@/services/entitlements';
-import { subscribeRuntimeConfig } from '@/services/runtime-config';
-import {
-  runWithAgentAnalyticsSuppressed,
-  suppressNextAgentPanelView,
-} from '@/services/agent-analytics-privacy';
 import { SearchSelectionDispatcher } from '@/app/search-selection-dispatcher';
 import { WebMcpSearchController } from '@/app/webmcp-search-controller';
+import type { CIIPanel } from '@/components/CIIPanel';
+import {
+searchMatchIdentity,
+type SearchMatch,
+type SearchResult,
+} from '@/components/search-types';
+import { SearchModal } from '@/components/SearchModal';
+import {
+ALL_PANELS,
+SITE_VARIANT,
+getEffectivePanelConfig,
+isPublicPanel,
+} from '@/config';
+import { AI_DATA_CENTERS } from '@/config/ai-datacenters';
+import { AI_RESEARCH_LABS } from '@/config/ai-research-labs';
+import type { Command } from '@/config/commands';
+import { LAYER_KEY_MAP,LAYER_PRESETS } from '@/config/commands';
+import { CENTRAL_BANKS,COMMODITY_HUBS,FINANCIAL_CENTERS,STOCK_EXCHANGES } from '@/config/finance-geo';
+import { CONFLICT_ZONES,INTEL_HOTSPOTS } from '@/config/geo';
+import { NUCLEAR_FACILITIES,UNDERSEA_CABLES } from '@/config/geo-map';
+import { GAMMA_IRRADIATORS } from '@/config/irradiators';
+import type { MapVariant,RendererKind } from '@/config/map-layer-definitions';
+import {
+getAllowedLayerKeys,
+isLayerCommandAllowed,
+isPublicLayer,
+isLayerExecutable,
+} from '@/config/map-layer-definitions';
+import { PIPELINES } from '@/config/pipelines';
+import { STARTUP_ECOSYSTEMS } from '@/config/startup-ecosystems';
+import { TECH_COMPANIES } from '@/config/tech-companies';
+import { ACCELERATORS,TECH_HQS } from '@/config/tech-geo';
+import {
+runWithAgentAnalyticsSuppressed,
+suppressNextAgentPanelView,
+} from '@/services/agent-analytics-privacy';
+
+import type { PositionSample } from '@/services/aviation';
+import { fetchAircraftPositions } from '@/services/aviation';
+import { getCachedCountryScores } from '@/services/cached-risk-scores';
+import { getCountryBbox } from '@/services/country-geometry';
+import { TIER1_COUNTRIES } from '@/services/country-instability';
+import { t } from '@/services/i18n';
+import { getCachedMilitaryBases,preloadMilitaryBases } from '@/services/military-base-config';
+import { subscribeRuntimeConfig } from '@/services/runtime-config';
 import type {
-  DashboardSearchOpenResult,
-  DashboardSearchResponse,
-  DashboardSearchScope,
+DashboardSearchOpenResult,
+DashboardSearchResponse,
+DashboardSearchScope,
 } from '@/services/webmcp';
+import { subscribeWidgets } from '@/services/widget-store';
+import type { MapLayers,MilitaryBase,MilitaryFlight,NewsItem } from '@/types';
+import { saveToStorage,setTheme } from '@/utils';
+import { withTimeout } from '@/utils/with-timeout';
 const FLIGHT_SEARCH_SOURCE_TTL_MS = 2 * 60 * 1000;
 
 interface FlightSearchItem {
@@ -195,7 +189,6 @@ export class SearchManager implements AppModule {
   private flightSearchItems: FlightSearchItem[] = [];
   private latestAdsb: PositionSample[] = [];
   private latestMilitary: MilitaryFlight[] = [];
-  private latestAdsbUpdatedAt = 0;
   private liveFlightOverlay: Array<{ position: PositionSample; expiresAt: number }> = [];
   private liveFlightLookupGeneration = 0;
   private acceptLateBaseHydration = true;
@@ -207,11 +200,8 @@ export class SearchManager implements AppModule {
     this.searchSelection = new SearchSelectionDispatcher({
       ctx,
       getVariant: () => SITE_VARIANT,
-      hasPremiumAccess: () => hasPremiumAccess(getAuthState()),
       openCountryBriefByCode: (...args) => this.callbacks.openCountryBriefByCode(...args),
       enablePanel: (...args) => this.callbacks.enablePanel(...args),
-      trackSearchResultSelected,
-      trackCountrySelected,
       runWithAgentAnalyticsSuppressed,
       suppressNextAgentPanelView,
       resolveExecutableNewsPanel: (link) => this.resolveExecutableNewsPanel(link),
@@ -231,7 +221,6 @@ export class SearchManager implements AppModule {
       isDestroyed: () => this.destroyed,
       refreshIndex: () => this.updateSearchIndex({ updateVisibleMetrics: false }),
       getModal: () => this.ctx.searchModal,
-      hasPremiumAccess: () => hasPremiumAccess(getAuthState()),
       fetchLiveFlight: async (callsign, signal) => {
         const generation = this.liveFlightLookupGeneration;
         const completed = await SearchManager.waitWithTimeout(
@@ -243,10 +232,7 @@ export class SearchManager implements AppModule {
         if (!completed) this.liveFlightLookupGeneration += 1;
       },
       cancelPendingSelection: () => this.searchSelection.cancelPendingProgrammaticSelection(),
-      getAuthContext: () => {
-        const auth = getAuthState();
-        return `${auth.user ? 'signed-in' : 'anonymous'}:${auth.isPending ? 'pending' : 'settled'}:${hasPremiumAccess(auth) ? 'premium' : 'free'}`;
-      },
+      getPreferenceContext: () => 'local',
       getVariant: () => SITE_VARIANT,
       isMatchExecutable: (match) => this.isSearchMatchExecutable(match),
       isPanelCurrentlyEnabled: (panelId) => this.ctx.panelSettings[panelId]?.enabled === true,
@@ -255,25 +241,8 @@ export class SearchManager implements AppModule {
         () => this.resolveProgrammaticMatchForCommit(match),
         signal,
       ),
-      subscribeAuth: subscribeAuthState,
-      subscribeEntitlement: onEntitlementChange,
       subscribeRuntimeConfig,
-      subscribeWidgetAccess,
-      onPremiumAccessChanged: (premium, premiumRestored) => {
-        if (!premium) {
-          this.flightSearchItems = [];
-          this.flightSourceExpiresAt = 0;
-          this.liveFlightOverlay = [];
-          this.ctx.searchModal?.registerSource('flight', []);
-        } else if (premiumRestored) {
-          this.updateFlightSource(
-            this.latestAdsb,
-            this.latestMilitary,
-            this.latestAdsbUpdatedAt,
-          );
-          this.ctx.searchModal?.refreshSearch();
-        }
-      },
+      subscribeWidgets,
     });
   }
 
@@ -304,7 +273,6 @@ export class SearchManager implements AppModule {
     this.liveFlightOverlay = [];
     this.latestAdsb = [];
     this.latestMilitary = [];
-    this.latestAdsbUpdatedAt = 0;
   }
 
   private setupSearchModal(): void {
@@ -478,12 +446,7 @@ export class SearchManager implements AppModule {
       const kind = this.ctx.map?.isGlobeMode?.()
         ? 'globe'
         : (this.ctx.map?.isDeckGLActive?.() ? 'deck' : 'svg');
-      return isLayerCommandAllowed(
-        key,
-        this.ctx.mapLayers[key],
-        kind,
-        hasPremiumAccess(getAuthState()),
-      );
+      return isLayerCommandAllowed(key, this.ctx.mapLayers[key], kind);
     });
     this.ctx.searchModal.setCommandVisibleFn((command) => this.isModalCommandVisible(command));
     this.ctx.searchModal.setResultVisibleFn((result) => this.isSearchResultVisible(result));
@@ -498,8 +461,7 @@ export class SearchManager implements AppModule {
 
   }
 
-  private handleLiveFlightSearch(callsign: string): void {
-    if (!hasPremiumAccess(getAuthState())) return;
+  private handleLiveFlightSearch(callsign: string): void {return;
     void this.fetchAndPublishLiveFlight(callsign)
       .then(() => {
         if (!this.destroyed) this.ctx.searchModal?.refreshSearch();
@@ -662,11 +624,7 @@ export class SearchManager implements AppModule {
       const effective = ALL_PANELS[panelId]
         ? getEffectivePanelConfig(panelId, SITE_VARIANT)
         : undefined;
-      return !!effective && isPanelEntitled(
-        panelId,
-        effective,
-        hasPremiumAccess(getAuthState()),
-      );
+      return !!effective && isPublicPanel(panelId);
     }
     if (category === 'layer') return this.isLayerCommandExecutable(action);
     if (category === 'layers') return this.hasVisibleLayerPreset(action);
@@ -691,14 +649,11 @@ export class SearchManager implements AppModule {
         const effective = ALL_PANELS[panelId]
           ? getEffectivePanelConfig(panelId, SITE_VARIANT)
           : undefined;
-        const premium = hasPremiumAccess(getAuthState());
-        if (!effective || !isPanelEntitled(panelId, effective, premium)) return false;
+        if (!effective || !isPublicPanel(panelId)) return false;
         if (config.enabled) {
           return allowPendingPanelTarget || this.hasLivePanelTarget(panelId);
         }
-        if (premium) return true;
-        return !isFreePanelCapCounted(panelId)
-          || countFreePanelCapUsage(this.ctx.panelSettings) < FREE_MAX_PANELS;
+        return true;
       }
       case 'layer':
         return this.isLayerCommandExecutable(action);
@@ -755,12 +710,7 @@ export class SearchManager implements AppModule {
     const renderer: RendererKind = this.ctx.map?.isGlobeMode?.()
       ? 'globe'
       : (this.ctx.map?.isDeckGLActive?.() ? 'deck' : 'svg');
-    return isLayerCommandAllowed(
-      key,
-      this.ctx.mapLayers[key],
-      renderer,
-      hasPremiumAccess(getAuthState()),
-    );
+    return isLayerCommandAllowed(key, this.ctx.mapLayers[key], renderer);
   }
 
   private hasExecutableLayerPreset(action: string): boolean {
@@ -813,14 +763,14 @@ export class SearchManager implements AppModule {
         return this.ctx.panelSettings.polymarket?.enabled === true
           && this.hasLivePanelTarget('polymarket');
       case 'flight':
-        return hasPremiumAccess(getAuthState());
+        return false;
       default:
         return true;
     }
   }
 
   private isSearchResultVisible(result: SearchResult): boolean {
-    if (result.type === 'flight' && !hasPremiumAccess(getAuthState())) return false;
+    if (result.type === 'flight' && !false) return false;
     const requiredLayer = this.resultRequiredLayer(result);
     if (!requiredLayer) return true;
     return getAllowedLayerKeys((SITE_VARIANT || 'full') as MapVariant).has(requiredLayer);
@@ -835,7 +785,7 @@ export class SearchManager implements AppModule {
     return isLayerExecutable(
       layer,
       renderer,
-    ) && isLayerEntitled(layer, hasPremiumAccess(getAuthState()));
+    ) && isPublicLayer(layer);
   }
 
   private resultRequiredLayer(result: SearchResult): keyof MapLayers | null {
@@ -875,9 +825,7 @@ export class SearchManager implements AppModule {
     if (this.destroyed) return;
     this.latestAdsb = [...adsb];
     this.latestMilitary = [...military];
-    this.latestAdsbUpdatedAt = adsbUpdatedAt;
-    if (!this.ctx.searchModal) return;
-    if (!hasPremiumAccess(getAuthState())) {
+    if (!this.ctx.searchModal) return;{
       this.flightSearchItems = [];
       this.flightSourceExpiresAt = 0;
       this.liveFlightOverlay = [];
@@ -964,7 +912,6 @@ export class SearchManager implements AppModule {
    */
   private syncPanelSearchIndex(options?: { updateVisibleMetrics?: boolean }): void {
     if (!this.ctx.searchModal) return;
-    const hasPremium = hasPremiumAccess(getAuthState());
     this.ctx.searchModal.setActivePanels(
       Object.entries(this.ctx.panelSettings).filter(([, v]) => v.enabled).map(([k]) => k),
       options,
@@ -974,7 +921,7 @@ export class SearchManager implements AppModule {
         // Keep unregistered/dynamic keys out of search; the resolver would
         // otherwise return a disabled synthetic fallback for unknown keys.
         const cfg = ALL_PANELS[k] ? getEffectivePanelConfig(k, SITE_VARIANT) : undefined;
-        return cfg ? isPanelEntitled(k, cfg, hasPremium) : false;
+        return cfg ? isPublicPanel(k) : false;
       }),
       options,
     );

@@ -17,11 +17,6 @@ vi.mock('@/services/bootstrap', async (importOriginal) => ({
   getHydratedData: mocks.getHydratedData,
 }));
 
-vi.mock('@/services/panel-gating', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/services/panel-gating')>(),
-  hasPremiumAccess: () => true,
-}));
-
 // #6677: the first test in this file used to pay for the data-loader module
 // graph's transform (data-loader.ts plus the i18n locale glob and generated
 // clients) inside its testTimeout, because every case reaches the graph through

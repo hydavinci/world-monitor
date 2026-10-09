@@ -3530,6 +3530,21 @@
     "dismiss": "忽略"
   },
   "preferences": {
+    "alertNotifications": {
+      "title": "报警通知",
+      "desktop": "系统桌面通知",
+      "description": "页面保持打开时，为高危和严重突发事件发送通知，沿用现有报警筛选规则。",
+      "authorize": "允许通知",
+      "test": "发送测试通知",
+      "default": "尚未获得浏览器授权，请点击“允许通知”开启。",
+      "granted": "浏览器已授权。如果通知没有出现，请检查浏览器通知设置和系统勿扰模式。",
+      "denied": "通知已被阻止，请在浏览器的网站权限中允许通知，然后返回这里。",
+      "unsupported": "当前环境不支持桌面通知，请使用支持此功能的桌面浏览器，并通过 HTTPS 或 localhost 访问。",
+      "permissionFailed": "无法申请通知权限，请重试或检查浏览器的网站权限。",
+      "deliveryFailed": "桌面通知发送失败，请检查浏览器权限和系统通知设置。",
+      "testTitle": "World Monitor 通知测试",
+      "testBody": "桌面报警通知已接通，点击通知返回 World Monitor。"
+    },
     "display": "显示",
     "intelligence": "智能",
     "media": "媒体",

@@ -20,7 +20,7 @@ import { isDesktopRuntime } from '@/services/runtime';
 import { openExternalUrl } from '@/services/external-navigation';
 import { fetchOllamaModels as fetchOllamaModelsFromService } from '@/services/ollama-models';
 import { t } from '@/services/i18n';
-import { trackFeatureToggle } from '@/services/analytics';
+
 import { SIGNUP_URLS, PLAINTEXT_KEYS, MASKED_SENTINEL } from '@/services/settings-constants';
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 
@@ -396,7 +396,7 @@ export class RuntimeConfigPanel extends Panel {
       input.addEventListener('change', () => {
         const featureId = input.dataset.toggle as RuntimeFeatureDefinition['id'] | undefined;
         if (!featureId) return;
-        trackFeatureToggle(featureId, input.checked);
+
         setFeatureToggle(featureId, input.checked);
       });
     });

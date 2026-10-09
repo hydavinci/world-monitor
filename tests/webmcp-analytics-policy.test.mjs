@@ -3,7 +3,6 @@ import { afterEach, describe, it } from 'node:test';
 
 import { CONTENT_ATTRIBUTION_STORAGE_KEY } from '../shared/content-attribution.ts';
 import { FakeWebMcpModelContext } from './helpers/fake-webmcp-model-context.mjs';
-import { resetAnalyticsForTesting } from '../src/services/analytics.ts';
 import { WEBMCP_SPA_TOOL_NAMES } from '../src/config/webmcp.ts';
 import {
   DashboardBindingError,
@@ -272,11 +271,10 @@ async function executeRegistered(provider, name, inputJson = '{}') {
 afterEach(() => {
   delete globalThis.window;
   delete globalThis.location;
-  resetAnalyticsForTesting();
 });
 
 describe('WebMCP analytics privacy policy', () => {
-  it('uses the privacy-restricted collector path and permits only explicit allowlisted fields', async () => {
+  it('keeps registration and tool execution independent of an ambient external tracker', async () => {
     const storage = new MemoryStorage();
     storage.setItem(CONTENT_ATTRIBUTION_STORAGE_KEY, JSON.stringify({
       source: 'PRIVATE_CONTENT_SOURCE',
@@ -305,8 +303,6 @@ describe('WebMCP analytics privacy policy', () => {
       configurable: true,
       value: { hostname: 'worldmonitor.app' },
     });
-
-    resetAnalyticsForTesting();
     const provider = new FakeWebMcpModelContext({
       supportsTargetExecutionSignal: true,
       registrationFailure: new Map([
@@ -345,84 +341,7 @@ describe('WebMCP analytics privacy policy', () => {
     await executeRegistered(provider, 'open_search_result', JSON.stringify({
       resultKey: `sr_${'a'.repeat(32)}`,
     }));
-
-    const allowlistedKeys = {
-      'webmcp-registered': new Set(['toolCount', 'pageSurface', 'api']),
-      'webmcp-registration-failed': new Set(['tool', 'reason']),
-      'webmcp-tool-invoked': new Set([
-        'tool', 'outcome', 'reason', 'queryLength', 'resultCount', 'resultTypes', 'hasMore',
-      ]),
-    };
-    for (const call of collected) {
-      assert.ok(allowlistedKeys[call.event], call.event);
-      assert.ok(
-        Object.keys(call.data ?? {}).every((key) => allowlistedKeys[call.event].has(key)),
-        `${call.event} contained a non-allowlisted field`,
-      );
-    }
-
-    assert.deepEqual(
-      collected.find(({ event }) => event === 'webmcp-registered'),
-      {
-        event: 'webmcp-registered',
-        data: { toolCount: 32, pageSurface: 'dashboard', api: 'document-current' },
-      },
-    );
-    assert.deepEqual(
-      collected.find(({ event }) => event === 'webmcp-registration-failed'),
-      {
-        event: 'webmcp-registration-failed',
-        data: { tool: 'set_map_view', reason: 'aborted' },
-      },
-    );
-    assert.deepEqual(
-      collected.find(({ data }) => data?.tool === 'list_dashboard_panels'),
-      {
-        event: 'webmcp-tool-invoked',
-        data: {
-          tool: 'list_dashboard_panels',
-          outcome: 'success',
-          reason: 'completed',
-          resultCount: 1,
-          hasMore: false,
-        },
-      },
-    );
-    assert.deepEqual(
-      collected.find(({ data }) => data?.tool === 'search_dashboard'),
-      {
-        event: 'webmcp-tool-invoked',
-        data: {
-          tool: 'search_dashboard',
-          outcome: 'success',
-          reason: 'completed',
-          queryLength: 18,
-          resultCount: 1,
-          resultTypes: ['other'],
-        },
-      },
-    );
-    assert.deepEqual(
-      collected.find(({ data }) => data?.tool === 'open_search_result'),
-      {
-        event: 'webmcp-tool-invoked',
-        data: { tool: 'open_search_result', outcome: 'denied', reason: 'stale' },
-      },
-    );
-
-    const serialized = JSON.stringify(collected);
-    for (const privateValue of [
-      'PRIVATE_CONTENT',
-      'PRIVATE_QUERY_TEXT',
-      'PRIVATE_UNBOUNDED_RESULT_TYPE',
-      'PRIVATE_RESULT_TITLE',
-      'PRIVATE_RESULT_SUBTITLE',
-      'PRIVATE_HOST_FAILURE',
-      `sr_${'a'.repeat(32)}`,
-      'result_no_longer_available',
-    ]) {
-      assert.equal(serialized.includes(privateValue), false, privateValue);
-    }
+    assert.deepEqual(collected, [], "No registration or invocation reaches the ambient tracker.");
   });
 
   it('maps success, validation, entitlement, unavailable, stale, cancellation, and internal outcomes', async () => {

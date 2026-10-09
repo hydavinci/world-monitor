@@ -55,7 +55,10 @@ export function renderLayerTruncationBadges(
       // the badge would toggle the layer off. `.layer-explain-btn` sits outside
       // the label for the same reason.
       badge.className = 'layer-truncation-count';
-      row.appendChild(badge);
+    }
+    const explanation = row.querySelector<HTMLElement>('.layer-explain-btn');
+    if (badge.parentElement !== row || badge.nextElementSibling !== explanation) {
+      row.insertBefore(badge, explanation);
     }
     badge.textContent = `${counts.shown}/${counts.total}`;
     // Untranslated literal: a new i18n key is a ~29-file change across locales,

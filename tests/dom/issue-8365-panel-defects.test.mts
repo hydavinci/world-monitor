@@ -41,12 +41,10 @@ vi.mock('@/services/generated-rpc-clients', async (importOriginal) => ({
 import { etfNetFlowLabel } from '@/components/ETFFlowsPanel';
 import { fsiLabelDisplay } from '@/components/FSIPanel';
 import { EnergyCrisisPanel } from '@/components/EnergyCrisisPanel';
-import { DeductionPanel } from '@/components/DeductionPanel';
 import { LiveNewsPanel } from '@/components/LiveNewsPanel';
 import { PlaybackControl } from '@/components/PlaybackControl';
 import { ServiceStatusPanel } from '@/components/ServiceStatusPanel';
 import { TechEventsPanel } from '@/components/TechEventsPanel';
-import { TradePolicyPanel } from '@/components/TradePolicyPanel';
 import { closeStoryModal, openStoryModal } from '@/components/StoryModal';
 import type { StoryData } from '@/services/story-data';
 import { fetchServiceStatuses } from '@/services/infrastructure';
@@ -84,70 +82,6 @@ describe('issue 8365 panel labels', () => {
     expect(tooltip).toMatch(/TLT/);
     expect(tooltip).toMatch(/not the Kansas City Fed/);
     expect(tooltip).not.toMatch(/KCFSI/);
-  });
-});
-
-describe('TradePolicyPanel principal reset', () => {
-  it('drops cached responses and rebuilds controls after an unlocked account switch', async () => {
-    vi.useFakeTimers();
-    const panel = new TradePolicyPanel();
-    document.body.append(panel.getElement());
-    const fields = ['restrictionsData', 'tariffsData', 'flowsData', 'barriersData', 'revenueData', 'comtradeData'];
-    const view = panel as unknown as Record<string, unknown>;
-    const oldLoad = panel.beginDataLoad();
-    for (const field of fields) view[field] = { owner: 'previous-account' };
-    panel.clearSensitiveContent();
-    panel.unlockPanel();
-    expect(panel.acceptsDataLoad(oldLoad)).toBe(false);
-    expect(panel.acceptsDataLoad(panel.beginDataLoad())).toBe(true);
-    await vi.advanceTimersByTimeAsync(200);
-    for (const field of fields) expect(view[field]).toBeNull();
-    expect(panel.getElement().querySelector('.panel-tab[data-tab="restrictions"]')).not.toBeNull();
-    expect(panel.getElement().textContent).not.toContain('previous-account');
-    panel.destroy();
-  });
-});
-
-describe('DeductionPanel principal reset', () => {
-  it('discards an old analysis and restores an empty usable form', async () => {
-    const pending = deferred<{ analysis: string }>();
-    deductSituation.mockReturnValueOnce(pending.promise);
-    const panel = new DeductionPanel();
-    document.body.append(panel.getElement());
-    const view = panel as unknown as { handleSubmit: (event: Event) => Promise<void> };
-    const input = panel.getElement().querySelector<HTMLTextAreaElement>('.deduction-input')!;
-    const geo = panel.getElement().querySelector<HTMLInputElement>('.deduction-geo-input')!;
-    input.value = 'Private question';
-    geo.value = 'Private context';
-    const request = view.handleSubmit(new Event('submit'));
-    panel.clearSensitiveContent();
-    panel.unlockPanel();
-    pending.resolve({ analysis: 'Private answer' });
-    await request;
-    expect(input.value).toBe('');
-    expect(geo.value).toBe('');
-    expect(panel.getElement().textContent).not.toContain('Private answer');
-    expect(panel.getElement().querySelector<HTMLButtonElement>('.deduction-submit-btn')!.disabled).toBe(false);
-    panel.destroy();
-  });
-
-  it('aborts the previous account in-flight request instead of only discarding it', async () => {
-    let requestSignal: AbortSignal | undefined;
-    deductSituation.mockImplementationOnce((_req: unknown, options?: { signal?: AbortSignal }) => {
-      requestSignal = options?.signal;
-      return new Promise(() => {});
-    });
-    const panel = new DeductionPanel();
-    document.body.append(panel.getElement());
-    const view = panel as unknown as { handleSubmit: (event: Event) => Promise<void> };
-    panel.getElement().querySelector<HTMLTextAreaElement>('.deduction-input')!.value = 'Private question';
-    void view.handleSubmit(new Event('submit'));
-    await vi.waitFor(() => expect(deductSituation).toHaveBeenCalled());
-    expect(requestSignal).toBeInstanceOf(AbortSignal);
-    expect(requestSignal?.aborted).toBe(false);
-    panel.clearSensitiveContent();
-    expect(requestSignal?.aborted).toBe(true);
-    panel.destroy();
   });
 });
 

@@ -1,11 +1,8 @@
 import type { PanelConfig } from '@/types';
 import {
   ALL_PANELS,
-  FREE_MAX_PANELS,
-  countFreePanelCapUsage,
   getEffectivePanelConfig,
-  isFreePanelCapCounted,
-  isPanelEntitled,
+  isPublicPanel,
   isPanelNativeToVariant,
 } from './panels';
 
@@ -39,7 +36,6 @@ export interface EvaluateSetPanelEnabledInput {
   enabled: unknown;
   panelSettings: Record<string, PanelConfig>;
   variant: string;
-  isPro: boolean;
   isPanelAllowed?: (panelId: string, config: PanelConfig) => boolean;
 }
 
@@ -127,7 +123,7 @@ export function evaluateSetPanelEnabled(
   if (input.enabled) {
     const allowed = input.isPanelAllowed
       ? input.isPanelAllowed(panelId, catalogConfig)
-      : isPanelEntitled(panelId, catalogConfig, input.isPro);
+      : isPublicPanel(panelId);
     if (!allowed) {
       return result({
         ok: false,
@@ -140,24 +136,6 @@ export function evaluateSetPanelEnabled(
         message: 'That panel is not available on the current plan.',
       });
     }
-  }
-
-  if (
-    input.enabled
-    && !input.isPro
-    && isFreePanelCapCounted(panelId)
-    && countFreePanelCapUsage(input.panelSettings) >= FREE_MAX_PANELS
-  ) {
-    return result({
-      ok: false,
-      status: 'denied',
-      panelId,
-      requestedEnabled,
-      effectiveEnabled: currentlyEnabled,
-      changed: false,
-      reason: 'panel_cap_exceeded',
-      message: 'The free-tier panel limit has been reached.',
-    });
   }
 
   return result({

@@ -33,9 +33,7 @@ const {
   uniqueSorted,
   compactNote,
   sortEntries,
-  buildCountryPressure,
   buildCountryCounts,
-  buildProgramPressure,
 } = ctx;
 
 const fetchPressureSrc = seedSrc.slice(
@@ -205,55 +203,8 @@ describe('sortEntries', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// buildCountryPressure
-// ---------------------------------------------------------------------------
-describe('buildCountryPressure', () => {
-  it('groups entries by country code and counts them', () => {
-    const entries = [
-      { countryCodes: ['RU'], countryNames: ['Russia'], isNew: false, entityType: 'SANCTIONS_ENTITY_TYPE_ENTITY' },
-      { countryCodes: ['RU'], countryNames: ['Russia'], isNew: true, entityType: 'SANCTIONS_ENTITY_TYPE_VESSEL' },
-    ];
-    const result = buildCountryPressure(entries);
-    assert.equal(result.length, 1);
-    assert.equal(result[0].countryCode, 'RU');
-    assert.equal(result[0].entryCount, 2);
-    assert.equal(result[0].newEntryCount, 1);
-    assert.equal(result[0].vesselCount, 1);
-  });
-
-  it('assigns country code XX and name Unknown for entries with no country', () => {
-    const entries = [
-      { countryCodes: [], countryNames: [], isNew: false, entityType: 'SANCTIONS_ENTITY_TYPE_ENTITY' },
-    ];
-    const result = buildCountryPressure(entries);
-    assert.equal(result[0].countryCode, 'XX');
-    assert.equal(result[0].countryName, 'Unknown');
-  });
-
-  it('limits output to 12 countries', () => {
-    const entries = Array.from({ length: 20 }, (_, i) => ({
-      countryCodes: [`C${i}`],
-      countryNames: [`Country${i}`],
-      isNew: false,
-      entityType: 'SANCTIONS_ENTITY_TYPE_ENTITY',
-    }));
-    assert.equal(buildCountryPressure(entries).length, 12);
-  });
-
-  it('sorts by newEntryCount descending', () => {
-    const entries = [
-      { countryCodes: ['DE'], countryNames: ['Germany'], isNew: false, entityType: 'SANCTIONS_ENTITY_TYPE_ENTITY' },
-      { countryCodes: ['IR'], countryNames: ['Iran'], isNew: true, entityType: 'SANCTIONS_ENTITY_TYPE_ENTITY' },
-      { countryCodes: ['IR'], countryNames: ['Iran'], isNew: true, entityType: 'SANCTIONS_ENTITY_TYPE_ENTITY' },
-    ];
-    const result = buildCountryPressure(entries);
-    assert.equal(result[0].countryCode, 'IR');
-  });
-});
-
 describe('buildCountryCounts', () => {
-  it('keeps all country counts even when pressure rows are top-12 truncated', () => {
+  it('keeps counts for every country in the public entity cohort', () => {
     const entries = Array.from({ length: 13 }, (_, i) => ({
       countryCodes: [`${String.fromCharCode(65 + i)}${String.fromCharCode(65 + i)}`],
       countryNames: [`Country${i}`],
@@ -261,37 +212,10 @@ describe('buildCountryCounts', () => {
       entityType: 'SANCTIONS_ENTITY_TYPE_ENTITY',
     }));
 
-    assert.equal(buildCountryPressure(entries).length, 12,
-      'pressure rows remain a top-12 display summary');
     const counts = normalize(buildCountryCounts(entries));
     assert.equal(Object.keys(counts).length, 13,
-      'country counts must retain the all-country sanctions pressure map for downstream scoring');
+      'country counts must retain the full cohort for public risk scoring');
     assert.equal(counts.MM, 1,
       'the 13th country must not disappear from the all-country count map');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildProgramPressure
-// ---------------------------------------------------------------------------
-describe('buildProgramPressure', () => {
-  it('groups entries by program and counts them', () => {
-    const entries = [
-      { programs: ['IRAN'], isNew: false },
-      { programs: ['IRAN', 'UKRAINE-EO13685'], isNew: true },
-    ];
-    const result = buildProgramPressure(entries);
-    const iran = result.find((r) => r.program === 'IRAN');
-    assert.ok(iran);
-    assert.equal(iran.entryCount, 2);
-    assert.equal(iran.newEntryCount, 1);
-  });
-
-  it('limits output to 12 programs', () => {
-    const entries = Array.from({ length: 20 }, (_, i) => ({
-      programs: [`PROG${i}`],
-      isNew: false,
-    }));
-    assert.equal(buildProgramPressure(entries).length, 12);
   });
 });

@@ -6,7 +6,6 @@
 // 120MB XML download against Railway's 512MB container limit.
 import sax from 'sax';
 import { gzipSync, gunzipSync } from 'node:zlib';
-import { projectCountrySanctions } from './shared/country-sanctions-signals.mjs';
 
 import { loadEnvFile, runSeed, verifySeedKey, readSeedSnapshot, writeExtraKeyWithMeta } from './_seed-utils.mjs';
 import { fetchOfacSourceResponse } from './_sanctions-source.mjs';
@@ -14,12 +13,10 @@ import { SANCTIONS_MAX_CONTENT_AGE_MIN, SANCTIONS_SOURCE_VERSION, SEMA_SOURCE, i
 
 loadEnvFile(import.meta.url);
 
-const CANONICAL_KEY = 'sanctions:pressure:v1';
-const STATE_KEY = 'sanctions:pressure:state:v1';
+const STATE_KEY = 'sanctions:entity-state:v1';
 const ENTITY_INDEX_KEY = 'sanctions:entities:v1';
 const ENTITY_INDEX_META_KEY = 'seed-meta:sanctions:entities';
-// Full ISO2 -> count map consumed by CII/country-risk scoring; do not replace
-// with the top-pressure display list written under CANONICAL_KEY.countries.
+// Full ISO2 -> count map consumed by public CII/country-risk scoring.
 const COUNTRY_COUNTS_KEY = 'sanctions:country-counts:v1';
 const COUNTRY_COUNTS_META_KEY = 'seed-meta:sanctions:country-counts';
 const SOURCE_SNAPSHOTS_KEY = 'sanctions:source-snapshots:v1';
@@ -149,33 +146,6 @@ function sortEntries(a, b) {
     || a.name.localeCompare(b.name);
 }
 
-function buildCountryPressure(entries) {
-  const map = new Map();
-  for (const entry of entries) {
-    const codes = entry.countryCodes.length > 0 ? entry.countryCodes : ['XX'];
-    const names = entry.countryNames.length > 0 ? entry.countryNames : ['Unknown'];
-    codes.forEach((code, index) => {
-      const key = `${code}:${names[index] || names[0] || 'Unknown'}`;
-      const current = map.get(key) || {
-        countryCode: code,
-        countryName: names[index] || names[0] || 'Unknown',
-        entryCount: 0,
-        newEntryCount: 0,
-        vesselCount: 0,
-        aircraftCount: 0,
-      };
-      current.entryCount += 1;
-      if (entry.isNew) current.newEntryCount += 1;
-      if (entry.entityType === 'SANCTIONS_ENTITY_TYPE_VESSEL') current.vesselCount += 1;
-      if (entry.entityType === 'SANCTIONS_ENTITY_TYPE_AIRCRAFT') current.aircraftCount += 1;
-      map.set(key, current);
-    });
-  }
-  return [...map.values()]
-    .sort((a, b) => b.newEntryCount - a.newEntryCount || b.entryCount - a.entryCount || a.countryName.localeCompare(b.countryName))
-    .slice(0, 12);
-}
-
 // Full ISO2 → entryCount map across ALL entries (not truncated like buildCountryPressure).
 // Used by get-country-risk RPC for accurate per-country sanctions screening.
 function buildCountryCounts(entries) {
@@ -186,22 +156,6 @@ function buildCountryCounts(entries) {
     }
   }
   return map;
-}
-
-function buildProgramPressure(entries) {
-  const map = new Map();
-  for (const entry of entries) {
-    const programs = entry.programs.length > 0 ? entry.programs : ['UNSPECIFIED'];
-    for (const program of programs) {
-      const current = map.get(program) || { program, entryCount: 0, newEntryCount: 0 };
-      current.entryCount += 1;
-      if (entry.isNew) current.newEntryCount += 1;
-      map.set(program, current);
-    }
-  }
-  return [...map.values()]
-    .sort((a, b) => b.newEntryCount - a.newEntryCount || b.entryCount - a.entryCount || a.program.localeCompare(b.program))
-    .slice(0, 12);
 }
 
 /**
@@ -703,29 +657,6 @@ async function fetchSanctionsPressure() {
   }));
   console.log(`  Entity index: ${_entityIndex.length} records (~${Math.round(JSON.stringify(_entityIndex).length / 1024)}KB)`);
 
-  const knownWindow = hasPrevious && validPressureClock(previousState.observedAt)
-    && Number(previousState.observedAt) < now;
-  const pressureMetadata = {
-    schemaVersion: 1,
-    sourceVersion: SANCTIONS_SOURCE_VERSION,
-    population: 'top-12-first-iso2-display-v1',
-    cohort: { computationAt: String(now), datasetDate: String(datasetDate), totalCount, newEntryCount },
-    comparison: {
-      kind: knownWindow ? 'id-set-difference' : hasPrevious ? 'window-unavailable' : 'baseline-unavailable',
-      from: knownWindow ? previousState.observedAt : null,
-      to: String(now),
-    },
-    sourceHealth: Object.fromEntries(Object.entries(_sourceHealth).map(([source, health]) => [source, {
-      status: health.status, lastAttemptAt: health.lastAttemptAt, lastSuccessAt: health.lastSuccessAt,
-      retainedUntil: health.retainedUntil, publishedAt: health.publishedAt, recordCount: health.recordCount,
-      errorCode: health.errorCode,
-      quarantinedCount: _sourceSnapshots[source]?.quarantinedCount ?? null,
-    }])),
-  };
-  if (Buffer.byteLength(JSON.stringify(pressureMetadata), 'utf8') > 4096) {
-    throw new Error('SANCTIONS_METADATA_TOO_LARGE');
-  }
-
   return {
     fetchedAt: String(now),
     datasetDate: String(datasetDate),
@@ -737,10 +668,7 @@ async function fetchSanctionsPressure() {
     newEntryCount,
     vesselCount,
     aircraftCount,
-    countries: buildCountryPressure(entries),
-    programs: buildProgramPressure(entries),
     entries: sortedEntries.slice(0, DEFAULT_RECENT_LIMIT),
-    pressureMetadata,
     _entityIndex,
     _sourceSnapshots,
     _sourceHealth,
@@ -753,19 +681,23 @@ async function fetchSanctionsPressure() {
 }
 
 function validate(data) {
-  return ['totalCount', 'sdnCount', 'consolidatedCount', 'semaCount']
-    .every(field => Number.isSafeInteger(data?.[field]) && data[field] >= 0);
+  return Array.isArray(data) && data.every(entry =>
+    typeof entry?.id === 'string' && entry.id.length > 0
+    && typeof entry.name === 'string' && entry.name.trim().length > 0
+    && ['vessel', 'aircraft', 'individual', 'entity'].includes(entry.et)
+    && ['cc', 'pr'].every(field => Array.isArray(entry[field])
+      && entry[field].every(value => typeof value === 'string')));
 }
 
 export function declareRecords(data) {
-  return data?.totalCount ?? 0;
+  return Array.isArray(data) ? data.length : 0;
 }
 
 export function sanctionsPressureContentMeta(data, nowMs) {
   return sanctionsListContentMeta(data, nowMs);
 }
 
-runSeed('sanctions', 'pressure', CANONICAL_KEY, fetchSanctionsPressure, {
+runSeed('sanctions', 'entities', ENTITY_INDEX_KEY, fetchSanctionsPressure, {
   ttlSeconds: CACHE_TTL,
   // The bounded direct/proxy/signed recovery ladder can spend about 7 minutes
   // across both serial XML sources, plus the SEMA source. Keep its fetch deadline
@@ -774,27 +706,10 @@ runSeed('sanctions', 'pressure', CANONICAL_KEY, fetchSanctionsPressure, {
   fetchPhaseTimeoutMs: 540_000,
   validateFn: validate,
   sourceVersion: SANCTIONS_SOURCE_VERSION,
-  recordCount: (data) => data.totalCount ?? 0,
+  recordCount: declareRecords,
   contentMeta: sanctionsPressureContentMeta,
   maxContentAgeMin: SANCTIONS_MAX_CONTENT_AGE_MIN,
-  // Strip internal-only fields before writing the main key so the pressure payload
-  // does not include the entity index (~hundreds of KB) or state snapshot.
-  publishTransform: (data) => {
-    const { _entityIndex: _ei, _state: _s, _countryCounts: _cc, _sourceSnapshots, _sourceHealth, pressureMetadata, ...rest } = data;
-    if (Array.isArray(rest.entries)) {
-      rest.entries = rest.entries.map((entry) => {
-        const { _aliases, _identifiers, _publishedAt, _regime, ...publicEntry } = entry;
-        return publicEntry;
-      });
-    }
-    const canonical = { ...rest, _state: pressureMetadata };
-    const projection = projectCountrySanctions(canonical, 'ZZ', Number(canonical.fetchedAt));
-    if (projection.state === 'unavailable' && !(canonical.totalCount === 0
-      && ['All sources unavailable', 'Empty producer sentinel'].includes(projection.reason))) {
-      throw new Error(`Invalid canonical sanctions publication: ${projection.reason}`);
-    }
-    return canonical;
-  },
+  publishTransform: (data) => data._entityIndex,
   zeroIsValid: true,
   beforePublish: async (data) => {
     const count = Object.values(data._sourceSnapshots).reduce((sum, snapshot) => sum + (snapshot?.records.length ?? 0), 0);
@@ -810,8 +725,6 @@ runSeed('sanctions', 'pressure', CANONICAL_KEY, fetchSanctionsPressure, {
   // Publisher hooks own these keys, so runSeed cannot infer them from extraKeys.
   // Preserve their data and metadata with the canonical cohort on a run failure.
   preserveKeys: [
-    ENTITY_INDEX_KEY,
-    ENTITY_INDEX_META_KEY,
     COUNTRY_COUNTS_KEY,
     COUNTRY_COUNTS_META_KEY,
   ],
@@ -822,18 +735,6 @@ runSeed('sanctions', 'pressure', CANONICAL_KEY, fetchSanctionsPressure, {
     { key: SOURCE_SNAPSHOTS_META_KEY, ttlSeconds: SOURCE_SNAPSHOTS_TTL },
   ],
   afterPublish: async (data, _ctx) => {
-    // Write entity lookup index with seed-meta so health.js can monitor it.
-    // Uses writeExtraKeyWithMeta rather than extraKeys because runSeed's extraKeys
-    // calls writeExtraKey (no meta), and we need a seed-meta key for health tracking.
-    if (data._entityIndex) {
-      await writeExtraKeyWithMeta(
-        ENTITY_INDEX_KEY,
-        data._entityIndex,
-        CACHE_TTL,
-        data._entityIndex.length,
-        ENTITY_INDEX_META_KEY,
-      );
-    }
     // Write full ISO2→count map for per-country sanctions lookup (no top-12 truncation).
     if (data._countryCounts) {
       await writeExtraKeyWithMeta(

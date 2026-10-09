@@ -65,32 +65,10 @@ const route = (loc, family, materialSources) => ({
  * generated sitemap is the deterministic fallback.
  */
 export const STATIC_ROUTE_MANIFEST = Object.freeze([
-  route(`${SITE_ORIGIN}/`, 'landing', [
-    'pro-test/welcome.html',
-    'pro-test/src/WelcomeApp.tsx',
-    'pro-test/src/welcome',
-    'pro-test/src/index.css',
-    'pro-test/src/generated',
-    'src/config/products.ts',
-  ]),
+  route(`${SITE_ORIGIN}/`, 'landing', DASHBOARD_MATERIAL_SOURCES),
   route(`${SITE_ORIGIN}/dashboard`, 'dashboard', [
     ...DASHBOARD_MATERIAL_SOURCES,
     'src/config/variants/full.ts',
-  ]),
-  route(`${SITE_ORIGIN}/pro`, 'product', [
-    'pro-test/index.html',
-    'pro-test/src/App.tsx',
-    'pro-test/src/components',
-    'pro-test/src/generated',
-    'pro-test/src/i18n.ts',
-    'pro-test/src/index.css',
-    'pro-test/src/locales',
-    'src/config/products.ts',
-  ]),
-  route('https://worldmonitor.app/mcp', 'mcp', [
-    'api/mcp.ts',
-    'api/mcp',
-    'public/mcp-server.md',
   ]),
   route('https://tech.worldmonitor.app/dashboard', 'dashboard-variant', [
     ...DASHBOARD_MATERIAL_SOURCES,
@@ -117,7 +95,7 @@ export const STATIC_ROUTE_MANIFEST = Object.freeze([
 /**
  * Machine-readable twins and AI manifests, kept out of every sitemap (#8608).
  *
- * A sitemap entry asks Google to index a URL. These twelve are Markdown or
+ * A sitemap entry asks Google to index a URL. These entries are Markdown or
  * text copies of HTML pages we want ranked, plus the llms.txt manifests;
  * Search Console inspected all twelve on 2026-09-25 and indexed none, and
  * none earned an impression. Agents discover them through llms.txt, the
@@ -127,7 +105,6 @@ export const STATIC_ROUTE_MANIFEST = Object.freeze([
  * AI search and the list below is what it submits.
  */
 export const MACHINE_READABLE_URLS = Object.freeze([
-  `${SITE_ORIGIN}/pricing.md`,
   `${SITE_ORIGIN}/support.md`,
   `${SITE_ORIGIN}/ai-search.md`,
   `${SITE_ORIGIN}/developers.md`,

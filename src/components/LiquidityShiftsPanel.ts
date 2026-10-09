@@ -1,9 +1,9 @@
+import { rpcFetch } from '@/services/rpc-client';
 import type { MarketServiceClient } from '@/generated/client/worldmonitor/market/v1/service_client';
-import { Panel } from './Panel';
 import { t } from '@/services/i18n';
-import { escapeHtml, unsafeRawHtml } from '@/utils/sanitize';
-import { formatChange, getChangeClass } from '@/utils';
-import { proFreshRpcFetch } from '@/services/premium-fetch';
+import { formatChange,getChangeClass } from '@/utils';
+import { escapeHtml,unsafeRawHtml } from '@/utils/sanitize';
+import { Panel } from './Panel';
 
 let _client: MarketServiceClient | null = null;
 
@@ -11,7 +11,7 @@ async function getMarketClient(): Promise<MarketServiceClient> {
   if (!_client) {
     const { MarketServiceClient } = await import('@/generated/client/worldmonitor/market/v1/service_client');
     const { getRpcBaseUrl } = await import('@/services/rpc-client');
-    _client = new MarketServiceClient(getRpcBaseUrl(), { fetch: proFreshRpcFetch });
+    _client = new MarketServiceClient(getRpcBaseUrl(), { fetch: rpcFetch });
   }
   return _client;
 }

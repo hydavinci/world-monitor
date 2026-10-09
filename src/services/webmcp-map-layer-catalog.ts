@@ -7,7 +7,7 @@ import {
   getAllowedLayerKeys,
   getCompleteLayerCatalogKeys,
   getOrderedLayerKeys,
-  isLayerEntitled,
+  isPublicLayer,
   isLayerExecutable,
   resolveLayerLabel,
   type MapVariant,
@@ -62,7 +62,6 @@ export interface MapLayerCatalogSnapshot {
   enabledLayers: readonly string[];
   liveLayerKeys: readonly string[];
   runtimeAvailability?: MapLayerRuntimeAvailability;
-  hasPremium: boolean;
   deckGlActive: boolean;
   /** False when the host cannot deliver a target-side AbortSignal for set_map_layers. */
   targetCancellationSupported?: boolean;
@@ -158,7 +157,7 @@ function enableUnavailableReason(
   );
   if (runtimeReason) return runtimeReason;
   if (!pageAllowed.has(layerKey)) return 'variant_disallowed';
-  if (!isLayerEntitled(layerKey, snapshot.hasPremium)) return 'layer_not_entitled';
+  if (!isPublicLayer(layerKey)) return 'layer_not_entitled';
   if (layerKey === 'resilienceScore' && !snapshot.deckGlActive) return 'layer_not_executable';
   if (!isLayerExecutable(layerKey, snapshot.rendererKind)) return 'layer_not_executable';
   if (snapshot.targetCancellationSupported !== true) return 'target_cancellation_unsupported';
@@ -177,11 +176,11 @@ function describeLayer(
   const reason = enableUnavailableReason(layerKey, snapshot, liveKeys, pageAllowed);
   const entry: MapLayerCatalogEntry = {
     id: layerKey,
-    label: resolveLayerLabel(def, snapshot.tFn).slice(0, MAP_LAYER_LABEL_MAX_CHARS),
+    label: (def ? resolveLayerLabel(def, snapshot.tFn) : layerKey).slice(0, MAP_LAYER_LABEL_MAX_CHARS),
     enabled: enabledSet.has(layerKey),
     monitorAvailable: listedAllowed.has(layerKey),
     rendererCompatible: isLayerExecutable(layerKey, snapshot.rendererKind),
-    entitled: isLayerEntitled(layerKey, snapshot.hasPremium),
+    entitled: isPublicLayer(layerKey),
     available: reason === undefined,
   };
   if (reason) entry.reason = reason;
@@ -275,7 +274,7 @@ export function listMapLayerCatalog(
   const enabledSet = new Set(snapshot.enabledLayers);
 
   const filtered = catalogKeys.filter((layerKey) => {
-    if (query.renderer && !matchesRendererFilter(LAYER_REGISTRY[layerKey].renderers, query.renderer)) {
+    if (query.renderer && !matchesRendererFilter(LAYER_REGISTRY[layerKey]?.renderers ?? [], query.renderer)) {
       return false;
     }
     const entry = describeLayer(

@@ -11,7 +11,9 @@ export interface ImportResult {
   error?: string;
 }
 
-import { CLOUD_SYNC_KEYS } from './sync-keys';
+import { LOCAL_PREFERENCE_KEYS } from './local-preference-keys';
+import { sanitizePublicLayers, sanitizePublicPanelSettings } from '@/services/public-preferences';
+import type { PanelConfig } from '@/types';
 import { invalidatePanelStorageCacheForKeys } from './panel-storage';
 import { safeStorageSnapshot } from './safe-storage';
 import { PINNED_WEBCAMS_KEY, normalizePinnedWebcamsPreference } from '../../shared/pinned-webcams';
@@ -19,8 +21,7 @@ import { PINNED_WEBCAMS_KEY, normalizePinnedWebcamsPreference } from '../../shar
 const MAX_IMPORT_SIZE_BYTES = 5 * 1024 * 1024;
 
 const SETTINGS_KEYS: readonly string[] = [
-  ...CLOUD_SYNC_KEYS,
-  // device-local / export-only (excluded from cloud sync)
+  ...LOCAL_PREFERENCE_KEYS,
   'worldmonitor-live-channels',
   'worldmonitor-active-channel',
   'worldmonitor-runtime-feature-toggles',
@@ -138,7 +139,17 @@ async function parseImportedEntries(parsed: unknown): Promise<Array<[string, str
     if (key === 'worldmonitor-monitors' && !isMonitorList(JSON.parse(stored))) {
       throw new Error('Invalid setting: worldmonitor-monitors must contain monitor records.');
     }
-    entries.push([key, stored]);
+    let sanitized = stored;
+    if (/^worldmonitor-panels(?:-|$)/.test(key)) {
+      const settings: unknown = JSON.parse(stored);
+      if (!isRecord(settings) || !Object.values(settings).every(isRecord)) throw new Error(`Invalid setting: ${key}`);
+      sanitized = JSON.stringify(sanitizePublicPanelSettings(settings as Record<string, PanelConfig>));
+    } else if (/^worldmonitor-layers(?:-|$)/.test(key)) {
+      const layers: unknown = JSON.parse(stored);
+      if (!isRecord(layers)) throw new Error(`Invalid setting: ${key}`);
+      sanitized = JSON.stringify(sanitizePublicLayers(layers));
+    }
+    entries.push([key, sanitized]);
   }
   return entries;
 }
@@ -203,10 +214,21 @@ export function importSettings(file: File): Promise<ImportResult> {
       try {
         const result = e.target?.result as string;
         const entries = await parseImportedEntries(JSON.parse(result));
-        const { applyLocalPreferenceImport } = await import('./cloud-prefs-sync');
         const { invalidateFrameworkCache } = await import('@/services/analysis-framework-store');
-
-        applyLocalPreferenceImport(entries);
+        const previous = entries.map(([key]) => [key, localStorage.getItem(key)] as const);
+        let applied = 0;
+        try {
+          for (const [key, value] of entries) {
+            localStorage.setItem(key, value);
+            applied++;
+          }
+        } catch (error) {
+          for (const [key, value] of previous.slice(0, applied).reverse()) {
+            if (value === null) localStorage.removeItem(key);
+            else localStorage.setItem(key, value);
+          }
+          throw new Error('Cannot persist imported settings.', { cause: error });
+        }
         const importedKeys = entries.map(([key]) => key);
         invalidatePanelStorageCacheForKeys(importedKeys);
         invalidateFrameworkCache();

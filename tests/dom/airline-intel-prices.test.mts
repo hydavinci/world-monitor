@@ -3,11 +3,11 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 // Replace only the transport under the real aviation service: the panel, the
 // service wrappers, their circuit breakers and the generated client all run.
 const transport = vi.hoisted(() => ({
-  premiumFetch: vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(),
+  rpcFetch: vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(),
 }));
-vi.mock('@/services/premium-fetch', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/premium-fetch')>()),
-  premiumFetch: transport.premiumFetch,
+vi.mock('@/services/rpc-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/rpc-client')>()),
+  rpcFetch: transport.rpcFetch,
 }));
 
 import { fetchGoogleDates, fetchGoogleFlights } from '@/services/aviation';
@@ -18,7 +18,7 @@ const HOSTILE = '<img src=x onerror="window.__pwned=1">';
 const GOOGLE_PATH = /\/api\/aviation\/v1\/search-google-(flights|dates)/;
 
 function googleCalls(): string[] {
-  return transport.premiumFetch.mock.calls.map(([input]) => String(input)).filter((url) => GOOGLE_PATH.test(url));
+  return transport.rpcFetch.mock.calls.map(([input]) => String(input)).filter((url) => GOOGLE_PATH.test(url));
 }
 
 async function mountPanel(): Promise<{ panel: AirlineIntelPanel; root: HTMLElement; content: HTMLElement }> {
@@ -43,8 +43,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
   document.body.replaceChildren();
-  transport.premiumFetch.mockReset();
-  transport.premiumFetch.mockImplementation(async () => Response.json({}));
+  transport.rpcFetch.mockReset();
+  transport.rpcFetch.mockImplementation(async () => Response.json({}));
 });
 
 describe('AirlineIntelPanel prices tab', () => {
@@ -68,7 +68,7 @@ describe('AirlineIntelPanel prices tab', () => {
   });
 
   it('renders server-supplied flight legs as text, not markup', async () => {
-    transport.premiumFetch.mockImplementation(async (input) => {
+    transport.rpcFetch.mockImplementation(async (input) => {
       if (!String(input).includes('search-google-flights')) return Response.json({});
       return Response.json({
         flights: [{
@@ -96,7 +96,7 @@ describe('AirlineIntelPanel prices tab', () => {
       dates: [{ date: HOSTILE, returnDate: HOSTILE, price: 99 }],
       degraded: false, error: '',
     };
-    transport.premiumFetch.mockImplementation(async (input) => {
+    transport.rpcFetch.mockImplementation(async (input) => {
       if (!String(input).includes('search-google-dates')) return Response.json({});
       return Response.json(datesBody);
     });
@@ -131,14 +131,14 @@ describe('AirlineIntelPanel prices tab', () => {
 // Kept last: each failure counts toward its breaker's cooldown.
 describe('Google Flights service wrappers', () => {
   it('fetchGoogleFlights returns the empty degraded fallback when the request fails', async () => {
-    transport.premiumFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+    transport.rpcFetch.mockRejectedValue(new TypeError('Failed to fetch'));
     await expect(fetchGoogleFlights({ origin: 'IST', destination: 'LHR', departureDate: '2026-11-01' }))
       .resolves.toEqual({ flights: [], degraded: true, error: 'Request failed' });
     expect(googleCalls()).toHaveLength(1);
   });
 
   it('fetchGoogleDates returns the empty degraded fallback when the request fails', async () => {
-    transport.premiumFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+    transport.rpcFetch.mockRejectedValue(new TypeError('Failed to fetch'));
     await expect(fetchGoogleDates({ origin: 'IST', destination: 'LHR', startDate: '2026-11-01', endDate: '2026-11-20' }))
       .resolves.toEqual({ dates: [], degraded: true, error: 'Request failed' });
     expect(googleCalls()).toHaveLength(1);

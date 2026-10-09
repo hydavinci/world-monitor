@@ -5,8 +5,6 @@ import { loadEnvFile, runSeed, getRedisCredentials } from './_seed-utils.mjs';
 import { unwrapEnvelope } from './_seed-envelope-source.mjs';
 import { CII_RISK_SCORE_CACHE_KEYS } from './_cii-risk-cache-keys.mjs';
 import { regionForCountry } from './shared/geography.js';
-import { physicalDivergenceStaleReason } from './shared/physical-divergence-staleness.js';
-import { METHODOLOGY_VERSION as PHYSICAL_DIVERGENCE_METHODOLOGY_VERSION } from './lib/physical-divergence.mjs';
 
 loadEnvFile(import.meta.url);
 
@@ -27,7 +25,6 @@ const SOURCE_KEYS = [
   'market:commodities-bootstrap:v1',
   'cyber:threats-bootstrap:v2',
   'supply_chain:shipping:v2',
-  'sanctions:pressure:v1',
   'seismology:earthquakes:v1',
   'radiation:observations:v1',
   'infra:outages:v1',
@@ -40,7 +37,6 @@ const SOURCE_KEYS = [
   'weather:alerts:v1',
   CII_RISK_SCORE_CACHE_KEYS.stale,
   'regulatory:actions:v1',
-  'market:physical-divergence:v1',
 ];
 
 // Reject preserved contract envelopes after the same age budgets used by
@@ -54,14 +50,12 @@ const SOURCE_MAX_AGE_MIN = Object.freeze({
   'market:commodities-bootstrap:v1': 30,
   'cyber:threats-bootstrap:v2': 240,
   'supply_chain:shipping:v2': 420,
-  'sanctions:pressure:v1': 720,
   'seismology:earthquakes:v1': 30,
   'radiation:observations:v1': 30,
   'infra:outages:v1': 30,
   'wildfire:fires:v1': 360,
   'forecast:predictions:v2': 90,
   'weather:alerts:v1': 45,
-  'market:physical-divergence:v1': 2160,
 });
 
 // ── Theater classification helpers ────────────────────────────────────────────
@@ -149,7 +143,6 @@ const TYPE_CATEGORY = {
   CROSS_SOURCE_SIGNAL_TYPE_COMMODITY_SHOCK: 'economic',
   CROSS_SOURCE_SIGNAL_TYPE_CYBER_ESCALATION: 'cyber',
   CROSS_SOURCE_SIGNAL_TYPE_SHIPPING_DISRUPTION: 'maritime',
-  CROSS_SOURCE_SIGNAL_TYPE_SANCTIONS_SURGE: 'diplomatic',
   CROSS_SOURCE_SIGNAL_TYPE_EARTHQUAKE_SIGNIFICANT: 'natural',
   CROSS_SOURCE_SIGNAL_TYPE_RADIATION_ANOMALY: 'radiological',
   CROSS_SOURCE_SIGNAL_TYPE_INFRASTRUCTURE_OUTAGE: 'infrastructure',
@@ -161,7 +154,6 @@ const TYPE_CATEGORY = {
   CROSS_SOURCE_SIGNAL_TYPE_MEDIA_TONE_DETERIORATION: 'information',
   CROSS_SOURCE_SIGNAL_TYPE_RISK_SCORE_SPIKE: 'intelligence',
   CROSS_SOURCE_SIGNAL_TYPE_REGULATORY_ACTION: 'policy',
-  CROSS_SOURCE_SIGNAL_TYPE_PHYSICAL_PREMIUM_REGIME_TRANSITION: 'financial',
 };
 
 // Base severity weights for each signal type
@@ -186,14 +178,12 @@ const BASE_WEIGHT = {
   CROSS_SOURCE_SIGNAL_TYPE_SHIPPING_DISRUPTION: 2.0,    // logistics/trade impact
   CROSS_SOURCE_SIGNAL_TYPE_INFRASTRUCTURE_OUTAGE: 2.0,  // operational disruption
   CROSS_SOURCE_SIGNAL_TYPE_DISPLACEMENT_SURGE: 2.0,     // humanitarian — lagging
-  CROSS_SOURCE_SIGNAL_TYPE_MARKET_STRESS: 2.0,          // broad market indicator
-  CROSS_SOURCE_SIGNAL_TYPE_SANCTIONS_SURGE: 1.5,        // policy action — slow burn
+  CROSS_SOURCE_SIGNAL_TYPE_MARKET_STRESS: 2.0,        // policy action — slow burn
   CROSS_SOURCE_SIGNAL_TYPE_WILDFIRE_ESCALATION: 1.5,    // environmental — regional
   CROSS_SOURCE_SIGNAL_TYPE_FORECAST_DETERIORATION: 1.5, // predictive — lower confidence
   CROSS_SOURCE_SIGNAL_TYPE_WEATHER_EXTREME: 1.5,        // environmental — regional
   CROSS_SOURCE_SIGNAL_TYPE_MEDIA_TONE_DETERIORATION: 1.5, // sentiment — lagging
-  CROSS_SOURCE_SIGNAL_TYPE_REGULATORY_ACTION: 2.0,      // policy action — direct market impact
-  CROSS_SOURCE_SIGNAL_TYPE_PHYSICAL_PREMIUM_REGIME_TRANSITION: 2.0,
+  CROSS_SOURCE_SIGNAL_TYPE_REGULATORY_ACTION: 2.0,
 };
 
 function scoreTier(score) {
@@ -521,27 +511,6 @@ function extractShippingDisruption(d) {
     type: 'CROSS_SOURCE_SIGNAL_TYPE_SHIPPING_DISRUPTION',
     theater,
     summary: `Shipping disruption: ${disrupted.length} freight rate index${disrupted.length > 1 ? 'es' : ''} spiking (${disrupted.map(idx => idx.name || idx.indexId).join(', ')})`,
-    severity: scoreTier(score),
-    severityScore: score,
-    detectedAt: Date.now(),
-    contributingTypes: [],
-    signalCount: 0,
-  }];
-}
-
-function extractSanctionsSurge(d) {
-  const payload = d['sanctions:pressure:v1'];
-  if (!payload) return [];
-  const newCount = safeNum(payload.newEntryCount);
-  if (newCount < 5) return [];
-  const topCountry = (payload.countries || [])[0];
-  const theater = normalizeTheater(topCountry?.countryName || '');
-  const score = BASE_WEIGHT['CROSS_SOURCE_SIGNAL_TYPE_SANCTIONS_SURGE'] * Math.min(2, 1 + newCount / 20);
-  return [{
-    id: `sanctions:${theater.replace(/\s+/g, '-').toLowerCase()}`,
-    type: 'CROSS_SOURCE_SIGNAL_TYPE_SANCTIONS_SURGE',
-    theater,
-    summary: `Sanctions surge: ${newCount} new designations — ${topCountry?.countryName || 'multiple countries'} most targeted`,
     severity: scoreTier(score),
     severityScore: score,
     detectedAt: Date.now(),
@@ -956,71 +925,6 @@ function extractRegulatoryAction(d) {
   });
 }
 
-function extractPhysicalPremiumRegimeTransition(d) {
-  const payload = d['market:physical-divergence:v1'];
-  const nowMs = Date.now();
-  const readings = Array.isArray(payload?.readings) ? payload.readings : [];
-  const knownStates = new Set(['ok', 'insufficient_history', 'stale_input', 'missing_input']);
-  for (const reading of readings) {
-    if (!knownStates.has(reading?.state)) {
-      throw new TypeError(`Unknown physical divergence state: ${String(reading?.state)}`);
-    }
-  }
-  // SOURCE_MAX_AGE_MIN is enforced against a `_seed` envelope, and this key is written by a
-  // raw Lua SET that carries none — so its budget is inert unless applied here, against the
-  // snapshot's own clock. `evaluatedAt` is already published and already validated
-  // server-side.
-  // Applied only when the snapshot actually carries the clock: a legacy bare payload without
-  // `evaluatedAt` still falls through to the per-reading freshness checks below, which are
-  // what has been doing this work all along.
-  const maxAgeMs = SOURCE_MAX_AGE_MIN['market:physical-divergence:v1'] * 60_000;
-  const evaluatedAt = Date.parse(payload?.evaluatedAt ?? '');
-  if (Number.isFinite(evaluatedAt) && nowMs - evaluatedAt > maxAgeMs) return [];
-  const readingsByMetal = new Map(readings.map((reading) => [reading?.metal, reading]));
-  const transitions = Array.isArray(payload?.transitions) ? payload.transitions : [];
-  const targetMultiplier = { normal: 0.75, elevated: 1, stressed: 1.5, extreme: 2 };
-  const cutoff = nowMs - 48 * 3600 * 1000;
-  return transitions.flatMap((transition) => {
-    if (
-      !['gold', 'silver'].includes(transition?.metal)
-      || !Object.hasOwn(targetMultiplier, transition?.toRegime)
-      || !Object.hasOwn(targetMultiplier, transition?.fromRegime)
-      || transition.fromRegime === transition.toRegime
-      || !Number.isFinite(transition?.detectedAt)
-      || transition.detectedAt <= cutoff
-      || transition.detectedAt > nowMs
-      || typeof transition?.id !== 'string'
-      || transition.id !== `physical-premium:${transition.metal}:${transition.fromRegime}-${transition.toRegime}:${transition.detectedAt}`
-      || transition.methodologyVersion !== PHYSICAL_DIVERGENCE_METHODOLOGY_VERSION
-    ) return [];
-    // Freshness is per transitioning metal — the other metal may still be
-    // ramping (insufficient_history) or independently stale without suppressing
-    // a valid transition. The composite's all-or-nothing rule is separate.
-    const reading = readingsByMetal.get(transition.metal);
-    if (
-      reading?.state !== 'ok'
-      || physicalDivergenceStaleReason({
-        physicalAsOf: reading.physicalAsOf,
-        paperAsOf: reading.paperAsOf,
-        fxAsOf: reading.provenance?.fxAsOf,
-      }, nowMs) != null
-    ) return [];
-    const score = BASE_WEIGHT.CROSS_SOURCE_SIGNAL_TYPE_PHYSICAL_PREMIUM_REGIME_TRANSITION
-      * targetMultiplier[transition.toRegime];
-    return [{
-      id: transition.id,
-      type: 'CROSS_SOURCE_SIGNAL_TYPE_PHYSICAL_PREMIUM_REGIME_TRANSITION',
-      theater: 'Global Markets',
-      summary: `${transition.metal === 'gold' ? 'Gold' : 'Silver'} physical premium regime changed from ${transition.fromRegime} to ${transition.toRegime}`,
-      severity: scoreTier(score),
-      severityScore: score,
-      detectedAt: transition.detectedAt,
-      contributingTypes: [],
-      signalCount: 0,
-    }];
-  });
-}
-
 // ── Extractor registry ────────────────────────────────────────────────────────
 // Module scope (rather than inline in the aggregator) so the envelope-regression
 // suite can drive every extractor from one list: an extractor added without a
@@ -1036,7 +940,6 @@ const EXTRACTORS = Object.freeze([
   extractCommodityShock,
   extractCyberEscalation,
   extractShippingDisruption,
-  extractSanctionsSurge,
   extractEarthquakeSignificant,
   extractRadiationAnomaly,
   extractInfrastructureOutage,
@@ -1048,7 +951,6 @@ const EXTRACTORS = Object.freeze([
   extractMediaToneDeterioration,
   extractRiskScoreSpike,
   extractRegulatoryAction,
-  extractPhysicalPremiumRegimeTransition,
 ]);
 
 // ── Composite escalation detector ─────────────────────────────────────────────
@@ -1205,9 +1107,7 @@ export {
   extractOrefAlertCluster,
   extractRadiationAnomaly,
   extractRegulatoryAction,
-  extractPhysicalPremiumRegimeTransition,
   extractRiskScoreSpike,
-  extractSanctionsSurge,
   extractShippingDisruption,
   extractThermalSpike,
   extractUnrestSurge,

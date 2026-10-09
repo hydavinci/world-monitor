@@ -1,6 +1,5 @@
 import type { MapLayers } from '@/types';
-// boundary-ignore: isDesktopRuntime is a pure env probe with no service dependencies
-import { isDesktopRuntime } from '@/services/runtime';
+import { getMapMarkerSvg, type MapMarkerIconKind } from './map-marker-icons';
 
 /**
  * The three concrete map renderers a layer can be painted by. This is the
@@ -12,7 +11,76 @@ import { isDesktopRuntime } from '@/services/runtime';
 export type RendererKind = 'svg' | 'deck' | 'globe';
 export type MapVariant = 'full' | 'tech' | 'finance' | 'happy' | 'commodity' | 'energy';
 
-const _desktop = isDesktopRuntime();
+// Point and native-shape symbols follow the active renderer. Mixed/area layers
+// retain their catalog symbol instead of pretending to have one point glyph.
+const POINT_LAYER_ICONS: Partial<Record<RendererKind, Partial<Record<keyof MapLayers, MapMarkerIconKind>>>> = {
+  deck: {
+    hotspots: 'regional-alert',
+    bases: 'military-base',
+    nuclear: 'nuclear-site',
+    datacenters: 'datacenter-site',
+    flights: 'aircraft-position',
+    iranAttacks: 'conflict',
+    irradiators: 'irradiator',
+    radiationWatch: 'radiation',
+    spaceports: 'spaceport',
+    storageFacilities: 'storage',
+    fuelShortages: 'fuel-shortage',
+    liveTankers: 'vessel',
+    protests: 'protest',
+    ucdpEvents: 'conflict',
+    weather: 'weather-alert',
+    canadaRoads: 'road-closure',
+    canadaAlerts: 'regional-alert',
+    outages: 'outage',
+    cyberThreats: 'cyber-threat',
+    fires: 'fire',
+    waterways: 'waterway',
+    economic: 'financial-center',
+    minerals: 'mineral',
+    startupHubs: 'startup',
+    techHQs: 'tech-hq',
+    accelerators: 'accelerator',
+    cloudRegions: 'cloud-region',
+    techEvents: 'calendar',
+    stockExchanges: 'stock-exchange',
+    financialCenters: 'financial-center',
+    centralBanks: 'central-bank',
+    commodityHubs: 'commodity-hub',
+    gulfInvestments: 'investment',
+    kindness: 'kindness',
+    speciesRecovery: 'species-recovery',
+    miningSites: 'mine',
+    processingPlants: 'processing-plant',
+    commodityPorts: 'commodity-port',
+    webcams: 'camera',
+    diseaseOutbreaks: 'disease-outbreak',
+  },
+  globe: {
+    hotspots: 'hotspot-diamond',
+    bases: 'military-base',
+    iranAttacks: 'strike',
+    ucdpEvents: 'conflict',
+    satellites: 'satellite',
+  },
+};
+
+const RENDERER_CATALOG_ICONS: Partial<Record<RendererKind, Partial<Record<keyof MapLayers, string>>>> = {
+  globe: {
+    weather: '&#9889;',
+    climate: '&#127777;',
+    techEvents: '&#128187;',
+  },
+};
+
+export function resolveLayerMarkerIcon(key: keyof MapLayers, renderer: RendererKind): MapMarkerIconKind | undefined {
+  return POINT_LAYER_ICONS[renderer]?.[key];
+}
+
+export function resolveLayerIcon(definition: LayerDefinition, renderer: RendererKind): string {
+  const kind = resolveLayerMarkerIcon(definition.key, renderer);
+  return kind ? getMapMarkerSvg(kind) : RENDERER_CATALOG_ICONS[renderer]?.[definition.key] ?? definition.icon;
+}
 
 export interface LayerDefinition {
   key: keyof MapLayers;
@@ -27,7 +95,6 @@ export interface LayerDefinition {
    * `['deck', 'globe']`; a layer on every surface is `['svg', 'deck', 'globe']`.
    */
   renderers: RendererKind[];
-  premium?: 'locked' | 'enhanced';
 }
 
 export type LayerExplanationCoverage = 'curated' | 'fallback';
@@ -51,14 +118,12 @@ const def = (
   i18nSuffix: string,
   fallbackLabel: string,
   renderers: RendererKind[] = ['svg', 'deck', 'globe'],
-  premium?: 'locked' | 'enhanced',
 ): LayerDefinition => ({
   key, icon, i18nSuffix, fallbackLabel, renderers,
-  ...(premium && { premium }),
 });
 
-export const LAYER_REGISTRY: Record<keyof MapLayers, LayerDefinition> = {
-  iranAttacks:              def('iranAttacks',              '&#127919;', 'iranAttacks',              'Iran Attacks', ['svg', 'deck', 'globe'], _desktop ? 'locked' : undefined),
+export const LAYER_REGISTRY: Partial<Record<keyof MapLayers, LayerDefinition>> = {
+  iranAttacks:              def('iranAttacks',              '&#127919;', 'iranAttacks',              'Iran Attacks', ['svg', 'deck', 'globe']),
   hotspots:                 def('hotspots',                 '&#127919;', 'intelHotspots',            'Intel Hotspots'),
   conflicts:                def('conflicts',                '&#9876;',   'conflictZones',            'Conflict Zones'),
 
@@ -90,14 +155,12 @@ export const LAYER_REGISTRY: Record<keyof MapLayers, LayerDefinition> = {
   waterways:                def('waterways',                '&#9875;',   'strategicWaterways',       'Chokepoints'),
   economic:                 def('economic',                 '&#128176;', 'economicCenters',          'Economic Centers'),
   minerals:                 def('minerals',                 '&#128142;', 'criticalMinerals',         'Critical Minerals'),
-  gpsJamming:               def('gpsJamming',               '&#128225;', 'gpsJamming',               'GPS Jamming', ['svg', 'deck', 'globe'], _desktop ? 'locked' : undefined),
+  gpsJamming:               def('gpsJamming',               '&#128225;', 'gpsJamming',               'GPS Jamming', ['svg', 'deck', 'globe']),
   // Painted by DeckGLMap AND GlobeMap (both build CII choropleth polygons);
   // the SVG/mobile fallback has no CII paint path, so this is deck + globe,
   // NOT svg. Previously mislabeled `['flat']`, which wrongly kept it out of
   // the globe layer picker even though GlobeMap renders it (#6773 / R8).
-  ciiChoropleth:            def('ciiChoropleth',            '&#127758;', 'ciiChoropleth',            'CII Instability', ['deck', 'globe'], _desktop ? 'enhanced' : undefined),
-  // DeckGLMap owns the resilience choropleth; only DeckGL has a paint path.
-  resilienceScore:          def('resilienceScore',          '&#128200;', 'resilienceScore',          'Resilience', ['deck'], 'locked'),
+  ciiChoropleth:            def('ciiChoropleth',            '&#127758;', 'ciiChoropleth',            'CII Instability', ['deck', 'globe']),
   dayNight:                 def('dayNight',                 '&#127763;', 'dayNight',                 'Day/Night', ['svg', 'deck']),
   sanctions:                def('sanctions',                '&#128683;', 'sanctions',                'Sanctions', ['svg', 'deck']),
   startupHubs:              def('startupHubs',              '&#128640;', 'startupHubs',              'Startup Hubs', ['svg', 'deck']),
@@ -356,29 +419,29 @@ const VARIANT_LAYER_ORDER: Record<MapVariant, Array<keyof MapLayers>> = {
     'ucdpEvents', 'displacement', 'climate', 'weather', 'canadaRoads', 'canadaAlerts',
     'outages', 'cyberThreats', 'natural', 'fires',
     'waterways', 'economic', 'minerals', 'gpsJamming',
-    'satellites', 'ciiChoropleth', 'resilienceScore', 'sanctions', 'dayNight', 'webcams',
+    'satellites', 'ciiChoropleth', 'sanctions', 'dayNight', 'webcams',
     'diseaseOutbreaks',
   ],
   tech: [
     'startupHubs', 'techHQs', 'accelerators', 'cloudRegions',
     'datacenters', 'cables', 'outages', 'cyberThreats',
-    'techEvents', 'resilienceScore', 'natural', 'fires', 'dayNight',
+    'techEvents', 'natural', 'fires', 'dayNight',
   ],
   finance: [
     'stockExchanges', 'financialCenters', 'centralBanks', 'commodityHubs',
     'gulfInvestments', 'tradeRoutes', 'cables', 'pipelines',
     'outages', 'weather', 'canadaRoads', 'economic', 'waterways', 'canadaAlerts',
-    'resilienceScore', 'natural', 'cyberThreats', 'sanctions', 'dayNight',
+    'natural', 'cyberThreats', 'sanctions', 'dayNight',
   ],
   happy: [
-    'positiveEvents', 'kindness', 'happiness', 'resilienceScore',
+    'positiveEvents', 'kindness', 'happiness',
     'speciesRecovery', 'renewableInstallations',
   ],
   commodity: [
     'miningSites', 'processingPlants', 'commodityPorts', 'commodityHubs',
     'minerals', 'pipelines', 'waterways', 'tradeRoutes',
     'ais', 'economic', 'fires', 'climate',
-    'resilienceScore', 'natural', 'weather', 'canadaRoads', 'outages', 'sanctions', 'dayNight', 'canadaAlerts',
+    'natural', 'weather', 'canadaRoads', 'outages', 'sanctions', 'dayNight', 'canadaAlerts',
   ],
   energy: [
     // Core energy infrastructure — mirror of ENERGY_MAP_LAYERS in panels.ts
@@ -386,7 +449,7 @@ const VARIANT_LAYER_ORDER: Record<MapVariant, Array<keyof MapLayers>> = {
     'ais', 'liveTankers', 'tradeRoutes', 'minerals',
     // Energy-adjacent context
     'sanctions', 'fires', 'climate', 'weather', 'canadaRoads', 'outages', 'natural', 'canadaAlerts',
-    'resilienceScore', 'dayNight',
+    'dayNight',
   ],
 };
 
@@ -423,7 +486,7 @@ export function getCompleteLayerCatalogKeys(variant: MapVariant): Array<keyof Ma
 export function getLayersForVariant(variant: MapVariant, kind: RendererKind): LayerDefinition[] {
   return getOrderedLayerKeys(variant)
     .map(k => LAYER_REGISTRY[k])
-    .filter(d => d.renderers.includes(kind));
+    .filter((d): d is LayerDefinition => Boolean(d?.renderers.includes(kind)));
 }
 
 export function getAllowedLayerKeys(variant: MapVariant): Set<keyof MapLayers> {
@@ -437,15 +500,6 @@ export function sanitizeLayersForVariant(layers: MapLayers, variant: MapVariant)
     if (!allowed.has(key)) sanitized[key] = false;
   }
   return sanitized;
-}
-
-export function sanitizeResilienceScoreForRenderer(
-  layers: MapLayers,
-  isDeckGLActive: boolean,
-): MapLayers {
-  return layers.resilienceScore && !isDeckGLActive
-    ? { ...layers, resilienceScore: false }
-    : layers;
 }
 
 /**
@@ -466,150 +520,19 @@ export function isLayerExecutable(
   if (!def) return false;
   return def.renderers.includes(kind);
 }
-
-/**
- * Whether the user may enable a layer given their premium status.
- *
- * Matches DeckGLMap's layer-picker contract:
- *   - `premium: 'locked'` → disabled checkbox for free users (must not enable)
- *   - `premium: 'enhanced'` → PRO badge only; free users can still toggle
- *   - no premium flag → free for everyone
- *
- * Used by CMD+K (`search-manager`) and programmatic enable paths so free
- * users cannot force a locked layer on (which left a stuck checked+disabled
- * checkbox and could mutual-exclude a free layer — #6045).
- */
-export function isLayerEntitled(
-  layerKey: keyof MapLayers,
-  hasPremium: boolean,
-): boolean {
-  const def = LAYER_REGISTRY[layerKey];
-  if (!def) return false;
-  if (def.premium === 'locked' && !hasPremium) return false;
-  return true;
-}
-
-/**
- * Whether a layer toggle may be applied from the current state.
- *
- * A free user may turn a locked layer off when stale state survives from an
- * older build, but must not be able to turn it on. Keeping that distinction
- * makes every toggle entry point able to heal old state without reopening the
- * activation path (#6045).
- */
-export function isLayerToggleAllowed(
-  layerKey: keyof MapLayers,
-  currentlyEnabled: boolean | undefined,
-  hasPremium: boolean,
-): boolean {
-  if (!LAYER_REGISTRY[layerKey]) return false;
-  return currentlyEnabled === true || isLayerEntitled(layerKey, hasPremium);
-}
-
-/**
- * Whether a CMD+K layer command may toggle the layer in the current map
- * context. This keeps renderer compatibility and entitlement in one policy
- * used by the palette filter and its dispatch paths.
- */
-export function isLayerCommandAllowed(
-  layerKey: keyof MapLayers,
-  currentlyEnabled: boolean | undefined,
-  kind: RendererKind,
-  hasPremium: boolean,
-): boolean {
-  return isLayerExecutable(layerKey, kind)
-    && isLayerToggleAllowed(layerKey, currentlyEnabled, hasPremium);
-}
-
-/**
- * Whether locked-layer state may be persisted as a free-tier decision.
- *
- * A pending auth session is intentionally not enough: a paying user is
- * indistinguishable from an anonymous user during boot. The explicit fallback
- * signal is the bounded exception used when that session never settles.
- */
-export function shouldSanitizeLockedLayers(
-  hasPremium: boolean,
-  tierResolved: boolean,
-  fallbackActive = false,
-): boolean {
-  return !hasPremium && (tierResolved || fallbackActive);
-}
-
-/**
- * Force locked premium layers off when the user is not entitled.
- * Heals stuck localStorage/state left by pre-#6045 CMD+K activation.
- * Does not mutate the input object.
- */
-export function sanitizeLockedLayers(
-  layers: MapLayers,
-  hasPremium: boolean,
-): MapLayers {
-  if (hasPremium) return layers;
-  let changed = false;
-  const sanitized = { ...layers };
-  for (const key of Object.keys(sanitized) as Array<keyof MapLayers>) {
-    if (sanitized[key] && LAYER_REGISTRY[key]?.premium === 'locked') {
-      sanitized[key] = false;
-      changed = true;
-    }
+export function isPublicLayer(layerKey: keyof MapLayers): boolean {
+    return Boolean(LAYER_REGISTRY[layerKey]);
   }
-  return changed ? sanitized : layers;
-}
-
-export interface LockedLayerOwnershipResult {
-  layers: MapLayers;
-  gateOwned: Set<string>;
-}
+export function isLayerToggleAllowed(layerKey: keyof MapLayers, _currentlyEnabled?: boolean): boolean {
+    return isPublicLayer(layerKey);
+  }
+export function isLayerCommandAllowed(layerKey: keyof MapLayers, _currentlyEnabled: boolean | undefined, kind: RendererKind): boolean {
+    return isLayerExecutable(layerKey, kind) && isPublicLayer(layerKey);
+  }
 
 export function mapLayerStatesEqual(a: MapLayers, b: MapLayers): boolean {
   const keys = Object.keys(a) as Array<keyof MapLayers>;
   return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
-}
-
-/**
- * Sanitize locked layers while remembering which enabled preferences the
- * free-tier gate forced off. Existing ownership is retained across idempotent
- * reconciliation passes where the persisted layer is already false.
- */
-export function sanitizeLockedLayersWithOwnership(
-  layers: MapLayers,
-  existingGateOwned: ReadonlySet<string>,
-): LockedLayerOwnershipResult {
-  const gateOwned = new Set(
-    [...existingGateOwned].filter((key) => (
-      LAYER_REGISTRY[key as keyof MapLayers]?.premium === 'locked'
-    )),
-  );
-  for (const key of Object.keys(layers) as Array<keyof MapLayers>) {
-    if (layers[key] && LAYER_REGISTRY[key]?.premium === 'locked') {
-      gateOwned.add(key);
-    }
-  }
-  return {
-    layers: sanitizeLockedLayers(layers, false),
-    gateOwned,
-  };
-}
-
-/** Restore only valid premium layers previously disabled by the free gate. */
-export function restoreGateOwnedLockedLayers(
-  layers: MapLayers,
-  gateOwned: ReadonlySet<string>,
-): MapLayers {
-  let changed = false;
-  const restored = { ...layers };
-  for (const rawKey of gateOwned) {
-    const key = rawKey as keyof MapLayers;
-    // CII and resilience are mutually exclusive choropleths. Ownership can
-    // outlive a later user choice to enable CII while free; that stale marker
-    // must be consumed without overriding the newer CII preference.
-    if (key === 'resilienceScore' && restored.ciiChoropleth === true) continue;
-    if (LAYER_REGISTRY[key]?.premium !== 'locked' || restored[key] === true) continue;
-    restored[key] = true;
-    changed = true;
-  }
-  return changed ? restored : layers;
 }
 
 export const LAYER_SYNONYMS: Record<string, Array<keyof MapLayers>> = {

@@ -161,18 +161,6 @@ describe('credential-bearing headers force a private tier (#8400)', () => {
     const credentialReads: Array<{ file: string; header: string }> = [
       { file: 'api/_api-key.js', header: 'X-WorldMonitor-Key' },
       { file: 'api/_api-key.js', header: 'X-Api-Key' },
-      { file: 'api/widget-agent.ts', header: 'X-WorldMonitor-Key' },
-      { file: 'api/widget-agent.ts', header: 'X-Api-Key' },
-      { file: 'api/widget-agent.ts', header: 'X-Widget-Key' },
-      { file: 'api/widget-agent.ts', header: 'X-Pro-Key' },
-      // api/embed/{entitlement,session}.ts resolve through this helper;
-      // tests/embed-session.test.mts pins that delegation.
-      { file: 'server/_shared/embed-key.ts', header: 'X-WorldMonitor-Key' },
-      { file: 'server/_shared/embed-key.ts', header: 'X-Api-Key' },
-      { file: 'server/_shared/premium-check.ts', header: 'X-WorldMonitor-Key' },
-      { file: 'server/_shared/premium-check.ts', header: 'X-Api-Key' },
-      { file: 'server/worldmonitor/shipping/v2/webhook-shared.ts', header: 'X-WorldMonitor-Key' },
-      { file: 'server/worldmonitor/shipping/v2/webhook-shared.ts', header: 'X-Api-Key' },
     ];
 
     // Auth paths that resolve the same credentials through the shared

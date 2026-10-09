@@ -113,7 +113,6 @@ export function getWebMcpDashboardContext(
 export function getWebMcpMapLayerCatalogSnapshot(
   ctx: AppContext,
   variant: string,
-  hasPremium: boolean,
   tFn?: (key: string) => string,
   runtimeAvailability?: MapLayerRuntimeAvailability,
 ): MapLayerCatalogSnapshot {
@@ -136,7 +135,6 @@ export function getWebMcpMapLayerCatalogSnapshot(
       .map(([layer]) => layer),
     liveLayerKeys: Object.keys(ctx.mapLayers),
     ...(runtimeAvailability ? { runtimeAvailability } : {}),
-    hasPremium,
     deckGlActive: Boolean(ctx.map.isDeckGLActive?.()),
     ...(tFn ? { tFn } : {}),
   };
@@ -317,7 +315,7 @@ async function openUnifiedSettingsOverlay(
   ctx: AppContext,
   currentVariant: string,
   destination: 'settings' | 'alerts',
-  tab: 'settings' | 'notifications',
+  tab: 'settings',
 ): Promise<WebMcpNavigationResult> {
   const context = navigationContext(ctx, currentVariant);
   if (ctx.isDestroyed) return APP_DESTROYED_NAV_RESULT(context);
@@ -381,7 +379,14 @@ export async function applyWebMcpOpenAlerts(
       context,
     };
   }
-  return openUnifiedSettingsOverlay(ctx, currentVariant, 'alerts', 'notifications');
+  return {
+    ok: false,
+    status: 'denied',
+    destination: 'alerts',
+    reason: 'unavailable',
+    message: 'Remote account alerts are not available in the public dashboard.',
+    context,
+  };
 }
 
 export function listWebMcpMissionPresets(
@@ -389,9 +394,8 @@ export function listWebMcpMissionPresets(
   variant: string,
   query: MissionPresetCatalogQuery = {},
   options: {
-    hasPremium: boolean;
     targetCancellationSupported?: boolean;
-    isPanelEntitled?: (panelId: string) => boolean;
+    isPublicPanel?: (panelId: string) => boolean;
   },
 ): MissionPresetCatalogResult {
   if (ctx.isDestroyed) {
@@ -399,10 +403,9 @@ export function listWebMcpMissionPresets(
   }
   return listMissionPresetCatalog({
     variant,
-    hasPremium: options.hasPremium,
     activePresetId: loadStoredMissionPreset()?.id ?? null,
     targetCancellationSupported: options.targetCancellationSupported,
-    isPanelEntitled: options.isPanelEntitled,
+    isPublicPanel: options.isPublicPanel,
   }, query);
 }
 
@@ -411,8 +414,7 @@ export function applyWebMcpMissionPreset(
   variant: string,
   presetId: unknown,
   options: {
-    hasPremium: boolean;
-    isPanelEntitled?: (panelId: string) => boolean;
+    isPublicPanel?: (panelId: string) => boolean;
     apply: (id: MissionPresetId) => { changed: boolean; priorPresetId: string | null };
   },
 ): ApplyMissionPresetResult {
@@ -427,9 +429,8 @@ export function applyWebMcpMissionPreset(
 
   const decision = evaluateMissionPresetApply(presetId, {
     variant,
-    hasPremium: options.hasPremium,
     activePresetId: loadStoredMissionPreset()?.id ?? null,
-    isPanelEntitled: options.isPanelEntitled,
+    isPublicPanel: options.isPublicPanel,
   });
   if (!decision.ok || !decision.presetId) {
     return {

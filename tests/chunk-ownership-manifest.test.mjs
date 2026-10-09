@@ -1,14 +1,4 @@
-// Build-time chunk ownership manifest — classifier, emitted snippet, and the
-// contract between the build (vite.config.ts) and the runtime reader
-// (src/bootstrap/sentry-init.ts).
-//
-// Why this exists: `beforeSend` runs in the browser before sourcemapping, so a
-// hashed filename was the only ownership signal and it was read with a
-// hand-maintained name regex. That is unsound — Rollup names a chunk after its
-// seed module and then hoists shared modules into it, so on a real build
-// `i18n-<hash>.js` held 12/12 first-party modules while a SECOND, genuinely
-// pure chunk shared the name `i18n`. Two chunks, one name, opposite ownership:
-// no name rule can separate them, so the build stamps each chunk instead.
+// Build-time chunk ownership: classification, emitted registration, and retained Vite wiring.
 
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -26,7 +16,6 @@ import {
 } from '../shared/chunk-ownership.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const sentryInitSrc = readFileSync(resolve(here, '../src/bootstrap/sentry-init.ts'), 'utf8');
 const viteConfigSrc = readFileSync(resolve(here, '../vite.config.ts'), 'utf8');
 
 describe('chunkHasFirstPartyModule', () => {
@@ -132,14 +121,7 @@ describe('appendChunkOwnership', () => {
   });
 });
 
-describe('build <-> runtime contract', () => {
-  it('sentry-init reads exactly the global the manifest writes', () => {
-    assert.ok(
-      sentryInitSrc.includes(`globalThis.${CHUNK_OWNERSHIP_GLOBAL}`),
-      `sentry-init.ts must read globalThis.${CHUNK_OWNERSHIP_GLOBAL}`,
-    );
-  });
-
+describe('build integration', () => {
   it('the vite plugin is registered and CALLS the shared helpers', () => {
     assert.ok(viteConfigSrc.includes('firstPartyChunkManifestPlugin()'), 'plugin must be registered');
     // Assert the call sites, not the import line. An earlier version of this
@@ -150,10 +132,4 @@ describe('build <-> runtime contract', () => {
     assert.ok(viteConfigSrc.includes('chunkHasFirstPartyModule('), 'plugin must call the shared classifier');
   });
 
-  it('the runtime still keeps the name regex as an explicit fallback', () => {
-    // A chunk that has not evaluated yet is UNKNOWN, not vendor. Dropping the
-    // fallback would make an unregistered chunk suppressible and regress the
-    // dev/serve path, where no manifest exists at all.
-    assert.ok(sentryInitSrc.includes('const vendorChunk = /'), 'fallback regex must remain');
-  });
 });

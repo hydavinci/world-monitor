@@ -1,13 +1,10 @@
+import { denyRetiredRpc } from '../../../../api/_retired-routes.js';
 import type { IntelligenceServiceHandler } from '../../../../src/generated/server/worldmonitor/intelligence/v1/service_server';
 
 import { getRiskScores } from './get-risk-scores';
 import { getCountryRisk } from './get-country-risk';
 import { getPizzintStatus } from './get-pizzint-status';
-import { classifyEvent } from './classify-event';
-import { getCountryIntelBrief } from './get-country-intel-brief';
-import { getCountryCoverage } from './get-country-coverage';
 import { searchGdeltDocuments } from './search-gdelt-documents';
-import { deductSituation } from './deduct-situation';
 import { getCountryFacts } from './get-country-facts';
 import { listSecurityAdvisories } from './list-security-advisories';
 import { listSatellites } from './list-satellites';
@@ -21,29 +18,21 @@ import { searchSecFilings } from './search-sec-filings';
 import { listMaterialEvents } from './list-material-events';
 import { getGdeltTopicTimeline } from './get-gdelt-topic-timeline';
 import { listCrossSourceSignals } from './list-cross-source-signals';
-import { listMarketImplications } from './list-market-implications';
-import { listWsbTickers } from './list-wsb-tickers';
 import { getSocialVelocity } from './get-social-velocity';
 import { getCountryEnergyProfile } from './get-country-energy-profile';
 import { computeEnergyShockScenario } from './compute-energy-shock';
 import { getCountryPortActivity } from './get-country-port-activity';
 import { getChinaDecisionSignals } from './get-china-decision-signals';
-import { getRegionalSnapshot } from './get-regional-snapshot';
-import { getRegimeHistory } from './get-regime-history';
-import { getRegionalBrief } from './get-regional-brief';
-import { searchIntelHistory } from './search-intel-history';
-import { getIntelTimeline } from './get-intel-timeline';
-import { getSimilarEvents } from './get-similar-events';
 
 export const intelligenceHandler: IntelligenceServiceHandler = {
   getRiskScores,
   getCountryRisk,
   getPizzintStatus,
-  classifyEvent,
-  getCountryIntelBrief,
-  getCountryCoverage,
+  classifyEvent: denyRetiredRpc,
+  getCountryIntelBrief: denyRetiredRpc,
+  getCountryCoverage: denyRetiredRpc,
   searchGdeltDocuments,
-  deductSituation,
+  deductSituation: denyRetiredRpc,
   getCountryFacts,
   listSecurityAdvisories,
   listSatellites,
@@ -57,17 +46,17 @@ export const intelligenceHandler: IntelligenceServiceHandler = {
   listMaterialEvents,
   getGdeltTopicTimeline,
   listCrossSourceSignals,
-  listMarketImplications,
+  listMarketImplications: denyRetiredRpc,
   getSocialVelocity,
-  listWsbTickers,
+  listWsbTickers: denyRetiredRpc,
   getCountryEnergyProfile,
   computeEnergyShockScenario,
   getCountryPortActivity,
   getChinaDecisionSignals,
-  getRegionalSnapshot,
-  getRegimeHistory,
-  getRegionalBrief,
-  searchIntelHistory,
-  getIntelTimeline,
-  getSimilarEvents,
+  getRegionalSnapshot: denyRetiredRpc,
+  getRegimeHistory: denyRetiredRpc,
+  getRegionalBrief: denyRetiredRpc,
+  searchIntelHistory: denyRetiredRpc,
+  getIntelTimeline: denyRetiredRpc,
+  getSimilarEvents: denyRetiredRpc,
 };

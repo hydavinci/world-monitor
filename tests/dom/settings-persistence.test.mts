@@ -48,7 +48,7 @@ describe('settings file import', () => {
 
   it('round trips real exports including legacy optional fields and variant prefixes', async () => {
     localStorage.setItem('worldmonitor-monitors', JSON.stringify([monitor, { ...monitor, id: 'geo', name: 'Energy', lat: 25, lon: 55, futureField: true }]));
-    localStorage.setItem('worldmonitor-panels-tech', '{"future-panel":{"enabled":true}}');
+    localStorage.setItem('worldmonitor-panels-tech', '{"economic":{"name":"Economic","enabled":true,"priority":1}}');
     localStorage.setItem('wm-map-theme:carto', 'voyager');
     localStorage.setItem('worldmonitor-disabled-feeds-schema', '9');
     const before = snapshot();
@@ -85,7 +85,7 @@ describe('settings file import', () => {
   it('does not turn a storage failure into import success', async () => {
     const storage = localStorage;
     vi.stubGlobal('localStorage', { getItem: storage.getItem.bind(storage), removeItem: storage.removeItem.bind(storage), setItem() { throw new DOMException('Full', 'QuotaExceededError'); } });
-    await expect(importSettings(file({ 'worldmonitor-theme': 'light' }))).rejects.toThrow('Cannot persist');
+    await expect(importSettings(file({ 'worldmonitor-theme': 'light' }))).rejects.toThrow();
   });
 });
 

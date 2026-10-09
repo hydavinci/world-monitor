@@ -19,6 +19,7 @@ import {
   validateSitemapIndex,
 } from '../scripts/build-sitemap.mjs';
 import { gitFileLastmod } from '../scripts/build-crawlable-corpus.mjs';
+import { retiredRouteResponse } from '../api/_retired-routes.js';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const gitLocalEnvVars = execFileSync('git', ['rev-parse', '--local-env-vars'], {
@@ -44,18 +45,22 @@ function writeCorpusPage(publicDir, relativePath, { canonical, lastmod, robots =
 
 describe('root sitemap generator', () => {
   it('declares owned material-content sources without copying blog or docs inventories', () => {
-    assert.ok(STATIC_ROUTE_MANIFEST.length >= 9);
-
     const locations = STATIC_ROUTE_MANIFEST.map((route) => route.loc);
-    assert.ok(locations.includes(`${SITE_ORIGIN}/`));
-    assert.ok(locations.includes(`${SITE_ORIGIN}/dashboard`));
-    assert.ok(locations.includes(`${SITE_ORIGIN}/pro`));
-    assert.ok(locations.includes('https://worldmonitor.app/mcp'));
+    assert.deepEqual([...locations].sort(), [
+      `${SITE_ORIGIN}/`,
+      `${SITE_ORIGIN}/dashboard`,
+      'https://tech.worldmonitor.app/dashboard',
+      'https://finance.worldmonitor.app/dashboard',
+      'https://commodity.worldmonitor.app/dashboard',
+      'https://happy.worldmonitor.app/dashboard',
+      'https://energy.worldmonitor.app/dashboard',
+    ].sort());
     // Markdown twins and llms manifests are files, not pages: a sitemap entry
     // asks Google to index them, and it indexed none of the twelve (#8608).
-    assert.equal(MACHINE_READABLE_URLS.length, 12);
+    assert.equal(MACHINE_READABLE_URLS.length, 11);
     for (const url of MACHINE_READABLE_URLS) {
       assert.ok(!locations.includes(url), `${url} must stay out of the sitemap`);
+      assert.equal(retiredRouteResponse(new Request(url)), null, `${url} must not announce a retired route`);
     }
     assert.ok(locations.includes('https://tech.worldmonitor.app/dashboard'));
     assert.ok(locations.every((loc) => !new URL(loc).pathname.startsWith('/blog')));

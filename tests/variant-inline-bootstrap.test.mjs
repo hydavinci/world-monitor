@@ -16,6 +16,15 @@ const csp = vercelConfig.headers
   ?.find((header) => header.key === 'Content-Security-Policy')
   ?.value ?? '';
 const variantBootstrapScript = indexHtml.match(/<script data-wm-prepaint>([\s\S]*?)<\/script>/)?.[1];
+const mapBootstrapScript = indexHtml.match(/<script data-wm-map-prepaint>([\s\S]*?)<\/script>/)?.[1];
+const deploymentPolicies = [['vercel.json', csp]];
+for (const file of ['docker/nginx.conf', 'docker/nginx-security-headers.conf']) {
+  const config = readFileSync(resolve(__dirname, '..', file), 'utf-8');
+  const policy = [...config.matchAll(/add_header Content-Security-Policy "([^"]*)"/g)]
+    .map((match) => match[1])
+    .find((value) => value.includes("'strict-dynamic'"));
+  deploymentPolicies.push([file, policy ?? '']);
+}
 
 describe('variant inline bootstrap', () => {
   it('detects every public variant host before the app bundle loads', () => {
@@ -27,17 +36,20 @@ describe('variant inline bootstrap', () => {
     }
   });
 
-  it('allows the inline variant bootstrap through the CSP', () => {
-    assert.ok(variantBootstrapScript, 'index.html must include the inline variant bootstrap script');
-    assert.ok(
-      variantBootstrapScript.includes('worldmonitor-variant') && variantBootstrapScript.includes('document.documentElement.dataset.variant'),
-      'the marked pre-paint script must retain variant bootstrapping',
-    );
+  for (const [file, policy] of deploymentPolicies) {
+    for (const [name, script] of [['variant/theme', variantBootstrapScript], ['map', mapBootstrapScript]]) {
+      it(`allows the ${name} prepaint bootstrap through ${file} CSP`, () => {
+        assert.ok(script, `index.html must include the ${name} prepaint script`);
+        const scriptSources = policy.split(';')
+          .find((directive) => directive.trim().startsWith('script-src '))
+          ?.trim().split(/\s+/).slice(1) ?? [];
 
-    const hash = createHash('sha256').update(variantBootstrapScript).digest('base64');
-    assert.ok(
-      csp.includes(`'sha256-${hash}'`),
-      `Vercel Content-Security-Policy must include sha256-${hash} for the inline variant bootstrap script`,
-    );
-  });
+        const hash = createHash('sha256').update(script).digest('base64');
+        assert.ok(
+          scriptSources.includes(`'sha256-${hash}'`),
+          `${file} script-src must authorize sha256-${hash} for the ${name} prepaint script`,
+        );
+      });
+    }
+  }
 });

@@ -247,22 +247,6 @@ describe('Panel error state is cleared by direct-write content renders', () => {
     expect(hasErrorChip(panel)).toBe(true);
   });
 
-  it('a lock landing during the debounce window does not leak the payload', () => {
-    // The paywall half of the same seam: setContentImmediate is the one
-    // immediate write with no _locked bail, so a write queued just before
-    // showGatedCta/showLocked painted premium markup over the upgrade CTA and
-    // was never repainted, because every other writer bails while locked.
-    panel.setSafeContent(unsafeRawHtml('<div class="premium-payload">paid</div>', 'test fixture'));
-
-    panel.showLocked(['probe feature']);
-    expect(internals(panel).content.querySelector('.panel-locked-state')).not.toBeNull();
-
-    vi.advanceTimersByTime(500);
-
-    expect(internals(panel).content.querySelector('.premium-payload')).toBeNull();
-    expect(internals(panel).content.querySelector('.panel-locked-state')).not.toBeNull();
-  });
-
   it('the debounced commit itself refuses to write to a locked panel', () => {
     // Pins setContentImmediate's own _locked bail rather than the caller-side
     // cancel. Every lock path today repaints through replaceContent, which now
@@ -276,22 +260,6 @@ describe('Panel error state is cleared by direct-write content renders', () => {
     vi.advanceTimersByTime(500);
 
     expect(internals(panel).content.querySelector('.premium-payload')).toBeNull();
-  });
-
-  it('a locked panel is not painted over by either helper', () => {
-    // The helpers are advertised as twins of setSafeContent, which bails while
-    // locked. Without the same bail, a gated panel migrating onto them would
-    // paint premium content over its upgrade CTA.
-    panel.showLocked(['probe feature']);
-    expect(internals(panel).content.querySelector('.panel-locked-state')).not.toBeNull();
-
-    (panel as unknown as { setContentNodes: (...c: unknown[]) => void })
-      .setContentNodes(h('div', { className: 'premium-payload' }, 'paid data'));
-    (panel as unknown as { setTrustedContent: (html: unknown) => void })
-      .setTrustedContent(trustedHtml('<div class="premium-payload">paid data</div>', 'test fixture'));
-
-    expect(internals(panel).content.querySelector('.premium-payload')).toBeNull();
-    expect(internals(panel).content.querySelector('.panel-locked-state')).not.toBeNull();
   });
 });
 

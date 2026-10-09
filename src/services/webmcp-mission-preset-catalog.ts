@@ -58,7 +58,6 @@ export interface MissionPresetCatalogItem {
 
 export interface MissionPresetCatalogLiveState {
   variant: string;
-  hasPremium: boolean;
   activePresetId: string | null;
   /**
    * When false, presets that would otherwise be available stay listed but are
@@ -70,7 +69,7 @@ export interface MissionPresetCatalogLiveState {
    * Optional panel entitlement probe. When omitted, bundled presets stay
    * entitled (matching visible mission control, which has no Pro gate).
    */
-  isPanelEntitled?: (panelId: string) => boolean;
+  isPublicPanel?: (panelId: string) => boolean;
 }
 
 export interface MissionPresetCatalogResult {
@@ -140,12 +139,11 @@ function resolveEntitled(
   panelIds: string[],
   live: MissionPresetCatalogLiveState,
 ): boolean {
-  if (live.hasPremium) return true;
-  if (!live.isPanelEntitled) return true;
+  if (!live.isPublicPanel) return true;
   // A free session stays entitled when every intended panel is individually
   // entitled. Bundled presets avoid locked-only workspaces on web, so this
   // normally stays true and mirrors the visible mission control.
-  return panelIds.every((panelId) => live.isPanelEntitled!(panelId));
+  return panelIds.every((panelId) => live.isPublicPanel!(panelId));
 }
 
 function unavailableReason(item: {

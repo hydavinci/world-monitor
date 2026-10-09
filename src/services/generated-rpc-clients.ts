@@ -19,11 +19,7 @@ import type { PositiveEventsServiceClient as PositiveEventsServiceClientInstance
 import type { PredictionServiceClient as PredictionServiceClientInstance } from '@/generated/client/worldmonitor/prediction/v1/service_client';
 import type { RadiationServiceClient as RadiationServiceClientInstance } from '@/generated/client/worldmonitor/radiation/v1/service_client';
 import type { ResearchServiceClient as ResearchServiceClientInstance } from '@/generated/client/worldmonitor/research/v1/service_client';
-import type { ResilienceServiceClient as ResilienceServiceClientInstance } from '@/generated/client/worldmonitor/resilience/v1/service_client';
-import type { ScorecardServiceClient as ScorecardServiceClientInstance } from '@/generated/client/worldmonitor/scorecard/v1/service_client';
-import type { SanctionsServiceClient as SanctionsServiceClientInstance } from '@/generated/client/worldmonitor/sanctions/v1/service_client';
 import type { SafetyServiceClient as SafetyServiceClientInstance } from '@/generated/client/worldmonitor/safety/v1/service_client';
-import type { ScenarioServiceClient as ScenarioServiceClientInstance } from '@/generated/client/worldmonitor/scenario/v1/service_client';
 import type { SeismologyServiceClient as SeismologyServiceClientInstance } from '@/generated/client/worldmonitor/seismology/v1/service_client';
 import type { SupplyChainServiceClient as SupplyChainServiceClientInstance } from '@/generated/client/worldmonitor/supply_chain/v1/service_client';
 import type { ThermalServiceClient as ThermalServiceClientInstance } from '@/generated/client/worldmonitor/thermal/v1/service_client';
@@ -171,29 +167,9 @@ export const ResearchServiceClient = createLazyRpcClientConstructor<ResearchServ
   return module.ResearchServiceClient;
 });
 
-export const ResilienceServiceClient = createLazyRpcClientConstructor<ResilienceServiceClientInstance>(async () => {
-  const module = await import('@/generated/client/worldmonitor/resilience/v1/service_client');
-  return module.ResilienceServiceClient;
-});
-
-export const ScorecardServiceClient = createLazyRpcClientConstructor<ScorecardServiceClientInstance>(async () => {
-  const module = await import('@/generated/client/worldmonitor/scorecard/v1/service_client');
-  return module.ScorecardServiceClient;
-});
-
-export const SanctionsServiceClient = createLazyRpcClientConstructor<SanctionsServiceClientInstance>(async () => {
-  const module = await import('@/generated/client/worldmonitor/sanctions/v1/service_client');
-  return module.SanctionsServiceClient;
-});
-
 export const SafetyServiceClient = createLazyRpcClientConstructor<SafetyServiceClientInstance>(async () => {
   const module = await import('@/generated/client/worldmonitor/safety/v1/service_client');
   return module.SafetyServiceClient;
-});
-
-export const ScenarioServiceClient = createLazyRpcClientConstructor<ScenarioServiceClientInstance>(async () => {
-  const module = await import('@/generated/client/worldmonitor/scenario/v1/service_client');
-  return module.ScenarioServiceClient;
 });
 
 export const SeismologyServiceClient = createLazyRpcClientConstructor<SeismologyServiceClientInstance>(async () => {

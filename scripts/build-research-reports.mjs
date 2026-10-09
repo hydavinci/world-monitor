@@ -15,12 +15,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const UMAMI_SCRIPT_TAG =
-  '<script async defer src="https://abacus.worldmonitor.app/script.js" '
-  + 'data-website-id="e8800335-16bc-4241-a133-0eb28c07c832" '
-  + 'data-domains="worldmonitor.app,www.worldmonitor.app,happy.worldmonitor.app" '
-  + 'nonce="wm-static-bootstrap"></script>';
-
 const DATASET_LICENSE = {
   '@type': 'CreativeWork',
   name: 'World Monitor Terms of Service (27 July 2026)',
@@ -876,7 +870,7 @@ ${sectionsHtml}
 ${notCoveredSection}
 ${justification}
       <p class="source" data-snapshot-source="${escapeHtml(report.snapshotPath)}">Snapshot: World Monitor chokepoint transit snapshot, retrieved ${escapeHtml(String(snapshot.capturedAt).slice(0, 10))}. Attribution: ${escapeHtml(snapshot.source.attribution)} Methodology: <a href="/docs/methodology/chokepoints">chokepoint monitoring methodology</a>.</p>
-      ${UMAMI_SCRIPT_TAG}`;
+      `;
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -970,7 +964,7 @@ ${reports.map((report) => `        <a class="card" href="/research/${escapeHtml(
       <h2>How these reports work</h2>
       <p>Each report is generated deterministically from a versioned, committed data snapshot — no live fetches at build time — so every published figure can be recomputed from the downloadable data beside it. Observed data, derived analysis, and third-party context are labelled separately and never blended into a combined score. Missing or unverifiable data is declared, not zero-filled.</p>
       <p>Editions are append-only: corrections bump the version and modified date. Report families expand only when the pilot demonstrates real demand, per the <a href="/docs/methodology/chokepoints">methodology</a> and measurement guardrails.</p>
-      ${UMAMI_SCRIPT_TAG}`;
+      `;
   const html = pageDocument({
     baseUrl,
     path,

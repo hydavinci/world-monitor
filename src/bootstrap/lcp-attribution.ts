@@ -182,11 +182,6 @@ function closestAttributionLabel(element: Element): string {
   if (element.closest('#mapSection')) return 'map-section';
   if (element.closest('.map-renderer-shell')) return 'map-renderer-shell';
   if (element.closest('.panel')) return 'panel';
-  // Checked after .panel so a panel nested in the footer still reads as a
-  // panel. #7267 made the footer's digest coverage row the mobile LCP element
-  // and this function had no name for it, so it reported '' -- indistinguishable
-  // from "outside every known container", which the e2e guard accepts.
-  if (element.closest('.site-footer')) return 'site-footer';
   return '';
 }
 

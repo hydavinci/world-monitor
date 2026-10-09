@@ -2,6 +2,7 @@ import * as d3 from 'd3';
 import * as topojson from 'topojson-client';
 import { escapeHtml } from '@/utils/sanitize';
 import { getCSSColor } from '@/utils';
+import { getMapMarkerSvg, type MapMarkerIconKind } from '@/config/map-marker-icons';
 import type { Topology, GeometryCollection } from 'topojson-specification';
 import type { Feature, Geometry } from 'geojson';
 import type { MapLayers, Hotspot, NewsItem, NewsLocationMarker, InternetOutage, RelatedAsset, AssetType, AisDisruptionEvent, AisDensityZone, CableAdvisory, RepairShip, SocialUnrestEvent, MilitaryFlight, MilitaryVessel, MilitaryFlightCluster, MilitaryVesselCluster, NaturalEvent, CyberThreat, CableHealthRecord, MilitaryBase } from '@/types';
@@ -936,29 +937,31 @@ export class MapComponent {
   private createLegend(): HTMLElement {
     const legend = document.createElement('div');
     legend.className = 'map-legend';
+    const icon = (kind: MapMarkerIconKind): string =>
+      getMapMarkerSvg(kind).replace('width="32" height="32"', 'width="12" height="12"');
 
     if (SITE_VARIANT === 'tech') {
       // Tech variant legend
       setTrustedHtml(legend, trustedHtml(`
-        <div class="map-legend-item"><span class="legend-dot" style="background:#8b5cf6"></span>${escapeHtml(t('components.deckgl.layers.techHQs').toUpperCase())}</div>
-        <div class="map-legend-item"><span class="legend-dot" style="background:#06b6d4"></span>${escapeHtml(t('components.deckgl.layers.startupHubs').toUpperCase())}</div>
-        <div class="map-legend-item"><span class="legend-dot" style="background:#f59e0b"></span>${escapeHtml(t('components.deckgl.layers.cloudRegions').toUpperCase())}</div>
-        <div class="map-legend-item"><span class="map-legend-icon" style="color:#a855f7">📅</span>${escapeHtml(t('components.deckgl.layers.techEvents').toUpperCase())}</div>
-        <div class="map-legend-item"><span class="map-legend-icon" style="color:#4ecdc4">💾</span>${escapeHtml(t('components.deckgl.layers.aiDataCenters').toUpperCase())}</div>
+        <div class="map-legend-item"><span class="map-legend-icon" style="color:#8b5cf6">🏢</span>${escapeHtml(t('components.deckgl.layers.techHQs').toUpperCase())}</div>
+        <div class="map-legend-item"><span class="map-legend-icon" style="color:#06b6d4">🚀</span>${escapeHtml(t('components.deckgl.layers.startupHubs').toUpperCase())}</div>
+        <div class="map-legend-item"><span class="map-legend-icon" style="color:#f59e0b">${icon('cloud-region')}</span>${escapeHtml(t('components.deckgl.layers.cloudRegions').toUpperCase())}</div>
+        <div class="map-legend-item"><span class="map-legend-icon" style="color:#a855f7">${icon('calendar')}</span>${escapeHtml(t('components.deckgl.layers.techEvents').toUpperCase())}</div>
+        <div class="map-legend-item"><span class="map-legend-icon" style="color:#4ecdc4">🖥️</span>${escapeHtml(t('components.deckgl.layers.aiDataCenters').toUpperCase())}</div>
       `, "legacy direct innerHTML migration"));
     } else if (SITE_VARIANT === 'happy') {
       // Happy variant legend — natural events only
       setTrustedHtml(legend, trustedHtml(`
-        <div class="map-legend-item"><span class="map-legend-icon earthquake">●</span>${escapeHtml(t('components.deckgl.layers.naturalEvents').toUpperCase())}</div>
+        <div class="map-legend-item"><span class="map-legend-icon earthquake">${icon('earthquake')}</span>${escapeHtml(t('components.deckgl.layers.naturalEvents').toUpperCase())}</div>
       `, "legacy direct innerHTML migration"));
     } else {
       // Geopolitical variant legend
       setTrustedHtml(legend, trustedHtml(`
-        <div class="map-legend-item"><span class="legend-dot high"></span>${escapeHtml((t('popups.hotspot.levels.high') ?? 'HIGH').toUpperCase())}</div>
-        <div class="map-legend-item"><span class="legend-dot elevated"></span>${escapeHtml((t('popups.hotspot.levels.elevated') ?? 'ELEVATED').toUpperCase())}</div>
-        <div class="map-legend-item"><span class="legend-dot low"></span>${escapeHtml((t('popups.monitoring') ?? 'MONITORING').toUpperCase())}</div>
-        <div class="map-legend-item"><span class="map-legend-icon conflict">⚔</span>${escapeHtml(t('modals.search.types.conflict').toUpperCase())}</div>
-        <div class="map-legend-item"><span class="map-legend-icon earthquake">●</span>${escapeHtml(t('modals.search.types.earthquake').toUpperCase())}</div>
+        <div class="map-legend-item"><span class="map-legend-icon high" style="color:var(--semantic-critical)">${icon('regional-alert')}</span>${escapeHtml((t('popups.hotspot.levels.high') ?? 'HIGH').toUpperCase())}</div>
+        <div class="map-legend-item"><span class="map-legend-icon elevated" style="color:var(--semantic-elevated)">${icon('regional-alert')}</span>${escapeHtml((t('popups.hotspot.levels.elevated') ?? 'ELEVATED').toUpperCase())}</div>
+        <div class="map-legend-item"><span class="map-legend-icon low" style="color:var(--status-live)">${icon('regional-alert')}</span>${escapeHtml((t('popups.monitoring') ?? 'MONITORING').toUpperCase())}</div>
+        <div class="map-legend-item"><span class="map-legend-icon conflict">${icon('conflict')}</span>${escapeHtml(t('modals.search.types.conflict').toUpperCase())}</div>
+        <div class="map-legend-item"><span class="map-legend-icon earthquake">${icon('earthquake')}</span>${escapeHtml(t('modals.search.types.earthquake').toUpperCase())}</div>
         <div class="map-legend-item"><span class="map-legend-icon apt">⚠</span>APT</div>
       `, "legacy direct innerHTML migration"));
     }
@@ -1294,6 +1297,20 @@ export class MapComponent {
 
   private appendOverlay(node: Node): void {
     (this.overlayAppendTarget ?? this.overlays).appendChild(node);
+  }
+
+  private setDotPictogram(marker: HTMLElement, kind: MapMarkerIconKind, color: string): SVGSVGElement {
+    const head = document.createElement('span');
+    head.style.cssText = 'position:absolute;inset:0;display:block;pointer-events:none';
+    setTrustedHtml(head, trustedHtml(getMapMarkerSvg(kind), 'built-in map marker pictogram'));
+    const svg = head.querySelector('svg')!;
+    svg.style.cssText = 'display:block;width:100%;height:100%';
+    marker.style.color = color;
+    marker.style.background = 'transparent';
+    marker.style.borderColor = 'transparent';
+    marker.style.boxShadow = 'none';
+    marker.prepend(head);
+    return svg;
   }
 
   public render(): void {
@@ -2200,7 +2217,8 @@ export class MapComponent {
       marker.style.cssText = 'position:absolute;width:24px;height:24px;border:0;padding:0;border-radius:50%;transform:translate(-50%,-50%) scale(var(--marker-scale,1));transform-origin:center;z-index:53;pointer-events:auto;cursor:pointer';
       marker.style.left = `${pos[0]}px`;
       marker.style.top = `${pos[1]}px`;
-      marker.style.background = `radial-gradient(circle, ${getThreatColor(item.threatLevel)} 4px, transparent 4px)`;
+      const newsIcon = this.setDotPictogram(marker, 'news', getThreatColor(item.threatLevel));
+      newsIcon.style.cssText = 'position:absolute;left:50%;top:50%;width:8px;height:8px;transform:translate(-50%,-50%)';
       marker.title = item.title;
       marker.setAttribute('aria-label', item.title);
       marker.addEventListener('click', (event) => {
@@ -2267,6 +2285,7 @@ export class MapComponent {
         div.style.left = `${pos[0]}px`;
         div.style.top = `${pos[1]}px`;
         div.title = `${irradiator.city}, ${irradiator.country}`;
+        this.setDotPictogram(div, 'irradiator', getCSSColor('--status-live'));
 
         div.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -2331,8 +2350,8 @@ export class MapComponent {
         div.style.top = `${pos[1]}px`;
         div.style.width = `${size}px`;
         div.style.height = `${size}px`;
-        div.style.background = color;
         div.title = `${ev.title} (${ev.category})`;
+        this.setDotPictogram(div, 'conflict', color);
 
         div.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -2364,6 +2383,9 @@ export class MapComponent {
         setTrustedHtml(div, trustedHtml(`
           <div class="hotspot-marker ${escapeHtml(spot.level || 'low')}"></div>
         `, "legacy direct innerHTML migration"));
+        const hotspotHead = div.querySelector<HTMLElement>('.hotspot-marker')!;
+        hotspotHead.style.position = 'relative';
+        this.setDotPictogram(hotspotHead, 'regional-alert', getCSSColor(spot.level === 'high' ? '--red' : '--yellow'));
 
         div.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -2440,6 +2462,7 @@ export class MapComponent {
         div.style.width = `${size}px`;
         div.style.height = `${size}px`;
         div.title = `M${eq.magnitude.toFixed(1)} - ${eq.place}`;
+        this.setDotPictogram(div, 'earthquake', 'rgba(255,165,0,0.6)');
 
         const label = document.createElement('div');
         label.className = 'earthquake-label';
@@ -2542,10 +2565,10 @@ export class MapComponent {
         div.style.width = '14px';
         div.style.height = '14px';
         div.style.borderRadius = '50%';
-        div.style.background = color;
         div.style.border = '2px solid rgba(255,255,255,0.75)';
         div.style.boxShadow = `0 0 10px ${color}88`;
         div.title = `${observation.location}: ${observation.value.toFixed(1)} ${observation.unit}`;
+        this.setDotPictogram(div, 'radiation', color);
 
         div.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -2835,8 +2858,9 @@ export class MapComponent {
         const icon = document.createElement('div');
         icon.className = 'cloud-region-icon';
         // Provider-specific icons
-        const icons: Record<string, string> = { aws: '🟠', gcp: '🔵', azure: '🟣', cloudflare: '🟡' };
-        icon.textContent = icons[region.provider] || '☁️';
+        const colors: Record<string, string> = { aws: '#ff9900', gcp: '#4285f4', azure: '#a855f7', cloudflare: '#ffd700' };
+        icon.style.cssText = 'position:relative;width:1em;height:1em';
+        this.setDotPictogram(icon, 'cloud-region', colors[region.provider] || getCSSColor('--accent'));
         div.appendChild(icon);
 
         if (this.state.zoom >= 3) {
@@ -3003,6 +3027,8 @@ export class MapComponent {
           badge.textContent = String(cluster.items.length);
           div.appendChild(badge);
           div.title = cluster.items.map(e => e.title).join(', ');
+        } else {
+          this.setDotPictogram(div, 'calendar', getCSSColor(hasUpcomingSoon ? '--yellow' : '--semantic-info'));
         }
 
         div.addEventListener('click', (e) => {
@@ -3670,8 +3696,8 @@ export class MapComponent {
         dot.style.top = `${pos[1]}px`;
         dot.style.width = `${size}px`;
         dot.style.height = `${size}px`;
-        dot.style.backgroundColor = color;
         dot.title = `${fire.region} — ${Math.round(fire.brightness)}K, ${fire.frp}MW`;
+        this.setDotPictogram(dot, 'fire', color);
 
         this.appendOverlay(dot);
       });
@@ -3703,6 +3729,7 @@ export class MapComponent {
         dot.style.opacity = '0.75';
         dot.style.cursor = 'pointer';
         dot.title = isCluster ? `${(cam as WebcamCluster).count} webcams` : ((cam as WebcamEntry).title || 'Webcam');
+        if (!isCluster) this.setDotPictogram(dot, 'camera', color);
         dot.addEventListener('click', (e) => {
           e.stopPropagation();
           if (isCluster) {
@@ -3771,6 +3798,8 @@ export class MapComponent {
         badge.className = 'conflict-event-count';
         badge.textContent = String(cluster.items.length);
         div.appendChild(badge);
+      } else {
+        this.setDotPictogram(div, 'conflict', fatalities > 0 ? 'rgba(255,20,20,0.9)' : 'rgba(255,68,68,0.78)');
       }
 
       this.appendOverlay(div);
@@ -4343,11 +4372,11 @@ export class MapComponent {
     if (isEnabled && isAsyncLayer) {
       // Async layers: start in loading state, will be set to active when data arrives
       btn?.classList.remove('active');
-      btn?.classList.add('loading');
+      btn?.classList.add('layer-loading');
     } else {
       // Static layers or disabling: toggle active immediately
       btn?.classList.toggle('active', isEnabled);
-      btn?.classList.remove('loading');
+      btn?.classList.remove('layer-loading');
     }
 
     this.onLayerChange?.(layer, this.state.layers[layer], source);
@@ -4377,7 +4406,7 @@ export class MapComponent {
   public setLayerLoading(layer: keyof MapLayers, loading: boolean): void {
     const btn = this.container.querySelector(`.layer-toggle[data-layer="${layer}"]`);
     if (btn) {
-      btn.classList.toggle('loading', loading);
+      btn.classList.toggle('layer-loading', loading);
     }
   }
 
@@ -4385,7 +4414,7 @@ export class MapComponent {
     const btn = this.container.querySelector(`.layer-toggle[data-layer="${layer}"]`);
     if (!btn) return;
 
-    btn.classList.remove('loading');
+    btn.classList.remove('layer-loading');
     if (this.state.layers[layer] && hasData) {
       btn.classList.add('active');
     } else {

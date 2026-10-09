@@ -1,35 +1,32 @@
-import type { ConflictZone, Hotspot, NewsItem, MilitaryBase, StrategicWaterway, APTGroup, NuclearFacility, EconomicCenter, GammaIrradiator, Pipeline, UnderseaCable, CableAdvisory, RepairShip, InternetOutage, AIDataCenter, AisDisruptionEvent, SocialUnrestEvent, MilitaryFlight, MilitaryVessel, MilitaryFlightCluster, MilitaryVesselCluster, NaturalEvent, Port, Spaceport, CriticalMineralProject, CyberThreat } from '@/types';
-import type { TradeRouteSegment } from '@/config/trade-routes';
-import type { AirportDelayAlert, PositionSample } from '@/services/aviation';
-import type { Earthquake } from '@/services/earthquakes';
-import type { WeatherAlert } from '@/services/weather';
-import type { RadiationObservation } from '@/services/radiation';
 import { UNDERSEA_CABLES } from '@/config/geo-map';
-import type { StartupHub, Accelerator, TechHQ, CloudRegion } from '@/config/tech-geo';
-import type { TechHubActivity } from '@/services/tech-activity';
-import type { GeoHubActivity } from '@/services/geo-activity';
-import { escapeHtml, sanitizeUrl } from '@/utils/sanitize';
-import { isMobileDevice, getCSSColor } from '@/utils';
-import { TransitChart } from '@/utils/transit-chart';
-import { HS2RingChart } from '@/utils/hs2-ring-chart';
-import type { GetChokepointStatusResponse, TransitDayCount } from '@/services/supply-chain';
-import { fetchChokepointHistory } from '@/services/supply-chain';
-import { t } from '@/services/i18n';
-import { fetchHotspotContext, formatArticleDate, extractDomain, type GdeltArticle } from '@/services/gdelt-intel';
-import { getWingbitsLiveFlight } from '@/services/wingbits';
-import { isFeatureAvailable } from '@/services/runtime-config';
-import { getNaturalEventIcon } from '@/services/eonet';
-import { getHotspotEscalation, getEscalationChange24h } from '@/services/hotspot-escalation';
+import type { Accelerator,CloudRegion,StartupHub,TechHQ } from '@/config/tech-geo';
+import type { TradeRouteSegment } from '@/config/trade-routes';
+
+import type { AirportDelayAlert,PositionSample } from '@/services/aviation';
 import { getCableHealthRecord } from '@/services/cable-health';
 import { nameToCountryCode } from '@/services/country-geometry';
+import type { Earthquake } from '@/services/earthquakes';
+import { getNaturalEventIcon } from '@/services/eonet';
+import { extractDomain,fetchHotspotContext,formatArticleDate,type GdeltArticle } from '@/services/gdelt-intel';
+import type { GeoHubActivity } from '@/services/geo-activity';
+import { getEscalationChange24h,getHotspotEscalation } from '@/services/hotspot-escalation';
+import { t } from '@/services/i18n';
+import type { RadiationObservation } from '@/services/radiation';
+import { isFeatureAvailable } from '@/services/runtime-config';
+import type { GetChokepointStatusResponse } from '@/services/supply-chain';
+import type { TechHubActivity } from '@/services/tech-activity';
+import type { WeatherAlert } from '@/services/weather';
+import { getWingbitsLiveFlight } from '@/services/wingbits';
+import type { AIDataCenter,AisDisruptionEvent,APTGroup,CableAdvisory,ConflictZone,CriticalMineralProject,CyberThreat,EconomicCenter,GammaIrradiator,Hotspot,InternetOutage,MilitaryBase,MilitaryFlight,MilitaryFlightCluster,MilitaryVessel,MilitaryVesselCluster,NaturalEvent,NewsItem,NuclearFacility,Pipeline,Port,RepairShip,SocialUnrestEvent,Spaceport,StrategicWaterway,UnderseaCable } from '@/types';
+import { getCSSColor,isMobileDevice } from '@/utils';
+import { setTrustedHtml,trustedHtml } from '@/utils/dom-utils';
+import { HS2RingChart } from '@/utils/hs2-ring-chart';
+import { overlayHistory,type OverlayCloseOrigin,type OverlayOpenHandle } from '@/utils/overlay-history';
+import { escapeHtml,sanitizeUrl } from '@/utils/sanitize';
 import { sparkline } from '@/utils/sparkline';
+import { TransitChart } from '@/utils/transit-chart';
 import { vesselTypeLabel } from '@/utils/vessel-type-label';
-import { getAuthState } from '@/services/auth-state';
-import { hasPremiumAccess } from '@/services/panel-gating';
-import { trackGateHit } from '@/services/analytics';
 import { renderPopupSourceLinks } from './map-popup-source-links';
-import { overlayHistory, type OverlayCloseOrigin, type OverlayOpenHandle } from '@/utils/overlay-history';
-import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 
 
 // ── Static HS2 sector breakdown per chokepoint ────────────────────────────────
@@ -247,10 +244,6 @@ export class MapPopup {
   private repairShips: RepairShip[] = [];
   private chokepointData: GetChokepointStatusResponse | null = null;
   private transitChart: TransitChart | null = null;
-  // Session-scoped cache: history is now lazy-loaded via GetChokepointHistory
-  // when a waterway popup opens (main status RPC omits it to keep payloads small).
-  private static historyCache = new Map<string, TransitDayCount[]>();
-  private static historyInflight = new Set<string>();
   private isMobileSheet = false;
   private sheetTouchStartY: number | null = null;
   private sheetCurrentOffset = 0;
@@ -318,52 +311,12 @@ export class MapPopup {
       const cp = this.chokepointData?.chokepoints?.find(
         c => c.id === waterway.chokepointId,
       );
-      const chartEl = this.popup.querySelector<HTMLElement>('[data-transit-chart]');
       const cpId = cp?.id ?? '';
-      const isPro = hasPremiumAccess(getAuthState());
-
-      if (chartEl && cpId && isPro) {
-        const cached = MapPopup.historyCache.get(cpId);
-        if (cached && cached.length) {
-          this.transitChart = new TransitChart();
-          this.transitChart.mount(chartEl, cached);
-        } else if (!MapPopup.historyInflight.has(cpId)) {
-          // We cache ONLY non-empty successful responses. An empty-array result
-          // or error is not cached, so re-opening the popup retries. Caching []
-          // would poison the chokepoint for the session — empty-array is
-          // truthy in JS, so `cached && cached.length` is false AND
-          // `!cached` is also false → neither branch fires, popup stuck on
-          // "Loading…". The /get-chokepoint-history gateway tier is "slow"
-          // (5-min CF edge cache) so retries stay cheap.
-          MapPopup.historyInflight.add(cpId);
-          void fetchChokepointHistory(cpId).then(resp => {
-            MapPopup.historyInflight.delete(cpId);
-            // Re-query keyed by cpId — if the user opened a different popup
-            // since this fetch started, the live [data-transit-chart] element
-            // belongs to the NEW chokepoint. Matching by id prevents mounting
-            // A's history into B's chart container.
-            const liveEl = this.popup?.querySelector<HTMLElement>(`[data-transit-chart-id="${cpId}"]`);
-            if (!liveEl) return;
-            if (resp.history.length) {
-              MapPopup.historyCache.set(cpId, resp.history);
-              liveEl.textContent = '';
-              this.transitChart = new TransitChart();
-              this.transitChart.mount(liveEl, resp.history);
-            } else {
-              liveEl.textContent = t('components.supplyChain.historyUnavailable') || 'History unavailable';
-            }
-          }).catch(() => {
-            MapPopup.historyInflight.delete(cpId);
-            const liveEl = this.popup?.querySelector<HTMLElement>(`[data-transit-chart-id="${cpId}"]`);
-            if (liveEl) liveEl.textContent = t('components.supplyChain.historyUnavailable') || 'History unavailable';
-          });
-        }
-      }
+      const isPro = false;
       // Track PRO gate impression for transit chart — we always render the gate
       // for non-PRO users on chokepoints (history is a PRO feature); this
       // doesn't depend on whether history has resolved.
       if (cpId && !isPro) {
-        trackGateHit('chokepoint-transit-chart');
       }
 
       // Mount HS2 sector ring chart for PRO users
@@ -372,8 +325,7 @@ export class MapPopup {
         const ringEl = this.popup.querySelector<HTMLElement>(`[data-hs2-ring="${waterway.chokepointId}"]`);
         if (ringEl) {
           new HS2RingChart().mount(ringEl, sectors);
-        } else if (!hasPremiumAccess(getAuthState())) {
-          trackGateHit('chokepoint-sector-ring');
+        } else{
         }
       }
     }
@@ -1535,7 +1487,7 @@ export class MapPopup {
     // available — a zero-state fill (partial portwatch) means the per-id
     // history key is also empty, so there's nothing to fetch.
     const hasChart = !!cp && cp.transitSummary?.dataAvailable !== false;
-    const isPro = hasPremiumAccess(getAuthState());
+    const isPro = false;
     const sectors = CHOKEPOINT_HS2_SECTORS[waterway.chokepointId];
 
     // Sector mix: only show the compact SVG ring for free users (PRO users get the full HS2RingChart below)
@@ -1546,10 +1498,7 @@ export class MapPopup {
 
     // Transit chart is PRO-gated (real-time PortWatch data)
     let chartSection = '';
-    if (hasChart) {
-      if (isPro) {
-        chartSection = `<div data-transit-chart="${escapeHtml(waterway.name)}" data-transit-chart-id="${escapeHtml(cp?.id ?? '')}" style="margin-top:10px;min-height:200px;display:flex;align-items:center;justify-content:center;color:var(--text-dim,#888);font-size:calc(12px * var(--wm-panel-effective-scale, 1))">${t('components.supplyChain.loadingHistory') || 'Loading transit history\u2026'}</div>`;
-      } else {
+    if (hasChart) {{
         chartSection = `
           <div class="sector-pro-gate" data-gate="chokepoint-transit-chart" style="position:relative;overflow:hidden;border-radius:6px;margin-top:10px;min-height:120px;background:var(--surface-elevated, #111)">
             <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px">
@@ -1563,12 +1512,7 @@ export class MapPopup {
 
     // Sector exposure ring is PRO-gated (canvas donut with legend)
     let ringSection = '';
-    if (sectors) {
-      if (isPro) {
-        ringSection = `
-          <div class="popup-section-title" style="margin-top:10px;font-size:calc(10px * var(--wm-panel-effective-scale, 1));text-transform:uppercase;opacity:.6;letter-spacing:.06em">Sector Exposure</div>
-          <div data-hs2-ring="${escapeHtml(waterway.chokepointId)}" class="popup-hs2-ring-container"></div>`;
-      } else {
+    if (sectors) {{
         ringSection = `
           <div class="sector-pro-gate" data-gate="chokepoint-sector-ring" style="position:relative;overflow:hidden;border-radius:6px;margin-top:10px;min-height:80px;background:var(--surface-elevated, #111)">
             <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px">

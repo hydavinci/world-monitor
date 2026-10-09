@@ -1,27 +1,10 @@
 // @ts-check
-// Per-account REST rate-limit layer for #3199 (Phase 1). Two limit types:
-//
-//   1. Per-minute burst  — infra/abuse protection. Hard limit; the gateway
-//      returns 429 on violation (in enforce mode). Value from the catalog
-//      `apiRateLimit` (user keys) or a hardcoded constant (enterprise).
-//   2. Daily usage meter — the commercial "included allowance". Hard-rejects
-//      (429 in enforce mode) at the sold allowance (#4635; was a 10× ceiling).
-//
-// This module is decision-only: it never builds a Response and never reads the
-// enforce flag — callers own enforce-vs-shadow and Response construction. That keeps
-// the burst/meter math unit-testable in isolation (inject the pipeline + date;
-// stub this module's decisions in the gateway-wiring test).
-//
-// Patterns cloned: api/mcp/quota.ts (INCR-first meter + DECR rollback),
-// api/_rate-limit.js (lazy Upstash singleton, NODE_TEST_CONTEXT retry skip,
-// X-RateLimit-* header shape), server/_shared/pro-mcp-token.ts UTC helpers.
+// Operator burst admission and shared rate-limit response headers.
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 import { getKeyPrefix } from './_upstash-json.js';
 
-/** Hardcoded per-minute burst for enterprise env keys — they carry no Convex
- *  entitlement (gateway.ts:1006-1007 skips checkEntitlement), so this cannot
- *  be sourced from `features.apiRateLimit`. Mirrors ENTERPRISE_FEATURES. */
+/** Configured operator-key per-minute burst ceiling. */
 export const ENTERPRISE_API_RATE_LIMIT = 1000;
 // One Redis client shared across every per-minute Ratelimit instance; one
 // Ratelimit per distinct numeric limit (60, 300, 1000) cached in the Map so two
@@ -106,87 +89,6 @@ export async function checkBurst(perMinute, identity) {
     return unavailableBurst('error');
   }
 }
-/** Plain (un-prefixed) daily-meter key — `runRedisPipeline` applies the
- *  deployment/env prefix. UTC calendar day so the daily meter resets at midnight.
- *  `date` is injectable for deterministic tests. */
-/** @param {string} userId
- * @param {Date} [date]
- */
-export function apiKeyDailyKey(userId, date) {
-  if (!userId)
-    return '';
-  const d = date ?? new Date();
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  return `rl:apikey:day:${userId}:${yyyy}-${mm}-${dd}`;
-}
-/** 48h TTL: covers UTC-midnight rollover + an inspection window. Mirrors
- *  PRO_DAILY_QUOTA_TTL_SECONDS. */
-export const API_DAILY_TTL_SECONDS = 172_800;
-/**
- * Increment the per-account daily meter and report whether the sold daily
- * allowance is now exceeded. INCR-first (atomic; no check-then-incr race), mirroring
- * api/mcp/quota.ts::reserveQuota.
- *
- * - `allowance < 0` (unlimited, e.g. enterprise) → no Redis call; never metered.
- * - Redis unavailable / pipeline failure → `metered:false`, `overLimit:false`
- *   (fail-open: the gateway serves uncounted).
- */
-/** @param {{userId: string, allowance: number, pipeline: (commands: Array<Array<string | number>>) => Promise<Array<{result?: unknown}> | null>, date?: Date}} opts */
-export async function reserveDailyMeter(opts) {
-  const { userId, allowance, pipeline, date } = opts;
-  const noop = async () => { };
-  const retryAfterSec = secondsUntilUtcMidnight(date);
-  // No daily limit: `-1` is unlimited (enterprise); `0` is a misconfiguration
-  // (positive burst but zero allowance) that we fail OPEN on rather than 429
-  // every request (a 0 allowance would reject request #1). This guard also keeps
-  // unlimited (-1) from ever reaching `count > allowance` (always-true otherwise).
-  // Callers already gate eligibility on apiRateLimit > 0, so this is defensive.
-  if (allowance <= 0) {
-    return { count: 0, overLimit: false, metered: false, retryAfterSec, rollback: noop };
-  }
-  const key = apiKeyDailyKey(userId, date);
-  if (!key) {
-    return { count: 0, overLimit: false, metered: false, retryAfterSec, rollback: noop };
-  }
-  let pipeResult;
-  try {
-    pipeResult = await pipeline([
-      ['INCR', key],
-      ['EXPIRE', key, API_DAILY_TTL_SECONDS],
-    ]);
-  }
-  catch {
-    pipeResult = null;
-  }
-  // Fail-open: couldn't meter → serve uncounted (never punish a paying
-  // customer for our Redis outage).
-  if (!pipeResult || !Array.isArray(pipeResult) || pipeResult.length === 0) {
-    return { count: 0, overLimit: false, metered: false, retryAfterSec, rollback: noop };
-  }
-  const incrRaw = pipeResult[0]?.result;
-  const count = typeof incrRaw === 'number' ? incrRaw : Number(incrRaw);
-  if (!Number.isFinite(count) || count < 1) {
-    return { count: 0, overLimit: false, metered: false, retryAfterSec, rollback: noop };
-  }
-  let rolledBack = false;
-  const rollback = async () => {
-    if (rolledBack)
-      return;
-    rolledBack = true;
-    try {
-      await pipeline([['DECR', key]]);
-    }
-    catch {
-      // Best-effort: a failed DECR overshoots the meter by 1, the
-      // cost-protection-correct direction.
-    }
-  };
-  // Enforce at the SOLD allowance (#4635): the customer's plan limit is the
-  // limit. (Was a 10× safety ceiling; dropped so the sold cap is authoritative.)
-  return { count, overLimit: count > allowance, metered: true, retryAfterSec, rollback };
-}
 /**
  * Standard rate-limit response headers for a 429. Emits the IETF RateLimit
  * fields (draft-ietf-httpapi-ratelimit-headers) — RateLimit-Policy advertises
@@ -218,11 +120,4 @@ export function rateLimitHeaders(opts) {
     'X-RateLimit-Reset': String(opts.resetMs),
     'Retry-After': String(Math.max(1, opts.retryAfterSec)),
   };
-}
-
-/** @param {Date} [now] */
-export function secondsUntilUtcMidnight(now) {
-  const d = now ?? new Date();
-  const next = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1));
-  return Math.max(1, Math.ceil((next.getTime() - d.getTime()) / 1000));
 }

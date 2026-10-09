@@ -1,18 +1,14 @@
-import './styles/base-layer.css';
-import './bootstrap/zod-csp';
-import { SITE_VARIANT } from '@/config/variant';
 import { installLcpAttributionDebug } from '@/bootstrap/lcp-attribution';
-import { markLcpDebug } from '@/utils/lcp-debug';
-import { registerWebMcpTools, type WebMcpAppBindings } from '@/services/webmcp';
-import { safeStorageGet, safeStorageRemove, safeStorageSet } from '@/utils/safe-storage';
-import { enqueueSentryCall, installPreInitErrorQueue, scheduleSentryInit } from '@/bootstrap/sentry-defer';
-import { registerClsReporting } from '@/bootstrap/cls-report';
-import { registerInpReporting } from '@/bootstrap/inp-report';
-import { registerLcpReporting } from '@/bootstrap/lcp-report';
-import { initVercelAnalytics, stripSensitiveParamsFromUrl } from '@/bootstrap/secondary-startup';
+import { stripSensitiveParamsFromUrl } from '@/bootstrap/secondary-startup';
 import { loadVariantThemeStylesheet } from '@/bootstrap/variant-theme';
-import { installUtmInterceptor } from './utils/utm';
+import { SITE_VARIANT } from '@/config/variant';
+import { registerWebMcpTools,type WebMcpAppBindings } from '@/services/webmcp';
+import { markLcpDebug } from '@/utils/lcp-debug';
+import { safeStorageGet,safeStorageRemove,safeStorageSet } from '@/utils/safe-storage';
 import { captureContentAttributionFromUrl } from '../shared/content-attribution';
+import './bootstrap/zod-csp';
+import './styles/base-layer.css';
+import { installUtmInterceptor } from './utils/utm';
 
 if (SITE_VARIANT === 'happy') {
   // Keeps happy-theme.css off other variants' eager CSS graph. On happy, the
@@ -45,28 +41,6 @@ function activateDeferredDashboardStyles(): void {
 activateDeferredDashboardStyles();
 installLcpAttributionDebug();
 
-// perf G — defer @sentry/browser off the critical path (#3994).
-// The eager `Sentry.init({...})` previously ran here cost ~1.96 s of pre-LCP
-// CPU. Install a lightweight error-buffering queue synchronously so any error
-// thrown before the SDK lands is captured + flushed on init, then schedule
-// the actual SDK load via requestIdleCallback. The init options + SDK ship in
-// the deferred sentry-*.js chunk, not the main entry.
-installPreInitErrorQueue();
-scheduleSentryInit();
-
-// Report field INP attribution to Sentry (through the deferred-Sentry queue) so
-// we can see which real interaction is slow and whether the cost is input delay,
-// processing, or presentation (#4537). web-vitals loads in its own post-paint chunk.
-registerInpReporting();
-
-// Report field CLS attribution to Sentry so field-only layout shifts can name
-// their largest shifting element before we scope the layout fix (#4580).
-registerClsReporting();
-
-// Report field LCP attribution to Sentry so the last-mile render-delay work can
-// see the real LCP element plus TTFB / load-delay / load-time / render-delay parts (#5079).
-registerLcpReporting();
-
 // Suppress NotAllowedError from YouTube IFrame API's internal play() — browser autoplay policy,
 // not actionable. The YT IFrame API doesn't expose the play() promise so it leaks as unhandled.
 window.addEventListener('unhandledrejection', (e) => {
@@ -74,7 +48,7 @@ window.addEventListener('unhandledrejection', (e) => {
 });
 
 // CSP violation filter — exported for testability.
-// Returns true if the violation should be suppressed (not reported to Sentry).
+// Returns true if the violation should be suppressed in local diagnostics.
 function shouldSuppressCspViolation(
   disposition: string,
   directive: string,
@@ -503,11 +477,8 @@ const _firstPartyConvexHost = ((): string | null => {
 // @ts-expect-error — expose for tests
 window.__shouldSuppressCspViolation = shouldSuppressCspViolation;
 
-// Report CSP violations in the parent page to Sentry.
+// Report CSP violations in the parent page locally.
 // Sandbox iframe violations are isolated and not captured here.
-// The listener stays installed eagerly so early violations (during the
-// deferred-Sentry-init window) are still observed; `enqueueSentryCall`
-// forwards immediately if the SDK is up, otherwise buffers until drain.
 window.addEventListener('securitypolicyviolation', (e) => {
   const blocked = e.blockedURI ?? '';
   if (shouldSuppressCspViolation(
@@ -529,47 +500,28 @@ window.addEventListener('securitypolicyviolation', (e) => {
     lineNumber: e.lineNumber,
     disposition: e.disposition,
   };
-  enqueueSentryCall((s) => {
-    s.captureMessage(message, {
-      level: 'warning',
-      tags: { kind: 'csp_violation' },
-      extra,
-    });
-  });
+  console.warn(message, extra);
 });
 
-import { debugGetCells, getCellCount } from '@/services/geo-convergence';
-import { initMetaTags } from '@/services/meta-tags';
+import { clearChunkReloadGuard,installChunkReloadGuard } from '@/bootstrap/chunk-reload';
+import { installStaleBundleCheck } from '@/bootstrap/stale-bundle-check';
+import { installSwUpdateHandler,readServiceWorkerContainer } from '@/bootstrap/sw-update';
+
 import { installFetchFailureAttribution } from '@/services/fetch-failure-attribution';
-import { installRuntimeFetchPatch, installWebApiRedirect } from '@/services/runtime';
+import { applyFontScale,FONT_SCALE_STORAGE_KEY } from '@/services/font-scale-settings';
+import { applyFont } from '@/services/font-settings';
+import { debugGetCells,getCellCount } from '@/services/geo-convergence';
+import { initMetaTags } from '@/services/meta-tags';
+import { installRuntimeFetchPatch,installWebApiRedirect } from '@/services/runtime';
 import { loadDesktopSecrets } from '@/services/runtime-config';
 import { applyStoredTheme } from '@/utils/theme-manager';
-import { applyFont } from '@/services/font-settings';
-import { applyFontScale, FONT_SCALE_STORAGE_KEY } from '@/services/font-scale-settings';
-import { initAnalytics, trackContentHandoff } from '@/services/analytics';
-import { clearChunkReloadGuard, installChunkReloadGuard } from '@/bootstrap/chunk-reload';
-import { initDebugBearRum } from '@/bootstrap/debugbear-rum';
-import { installStaleBundleCheck } from '@/bootstrap/stale-bundle-check';
-import { installSwUpdateHandler, readServiceWorkerContainer } from '@/bootstrap/sw-update';
 
 // Auto-reload on stale chunk 404s after deployment (Vite fires this for modulepreload failures).
 const chunkReloadStorageKey = installChunkReloadGuard(__BUILD_HASH__);
 
-// Product analytics are secondary startup work; RUM starts once the trusted
-// dashboard entry executes so it can observe page-load vitals.
-const capturedContentAttribution = captureContentAttributionFromUrl();
-if (capturedContentAttribution) {
-  // The event is queued safely if the deferred Umami tracker is not ready.
-  // `captureContentAttributionFromUrl` returns only fresh URL captures, so a
-  // reload does not duplicate the landing handoff.
-  trackContentHandoff();
-}
-// Drop unread secrets (email, license_key) from the live URL before any
-// telemetry vendor initializes.
+captureContentAttributionFromUrl();
+// Drop unread secrets (email, license_key) from the live URL.
 stripSensitiveParamsFromUrl();
-void initAnalytics();
-initVercelAnalytics();
-initDebugBearRum();
 
 // Initialize dynamic meta tags for sharing
 initMetaTags();

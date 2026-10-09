@@ -1,3 +1,4 @@
+import { rpcFetch } from '@/services/rpc-client';
 /**
  * Unified economic service module -- replaces three legacy services:
  *   - src/services/fred.ts (FRED economic data)
@@ -7,30 +8,28 @@
  * All data now flows through the EconomicServiceClient RPC.
  */
 
-import { getRpcBaseUrl, getRpcErrorStatusCode } from '@/services/rpc-client';
-import { premiumFetch } from '@/services/premium-fetch';
-import type { GetFredSeriesResponse, GetFredSeriesBatchResponse, ListWorldBankIndicatorsResponse, WorldBankCountryData as ProtoWorldBankCountryData, GetEnergyPricesResponse, EnergyPrice as ProtoEnergyPrice, GetEnergyCapacityResponse, GetBisPolicyRatesResponse, GetBisExchangeRatesResponse, GetBisCreditResponse, GetChinaMacroSnapshotResponse, BisPolicyRate, BisExchangeRate, BisCreditToGdp, GetNationalDebtResponse, NationalDebtEntry, GetBlsSeriesResponse, GetCrudeInventoriesResponse, CrudeInventoryWeek, GetNatGasStorageResponse, NatGasStorageWeek, GetEcbFxRatesResponse, EcbFxRate, GetEuGasStorageResponse, EuGasStorageHistoryEntry, GetEurostatCountryDataResponse, EurostatCountryEntry, GetOilStocksAnalysisResponse, OilStocksAnalysisMember, OilStocksRegionalSummary, OilStocksRegionalSummaryEurope, OilStocksRegionalSummaryAsiaPacific, OilStocksRegionalSummaryNorthAmerica } from '@/generated/client/worldmonitor/economic/v1/service_client';
-import { createCircuitBreaker } from '@/utils/circuit-breaker';
-import { getCSSColor } from '@/utils';
-import { isFeatureAvailable } from '../runtime-config';
-import { dataFreshness } from '../data-freshness';
-import { ensureHydrated, getHydratedData } from '@/services/bootstrap';
-import { mergeCbrPolicyRate } from './cbr-policy-rate';
-import { degradedSources, toEurSpotRows, toFxStressRows, toRubQuoteRows, toUsdSpotRows, type FxPanelRows } from './fx-rates';
-import { toApiUrl } from '@/services/runtime';
-import { hasPremiumAccess } from '@/services/panel-gating';
+import type { BisCreditToGdp,BisExchangeRate,BisPolicyRate,CrudeInventoryWeek,EcbFxRate,EuGasStorageHistoryEntry,EurostatCountryEntry,GetBisCreditResponse,GetBisExchangeRatesResponse,GetBisPolicyRatesResponse,GetBlsSeriesResponse,GetChinaMacroSnapshotResponse,GetCrudeInventoriesResponse,GetEcbFxRatesResponse,GetEnergyCapacityResponse,GetEnergyPricesResponse,GetEuGasStorageResponse,GetEurostatCountryDataResponse,GetFredSeriesBatchResponse,GetFredSeriesResponse,GetNatGasStorageResponse,GetOilStocksAnalysisResponse,ListWorldBankIndicatorsResponse,NatGasStorageWeek,NationalDebtEntry,OilStocksAnalysisMember,OilStocksRegionalSummary,OilStocksRegionalSummaryAsiaPacific,OilStocksRegionalSummaryEurope,OilStocksRegionalSummaryNorthAmerica,EnergyPrice as ProtoEnergyPrice,WorldBankCountryData as ProtoWorldBankCountryData } from '@/generated/client/worldmonitor/economic/v1/service_client';
+import { ensureHydrated,getHydratedData } from '@/services/bootstrap';
 import { EconomicServiceClient } from '@/services/generated-rpc-clients';
+import { getRpcBaseUrl,getRpcErrorStatusCode } from '@/services/rpc-client';
+import { toApiUrl } from '@/services/runtime';
+import { getCSSColor } from '@/utils';
+import { createCircuitBreaker } from '@/utils/circuit-breaker';
+import { dataFreshness } from '../data-freshness';
+import { isFeatureAvailable } from '../runtime-config';
+import { mergeCbrPolicyRate } from './cbr-policy-rate';
+import { degradedSources,toEurSpotRows,toFxStressRows,toRubQuoteRows,toUsdSpotRows,type FxPanelRows } from './fx-rates';
 
 // ---- Client + Circuit Breakers ----
 
-// premiumFetch for the whole client: 1 of ~16 methods (getNationalDebt) targets a
+// rpcFetch for the whole client: 1 of ~16 methods (getNationalDebt) targets a
 // PREMIUM_RPC_PATHS path. globalThis.fetch here would 401 signed-in browser pros
 // on getNationalDebt with no WORLDMONITOR_API_KEY (gateway runs validateApiKey
-// with forceKey=true on premium paths). premiumFetch no-ops safely when no
+// with forceKey=true on premium paths). rpcFetch no-ops safely when no
 // credentials are available, so the public methods (FRED, BLS, energy, BIS,
 // EU, oil) keep working unchanged. See src/services/supply-chain/index.ts for
 // the same pattern + #3242 review HIGH(new) #1 for the bug class this prevents.
-const client = new EconomicServiceClient(getRpcBaseUrl(), { fetch: premiumFetch });
+const client = new EconomicServiceClient(getRpcBaseUrl(), { fetch: rpcFetch });
 const WB_BREAKERS_WARN_THRESHOLD = 50;
 const wbBreakers = new Map<string, ReturnType<typeof createCircuitBreaker<ListWorldBankIndicatorsResponse>>>();
 
@@ -700,8 +699,7 @@ export async function getCountryComparison(
 // BIS -- Central bank policy data
 // ========================================================================
 
-export type { BisPolicyRate, BisExchangeRate, BisCreditToGdp };
-export type { NationalDebtEntry };
+export type { BisCreditToGdp,BisExchangeRate,BisPolicyRate,NationalDebtEntry };
 
 // ========================================================================
 // National Debt Clock
@@ -709,50 +707,7 @@ export type { NationalDebtEntry };
 
 // No persistCache: IndexedDB hydration on first call can deadlock in some browsers,
 // causing the panel to hang indefinitely on "Loading debt data from IMF..."
-const nationalDebtBreaker = createCircuitBreaker<GetNationalDebtResponse>({ name: 'National Debt', cacheTtlMs: 6 * 60 * 60 * 1000 });
-const emptyNationalDebtFallback: GetNationalDebtResponse = { entries: [], seededAt: '', unavailable: true };
 
-export async function getNationalDebtData(): Promise<GetNationalDebtResponse> {
-  const hydrated = getHydratedData('nationalDebt') as GetNationalDebtResponse | undefined;
-  if (hydrated?.entries?.length) return hydrated;
-
-  // Race all fetch paths against a hard 20s deadline so the panel never hangs.
-  return Promise.race([
-    _fetchNationalDebt(),
-    new Promise<GetNationalDebtResponse>(resolve =>
-      setTimeout(() => resolve(emptyNationalDebtFallback), 20_000),
-    ),
-  ]);
-}
-
-async function _fetchNationalDebt(): Promise<GetNationalDebtResponse> {
-  try {
-    const resp = await fetch(toApiUrl('/api/bootstrap?keys=nationalDebt'), {
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (resp.ok) {
-      const { data } = (await resp.json()) as { data: { nationalDebt?: GetNationalDebtResponse } };
-      if (data.nationalDebt?.entries?.length) return data.nationalDebt;
-    }
-  } catch { /* fall through to RPC */ }
-
-  // Anonymous (non-premium) users: do NOT call the Pro-gated RPC.
-  // /api/economic/v1/get-national-debt is in PREMIUM_RPC_PATHS, so the
-  // call deterministically 401s for an anonymous client and the breaker
-  // returns emptyNationalDebtFallback anyway — same outcome as us, minus
-  // the Sentry/console noise on every page load.
-  if (!hasPremiumAccess()) {
-    return emptyNationalDebtFallback;
-  }
-
-  try {
-    return await nationalDebtBreaker.execute(async () => {
-      return client.getNationalDebt({}, { signal: AbortSignal.timeout(12_000) });
-    }, emptyNationalDebtFallback, { shouldCache: (r) => r.entries.length > 0 });
-  } catch {
-    return emptyNationalDebtFallback;
-  }
-}
 
 export interface BisData {
   policyRates: BisPolicyRate[];
@@ -849,7 +804,7 @@ export async function fetchBisData(): Promise<BisData> {
 // ECB Reference FX Rates
 // ========================================================================
 
-export type { GetEcbFxRatesResponse, EcbFxRate };
+export type { EcbFxRate,GetEcbFxRatesResponse };
 
 const ecbFxRatesBreaker = createCircuitBreaker<GetEcbFxRatesResponse>({ name: 'ECB FX Rates', cacheTtlMs: 4 * 60 * 60 * 1000 });
 const emptyEcbFxRatesFallback: GetEcbFxRatesResponse = { rates: [], updatedAt: '', seededAt: '0', unavailable: true };
@@ -876,10 +831,10 @@ export async function getEcbFxRatesData(): Promise<GetEcbFxRatesResponse> {
 // FX panel (#6199)
 // ========================================================================
 
-export type { FxEurSpotRow, FxPanelRows, FxRubQuoteRow, FxSourceId, FxStressRow, FxUsdSpotRow } from './fx-rates';
+export type { FxEurSpotRow,FxPanelRows,FxRubQuoteRow,FxSourceId,FxStressRow,FxUsdSpotRow } from './fx-rates';
 // Re-exported as a value: the CommoditiesPanel FX tab uses it too, so both
 // surfaces order the same ECB pairs from one definition (#6199).
-export { EUR_FX_ORDER, toEurSpotRows, toRubQuoteRows } from './fx-rates';
+export { EUR_FX_ORDER,toEurSpotRows,toRubQuoteRows } from './fx-rates';
 
 /**
  * Assemble the four payloads the FX panel renders.
@@ -934,7 +889,7 @@ export async function getFxPanelData(): Promise<FxPanelRows> {
 // EU Gas Storage (GIE AGSI+)
 // ========================================================================
 
-export type { GetEuGasStorageResponse, EuGasStorageHistoryEntry };
+export type { EuGasStorageHistoryEntry,GetEuGasStorageResponse };
 
 export async function getEuGasStorageData(): Promise<GetEuGasStorageResponse> {
   const hydrated = getHydratedData('euGasStorage') as GetEuGasStorageResponse | undefined;
@@ -958,7 +913,7 @@ export async function getEuGasStorageData(): Promise<GetEuGasStorageResponse> {
 // Eurostat Country Data (CPI, Unemployment, GDP Growth)
 // ========================================================================
 
-export type { GetEurostatCountryDataResponse, EurostatCountryEntry };
+export type { EurostatCountryEntry,GetEurostatCountryDataResponse };
 
 export async function getEurostatCountryData(): Promise<GetEurostatCountryDataResponse> {
   const hydrated = getHydratedData('eurostatCountryData') as GetEurostatCountryDataResponse | undefined;
@@ -982,7 +937,7 @@ export async function getEurostatCountryData(): Promise<GetEurostatCountryDataRe
 // IEA Oil Stocks Analysis (Days of Cover)
 // ========================================================================
 
-export type { GetOilStocksAnalysisResponse, OilStocksAnalysisMember, OilStocksRegionalSummary, OilStocksRegionalSummaryEurope, OilStocksRegionalSummaryAsiaPacific, OilStocksRegionalSummaryNorthAmerica };
+export type { GetOilStocksAnalysisResponse,OilStocksAnalysisMember,OilStocksRegionalSummary,OilStocksRegionalSummaryAsiaPacific,OilStocksRegionalSummaryEurope,OilStocksRegionalSummaryNorthAmerica };
 
 export async function getOilStocksAnalysisData(): Promise<GetOilStocksAnalysisResponse> {
   const hydrated = getHydratedData('oilStocksAnalysis') as GetOilStocksAnalysisResponse | undefined;

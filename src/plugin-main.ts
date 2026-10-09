@@ -78,12 +78,15 @@ function mountPlugin(): void {
     });
   }
 
-  async function analyze(args: object): Promise<{ summary: string; model: string }> {
-    if (!serverTools) throw new Error('News analysis is unavailable in this host.');
-    const result = await request('tools/call', { name: 'analyze_news_headlines', arguments: args }) as { isError?: boolean; structuredContent?: { summary?: string; model?: string; error?: string } };
+  async function translateViaHost(text: string, lang: string): Promise<string> {
+    if (!serverTools) throw new Error('News translation is unavailable in this host.');
+    const result = await request('tools/call', {
+      name: 'analyze_news_headlines',
+      arguments: { headlines: [text], lang, mode: 'translate' },
+    }) as { isError?: boolean; structuredContent?: { summary?: string; model?: string; error?: string } };
     const data = result.structuredContent;
-    if (result.isError || typeof data?.summary !== 'string' || !data.summary || data.error) throw new Error('News analysis was denied or unavailable.');
-    return { summary: data.summary, model: data.model ?? '' };
+    if (result.isError || typeof data?.summary !== 'string' || !data.summary || data.error) throw new Error('News translation was denied or unavailable.');
+    return data.summary;
   }
 
   async function renderResult(result: unknown, keepCurrentView = false): Promise<boolean> {
@@ -165,11 +168,7 @@ function mountPlugin(): void {
       if (!panel) {
         panel = new NewsPanel(category, DEFAULT_PANELS[category]?.name ?? category, undefined, {
           clusterNews: async items => clusterNews(items),
-          generateSummary: async (headlines, _progress, geoContext, lang, options) => {
-            const result = await analyze({ headlines, bodies: options?.bodies, geoContext, lang, mode: 'brief' });
-            return { summary: result.summary, provider: 'openrouter', model: result.model, cached: false };
-          },
-          translateText: async (text, lang) => (await analyze({ headlines: [text], lang, mode: 'translate' })).summary,
+          translateText: translateViaHost,
         });
         panels.set(category, panel);
         grid.appendChild(panel.getElement());
@@ -420,7 +419,7 @@ function mountPlugin(): void {
           mapStatus.textContent = error instanceof Error ? error.message : 'Map layers could not be loaded. Previous map data remains visible.';
         });
       });
-      label.append(input, LAYER_REGISTRY[layer].fallbackLabel);
+      label.append(input, LAYER_REGISTRY[layer]?.fallbackLabel ?? layer);
       layerControls.appendChild(label);
     }
     const refreshMap = document.createElement('button');

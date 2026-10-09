@@ -3,13 +3,8 @@ import { runBundle, HOUR, DAY } from './_bundle-runner.mjs';
 import { CHINA_MACRO_CACHE_KEY } from './_china-macro-contract.mjs';
 import { orderMacroSections } from './_macro-bundle-order.mjs';
 import { EDUCATION_SECTION_TIMEOUT_MS } from './seed-education-attainment.mjs';
-import { PHYSICAL_PREMIUM_SECTION_TIMEOUT_MS } from './seed-physical-premiums.mjs';
 
 const EDUCATION_SECTION = { label: 'Education-Attainment', script: 'seed-education-attainment.mjs', seedMetaKey: 'resilience:education-attainment', canonicalKey: 'resilience:education-attainment:v1', completionMetaKey: 'seed-completion:resilience:education-attainment', intervalMs: 7 * DAY, timeoutMs: EDUCATION_SECTION_TIMEOUT_MS };
-// SGE SHAU/SHAG daily PM benchmarks joined only to the already-seeded
-// commodity and FX snapshots. Keep this section outside MACRO_SECTIONS so it
-// always receives an early admission slot with 80 seconds of bundle headroom.
-const PHYSICAL_PREMIUM_SECTION = { label: 'Physical-Premiums', script: 'seed-physical-premiums.mjs', seedMetaKey: 'market:physical-premium', canonicalKey: 'market:physical-premium:v1', completionMetaKey: 'seed-completion:market:physical-premium', intervalMs: DAY, timeoutMs: PHYSICAL_PREMIUM_SECTION_TIMEOUT_MS };
 
 const MACRO_SECTIONS = [
   { label: 'BIS-Data', script: 'seed-bis-data.mjs', seedMetaKey: 'economic:bis', canonicalKey: 'economic:bis:policy:v1', completionMetaKey: 'seed-completion:economic:bis', intervalMs: 12 * HOUR, timeoutMs: 300_000 },
@@ -42,7 +37,6 @@ const MACRO_SECTIONS = [
   { label: 'Eurostat-GovDebtQ', script: 'seed-eurostat-gov-debt-q.mjs', seedMetaKey: 'economic:eurostat-gov-debt-q', canonicalKey: 'economic:eurostat:gov-debt-q:v1', intervalMs: 2 * DAY, timeoutMs: 300_000 },
   { label: 'Eurostat-IndProd', script: 'seed-eurostat-industrial-production.mjs', seedMetaKey: 'economic:eurostat-industrial-production', canonicalKey: 'economic:eurostat:industrial-production:v1', intervalMs: DAY, timeoutMs: 300_000 },
   { label: 'IMF-Macro', script: 'seed-imf-macro.mjs', seedMetaKey: 'economic:imf-macro', canonicalKey: 'economic:imf:macro:v2', intervalMs: 30 * DAY, timeoutMs: 300_000 },
-  { label: 'National-Debt', script: 'seed-national-debt.mjs', seedMetaKey: 'economic:national-debt', canonicalKey: 'economic:national-debt:v1', intervalMs: 30 * DAY, timeoutMs: 300_000 },
   { label: 'FAO-FFPI', script: 'seed-fao-food-price-index.mjs', seedMetaKey: 'economic:fao-ffpi', canonicalKey: 'economic:fao-ffpi:v1', intervalMs: DAY, timeoutMs: 120_000 },
   // plan 2026-04-25-004 Phase 2: financialSystemExposure component seeders.
   // Bundle placement = Option A per Codex R1 #5 (less operational overhead
@@ -83,7 +77,6 @@ const MACRO_SECTIONS = [
 const sections = orderMacroSections(
   new Date(),
   EDUCATION_SECTION,
-  PHYSICAL_PREMIUM_SECTION,
   MACRO_SECTIONS,
 );
 

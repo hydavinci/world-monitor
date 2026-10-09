@@ -760,7 +760,7 @@ async function readRiskInputs(inputs: ReadonlyArray<RiskInput | null>): Promise<
 
 async function fetchAuxiliarySources(): Promise<AuxiliarySources> {
   const currentYear = new Date().getFullYear();
-  const [ucdpRaw, outagesRaw, climateRaw, cyberRaw, firesRaw, gpsRaw, iranRaw, orefRaw, advisoriesRaw, displacementCurrentRaw, insightsRaw, threatSummaryRaw, aviationRaw, earthquakesRaw, sanctionsRaw, sanctionsCountsRaw, temporalRaw, militaryCiiRaw] = await readRiskInputs([
+  const [ucdpRaw, outagesRaw, climateRaw, cyberRaw, firesRaw, gpsRaw, iranRaw, orefRaw, advisoriesRaw, displacementCurrentRaw, insightsRaw, threatSummaryRaw, aviationRaw, earthquakesRaw, sanctionsCountsRaw, temporalRaw, militaryCiiRaw] = await readRiskInputs([
     { key: 'conflict:ucdp-events:v1', raw: true },
     { key: 'infra:outages:v1', raw: true },
     { key: CLIMATE_ANOMALIES_KEY, raw: true },
@@ -778,7 +778,6 @@ async function fetchAuxiliarySources(): Promise<AuxiliarySources> {
     // FAA delays and NOTAM closures from aviationScore.
     { key: 'aviation:delays-bootstrap:v2', raw: true },
     { key: 'seismology:earthquakes:v1', raw: true },
-    { key: 'sanctions:pressure:v1', raw: true },
     { key: 'sanctions:country-counts:v1', raw: true },
     // App-owned snapshot (#7674): the temporal-anomalies route stamps
     // temporal:anomalies:v1 through the prefix-aware helpers, so unlike the
@@ -860,7 +859,7 @@ async function fetchAuxiliarySources(): Promise<AuxiliarySources> {
     threatSummaryByCountry,
     aviationAlerts: arr(aviationRaw, 'alerts'),
     earthquakes: arr(earthquakesRaw, 'earthquakes'),
-    sanctionsCountries: arr(sanctionsRaw, 'countries'),
+    sanctionsCountries: [],
     sanctionsCountryCounts: Object.keys(sanctionsCountryCounts).length > 0 ? sanctionsCountryCounts : null,
     temporalAnomalies: arr(temporalRaw, 'anomalies'),
     militaryCii: militaryCiiRaw && typeof militaryCiiRaw === 'object' && (militaryCiiRaw as any).byCountry

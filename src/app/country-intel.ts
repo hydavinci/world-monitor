@@ -1,80 +1,68 @@
-import { COUNTRY_ACTIVITY_BOUNDS, isCountryActivityCoordinate, projectCountryMilitaryActivity, projectCountryMilitarySignalCounts } from '@/services/country-military-activity';
-import { CountryBriefController, projectChinaCountrySummary } from '@/components/CountryBriefController';
-import { createWebsiteCountryBriefSource } from '@/services/country-brief-source';
-import { hasTemporalBaselineSnapshot } from '@/services/temporal-baseline';
-import type { AppContext, AppModule, CountryBriefSignals } from '@/app/app-context';
+import type { AppContext,AppModule,CountryBriefSignals } from '@/app/app-context';
 import { getSignalAggregator } from '@/app/lazy-services';
-import type { CountrySignalCluster } from '@/services/signal-aggregator';
-import { premiumFetch } from '@/services/premium-fetch';
-import { CountryTimeline } from '@/components/CountryTimeline';
+import { CountryBriefController,projectChinaCountrySummary } from '@/components/CountryBriefController';
 import type {
-  CountryDeepDiveEconomicIndicator,
-  CountryDeepDiveMilitarySummary,
-  CountryDeepDiveSignalDetails,
-  ChinaCountrySummaryData,
+ChinaCountrySummaryData,
+CountryDeepDiveEconomicIndicator,
+CountryDeepDiveMilitarySummary,
+CountryDeepDiveSignalDetails,
 } from '@/components/CountryBriefPanel';
-import { reverseGeocode } from '@/utils/reverse-geocode';
-import { yieldToMain } from '@/utils/after-paint';
-import { effectivePubDateMs } from '@/services/feed-date';
-import type { CountryCoverageEvent } from '@/services/country-coverage';
-import { reconcileCountryTimelineIncidents } from '../../shared/country-timeline-events';
-import { projectCountrySignalDetails } from '../../shared/country-signal-details';
-import {
-  COUNTRY_ALIASES,
-  countryTermIndex,
-  escapeRegExp,
-  firstMentionPosition,
-  getCountrySearchTerms,
-  getOtherCountryTerms,
-  isCountryHeadline,
-} from '../../shared/country-headline-match';
-import {
-  canonicalizeCountryCode,
-  getCountryAtCoordinates,
-  getCountryCentroid,
-  hasCountryGeometry,
-  ME_STRIKE_BOUNDS,
-  preloadCountryGeometry,
-} from '@/services/country-geometry';
-import { getCountryData, TIER1_COUNTRIES, type CountryScore } from '@/services/country-instability';
-import { getCachedCountryScore, normalizeCiiCountryCode } from '@/services/cached-risk-scores';
-import { dataFreshness } from '@/services/data-freshness';
-import { collectStoryData } from '@/services/story-data';
-// StoryModal is lazy-imported at its call site (below), and its render path
-// lazy-imports story-renderer, so both stay off the eager boot graph.
-// renderStoryToCanvas was already made dynamic in #4486; #4571 closes the
-// remaining StoryModal eager edge. The modal opens on user interaction
-// (post-paint), so the import() latency is hidden.
-
-import { hasPremiumAccess } from '@/services/panel-gating';
-import { getAuthState, subscribeAuthState } from '@/services/auth-state';
-import { onEntitlementChange } from '@/services/entitlements';
+import { CountryTimeline } from '@/components/CountryTimeline';
 import { showMapContextMenu } from '@/components/MapContextMenu';
-import { BETA_MODE } from '@/config/beta';
-import { mlWorker } from '@/services/ml-worker';
-import { isHeadlineMemoryEnabled } from '@/services/ai-flow-settings';
-import { t, getCurrentLanguage } from '@/services/i18n';
-import { trackCountrySelected, trackCountryBriefOpened } from '@/services/analytics';
-import { toApiUrl } from '@/services/runtime';
-import { raceWebMcpAbort, throwIfWebMcpAborted } from '@/services/webmcp';
 import type { StrategicPosturePanel } from '@/components/StrategicPosturePanel';
-import type { NewsItem } from '@/types';
-import {
-  buildBriefSourceContextLines,
-  collectBriefSources,
-  type BriefSource,
-} from '@/utils/brief-sources';
-import type { IntelBriefEvidence } from '@/utils/format-intel-brief';
-import { preloadInfrastructureTables } from '@/services/related-assets';
-import { preloadMilitaryBases } from '@/services/military-base-config';
-import { toFlagEmoji } from '@/utils/country-flag';
-import { buildDependencyGraph } from '@/services/infrastructure-cascade';
-import { getActiveFrameworkForPanel, subscribeFrameworkChange } from '@/services/analysis-framework-store';
-import { buildImfEconomicIndicators, type ImfCountryBundle } from '@/services/imf-country-data';
+import { BETA_MODE } from '@/config/beta';
+import { isHeadlineMemoryEnabled } from '@/services/ai-flow-settings';
+import { subscribeFrameworkChange } from '@/services/analysis-framework-store';
+
+import { getCachedCountryScore,normalizeCiiCountryCode } from '@/services/cached-risk-scores';
 import { getChinaDecisionSignalsData } from '@/services/china-decision-signals';
-import { CHINA_DECISION_SIGNAL_GROUP_IDS } from '../../shared/china-decision-signals';
+import { createWebsiteCountryBriefSource } from '@/services/country-brief-source';
+import type { CountryCoverageEvent } from '@/services/country-coverage';
+import { hasTemporalBaselineSnapshot } from '@/services/temporal-baseline';
+import {
+canonicalizeCountryCode,
+getCountryAtCoordinates,
+getCountryCentroid,
+hasCountryGeometry,
+ME_STRIKE_BOUNDS,
+preloadCountryGeometry,
+} from '@/services/country-geometry';
+import { getCountryData,TIER1_COUNTRIES,type CountryScore } from '@/services/country-instability';
+import { COUNTRY_ACTIVITY_BOUNDS,isCountryActivityCoordinate,projectCountryMilitaryActivity,projectCountryMilitarySignalCounts } from '@/services/country-military-activity';
+import { dataFreshness } from '@/services/data-freshness';
+import { effectivePubDateMs } from '@/services/feed-date';
+import { getCurrentLanguage,t } from '@/services/i18n';
+import { buildImfEconomicIndicators,type ImfCountryBundle } from '@/services/imf-country-data';
+import { buildDependencyGraph } from '@/services/infrastructure-cascade';
+import { preloadMilitaryBases } from '@/services/military-base-config';
+import { mlWorker } from '@/services/ml-worker';
+import { preloadInfrastructureTables } from '@/services/related-assets';
+import type { CountrySignalCluster } from '@/services/signal-aggregator';
+import { collectStoryData } from '@/services/story-data';
+import { raceWebMcpAbort,throwIfWebMcpAborted } from '@/services/webmcp';
+import type { NewsItem } from '@/types';
+import { yieldToMain } from '@/utils/after-paint';
+import {
+buildBriefSourceContextLines,
+collectBriefSources,
+type BriefSource,
+} from '@/utils/brief-sources';
+import { toFlagEmoji } from '@/utils/country-flag';
+import { reverseGeocode } from '@/utils/reverse-geocode';
 import { showToast as showGlobalToast } from '@/utils/toast';
 import { vesselTypeLabel } from '@/utils/vessel-type-label';
+import { CHINA_DECISION_SIGNAL_GROUP_IDS } from '../../shared/china-decision-signals';
+import {
+COUNTRY_ALIASES,
+countryTermIndex,
+escapeRegExp,
+firstMentionPosition,
+getCountrySearchTerms,
+getOtherCountryTerms,
+isCountryHeadline,
+} from '../../shared/country-headline-match';
+import { projectCountrySignalDetails } from '../../shared/country-signal-details';
+import { reconcileCountryTimelineIncidents } from '../../shared/country-timeline-events';
 
 // Iran-events domain sunset (war ended 2026-07). Default OFF: no strikes in the
 // country deep-dive or the AI brief. Set VITE_ENABLE_IRAN_ATTACKS=true to restore.
@@ -97,13 +85,6 @@ type CountryStockSnapshot = {
   fetchedAt: string;
 };
 
-type CountryIntelBriefResult = {
-  brief: string;
-  sources: BriefSource[];
-  evidence: IntelBriefEvidence[];
-  generatedAt?: string | number;
-  cached?: boolean;
-};
 
 type PendingCountryBriefRequest = {
   token: number;
@@ -134,15 +115,6 @@ export class CountryIntelManager implements AppModule {
   private visibleBriefOwner: PendingCountryBriefRequest['owner'] | null = null;
   private frameworkUnsubscribe: (() => void) | null = null;
   private _fwDebounce: ReturnType<typeof setTimeout> | null = null;
-  // Re-fire PRO-gated country sections on false→true entitlement transition.
-  // Without this, a user who opens a country brief before Clerk resolves
-  // keeps seeing empty national-debt / sanctions / comtrade / tariff cards
-  // until they reselect the country or reload. Tracks the last-seen
-  // entitlement so unrelated auth events (session refresh, prefs sync)
-  // don't re-hammer fetchProSections.
-  private authUnsubscribe: (() => void) | null = null;
-  private entitlementUnsubscribe: (() => void) | null = null;
-  private lastHadPremium = false;
   private countryController: CountryBriefController | null = null;
   private countryControllerPage: AppContext['countryBriefPage'] = null;
   private countryBriefPageLoading: Promise<boolean> | null = null;
@@ -167,10 +139,6 @@ export class CountryIntelManager implements AppModule {
       }, 400);
     });
 
-    this.lastHadPremium = hasPremiumAccess(getAuthState());
-    const syncPremiumAccess = () => this.handlePremiumAccessTransition(hasPremiumAccess(getAuthState()));
-    this.authUnsubscribe = subscribeAuthState(syncPremiumAccess);
-    this.entitlementUnsubscribe = onEntitlementChange(syncPremiumAccess);
   }
 
   destroy(): void {
@@ -189,22 +157,6 @@ export class CountryIntelManager implements AppModule {
     this.countryBriefPageLoading = null;
     this.frameworkUnsubscribe?.();
     this.frameworkUnsubscribe = null;
-    this.authUnsubscribe?.();
-    this.authUnsubscribe = null;
-    this.entitlementUnsubscribe?.();
-    this.entitlementUnsubscribe = null;
-  }
-
-  private handlePremiumAccessTransition(nowPremium: boolean): void {
-    if (nowPremium === this.lastHadPremium) return;
-    this.lastHadPremium = nowPremium;
-
-    const page = this.ctx.countryBriefPage;
-    const openCode = page?.getCode();
-    if (!page?.isVisible() || !openCode || openCode === '__loading__' || openCode === '__error__') return;
-
-    page.syncCountryPremiumSectionsAccess?.(nowPremium);
-    this.getCountryController(page).refreshPremium();
   }
 
   private handleCountryBriefOpenError(err: unknown): void {
@@ -241,12 +193,6 @@ export class CountryIntelManager implements AppModule {
     this.coverageAbortController = null;
   }
 
-  private startCountryCoverageRequest(): AbortSignal {
-    this.abortCountryCoverage();
-    const controller = new AbortController();
-    this.coverageAbortController = controller;
-    return controller.signal;
-  }
 
   private clearBriefRequest(request: PendingCountryBriefRequest): void {
     if (this.pendingBriefRequest === request) this.pendingBriefRequest = null;
@@ -260,7 +206,7 @@ export class CountryIntelManager implements AppModule {
     if (!this.ctx.map) return;
     this.ctx.map.onCountryClicked((countryClick) => {
       if (countryClick.code && countryClick.name) {
-        trackCountrySelected(countryClick.code, countryClick.name, 'map');
+
         void this.openCountryBriefByCode(countryClick.code, countryClick.name)
           .catch((err) => this.handleCountryBriefOpenError(err));
       } else {
@@ -407,7 +353,7 @@ export class CountryIntelManager implements AppModule {
         showedLoading = true;
       }
       if (!loadingAlreadyShown) this.ctx.map?.setRenderPaused(true);
-      if (opts?.trackAnalytics !== false) trackCountryBriefOpened(code);
+
 
       const canonicalName = TIER1_COUNTRIES[code] || CountryIntelManager.resolveCountryName(code);
       if (canonicalName !== code) country = canonicalName;
@@ -515,30 +461,25 @@ export class CountryIntelManager implements AppModule {
       const hasCountryTerm = (headline: string): boolean => (
         CountryIntelManager.firstMentionPosition(headline, countrySearchTerms) !== Infinity
       );
-      const coverageSignal = this.startCountryCoverageRequest();
+      this.abortCountryCoverage();
+      const coverageController = new AbortController();
+      this.coverageAbortController = coverageController;
+      const coverageSignal = coverageController.signal;
       void import('@/services/country-coverage')
         .then(({ fetchCountryCoverage }) => fetchCountryCoverage(country, countrySearchTerms, { signal: coverageSignal }))
-        .then((coverage) => {
-          if (
-            coverageSignal.aborted
-            || token !== this.briefRequestToken
-            || this.ctx.countryBriefPage?.getCode() !== code
-          ) return;
+        .then(coverage => {
+          if (coverageSignal.aborted || token !== this.briefRequestToken || this.ctx.countryBriefPage?.getCode() !== code) return;
           const countryHeadlines = coverage.headlines.filter(item => (
             CountryIntelManager.isCountryHeadline(item.title, country, code)
           ));
-          if (countryHeadlines.length > 0) page.updateNews(countryHeadlines);
+          if (countryHeadlines.length) page.updateNews(countryHeadlines);
           this.currentCoverageEvents = coverage.timelineEvents.filter(event => hasCountryTerm(event.label));
           this.mountCountryTimeline(code, country, this.currentCoverageEvents);
         })
-        .catch((error) => {
-          if (
-            coverageSignal.aborted
-            || (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError')
-          ) return;
+        .catch(error => {
+          if (coverageSignal.aborted || error?.name === 'AbortError') return;
           console.warn('[CountryBrief] country coverage fetch failed:', error);
         });
-
       if (getCountryCentroid(code, ME_STRIKE_BOUNDS)) page.updateInfrastructure(code);
       void Promise.all([
         preloadCountryGeometry(),
@@ -602,7 +543,6 @@ export class CountryIntelManager implements AppModule {
         }
 
         let briefText = '';
-        let briefResult: CountryIntelBriefResult | null = null;
         try {
           // Temporal feed can arrive after the initial signal snapshot; re-read
           // so chips, prompt, and fallback lines share one fresh observation set.
@@ -627,13 +567,6 @@ export class CountryIntelManager implements AppModule {
             } catch { /* RAG unavailable */ }
           }
 
-          const countryFw = getActiveFrameworkForPanel('country-brief');
-          briefResult = await this.fetchCountryIntelBrief(code, contextSnapshot, countryFw?.systemPromptAppend ?? '');
-          if (token !== this.briefRequestToken || this.ctx.countryBriefPage?.getCode() !== code) return;
-          briefText = briefResult.brief;
-          if (briefResult.sources.length > 0) {
-            briefSources = briefResult.sources;
-          }
         } catch { /* server unreachable */ }
 
         if (briefText) {
@@ -642,9 +575,6 @@ export class CountryIntelManager implements AppModule {
             country,
             code,
             sources: briefSources,
-            evidence: briefResult?.evidence,
-            generatedAt: briefResult?.generatedAt,
-            cached: briefResult?.cached,
           });
         } else {
           let fallbackBrief = '';
@@ -767,44 +697,6 @@ export class CountryIntelManager implements AppModule {
     this.mountCountryTimeline(code, country, this.currentCoverageEvents);
   }
 
-  private async fetchCountryIntelBrief(code: string, contextSnapshot: string, framework = ''): Promise<CountryIntelBriefResult> {
-    const lang = getCurrentLanguage();
-    const params = new URLSearchParams({ country_code: code, lang });
-    const trimmed = contextSnapshot.trim();
-    if (trimmed.length > 0) {
-      // 3800 chars ≈ ~950 tokens; raised from 2200 to include infra context. Monitor p95 LLM latency if timeouts increase.
-      params.set('context', trimmed.slice(0, 3800));
-    }
-    if (framework) {
-      params.set('framework', framework.slice(0, 2000));
-    }
-
-    const resp = await premiumFetch(toApiUrl(`/api/intelligence/v1/get-country-intel-brief?${params.toString()}`), {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: this.ctx.countryBriefPage?.signal,
-    });
-    if (!resp.ok) return { brief: '', sources: [], evidence: [] };
-
-    const body = (await resp.json()) as {
-      brief?: string;
-      sources?: BriefSource[];
-      evidence?: unknown;
-      generatedAt?: string | number;
-      cached?: boolean;
-    };
-    return {
-      brief: typeof body.brief === 'string' ? body.brief.trim() : '',
-      sources: collectBriefSources(body.sources ?? [], 6),
-      evidence: Array.isArray(body.evidence)
-        ? body.evidence.filter((item): item is IntelBriefEvidence =>
-          !!item && typeof item === 'object' && typeof (item as IntelBriefEvidence).id === 'string')
-        : [],
-      generatedAt: body.generatedAt,
-      cached: body.cached,
-    };
-  }
-
 
   private buildFallbackSignalLines(
     score: CountryScore | null,
@@ -884,11 +776,6 @@ export class CountryIntelManager implements AppModule {
 
     if (signals.travelAdvisoryMaxLevel) {
       lines.push(`Travel advisory max level: ${signals.travelAdvisoryMaxLevel}`);
-    }
-
-    if (signals.sanctionsDesignations > 0) {
-      const newPart = signals.sanctionsNewDesignations > 0 ? `, +${signals.sanctionsNewDesignations} new` : '';
-      lines.push(`Sanctions: ${signals.sanctionsDesignations} active designations${newPart}`);
     }
 
     if (signals.displacementOutflow > 0) {
@@ -1095,7 +982,8 @@ export class CountryIntelManager implements AppModule {
       console.warn('[CountryBrief] signal clusters unavailable, degrading:', err);
     }
     const countryCluster = clusters.find(c => c.country === code);
-    const globalCluster = clusters.find(c => c.country === 'XX');
+    const globalTemporalAnomalies = clusters.find(cluster => cluster.country === 'XX')
+      ?.signals.filter(signal => signal.type === 'temporal_anomaly').length ?? 0;
     const signalTypeCounts = {
       aisDisruptions: 0,
       satelliteFires: 0,
@@ -1110,9 +998,6 @@ export class CountryIntelManager implements AppModule {
         else if (s.type === 'temporal_anomaly') signalTypeCounts.temporalAnomalies++;
       }
     }
-    const globalTemporalAnomalies = globalCluster
-      ? globalCluster.signals.filter((s) => s.type === 'temporal_anomaly').length
-      : 0;
 
     const criticalNews = this.ctx.latestClusters.filter((cluster) => {
       if (!CountryIntelManager.isCountryHeadline(cluster.primaryTitle, country, code)) return false;
@@ -1191,12 +1076,6 @@ export class CountryIntelManager implements AppModule {
       ).length;
     }
 
-    const sanctionsCountry = this.ctx.intelligenceCache.sanctions?.countries.find(
-      (c) => c.countryCode.toUpperCase() === code,
-    );
-    const sanctionsDesignations = sanctionsCountry?.entryCount ?? 0;
-    const sanctionsNewDesignations = sanctionsCountry?.newEntryCount ?? 0;
-
     return {
       criticalNews,
       protests,
@@ -1221,8 +1100,6 @@ export class CountryIntelManager implements AppModule {
       gpsJammingHexes: (ciiData?.gpsJammingHighCount ?? 0) + (ciiData?.gpsJammingMediumCount ?? 0),
       isTier1,
       thermalEscalations,
-      sanctionsDesignations,
-      sanctionsNewDesignations,
     };
   }
 

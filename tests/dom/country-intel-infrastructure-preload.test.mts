@@ -68,11 +68,6 @@ vi.mock('@/services/supply-chain', async (importOriginal) => ({
   fetchCountryVulnerabilities: async () => null,
 }));
 
-vi.mock('@/services/panel-gating', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/services/panel-gating')>(),
-  hasPremiumAccess: () => false,
-}));
-
 vi.mock('@/services/analysis-framework-store', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/services/analysis-framework-store')>(),
   subscribeFrameworkChange: () => () => {},

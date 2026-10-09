@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 
 vi.mock('@/services/cached-risk-scores', () => ({ getCachedCountryScores: () => [], isElevatedCiiScore: () => false }));
 vi.mock('@/services/country-instability', () => ({ isInLearningMode: () => true }));
-vi.mock('@/services/sanctions-pressure', () => ({ getLatestSanctionsPressure: () => null }));
 vi.mock('@/services/radiation', () => ({ getLatestRadiationWatch: () => null }));
 
 const countries = readFileSync('public/data/countries.geojson', 'utf8');
@@ -46,26 +45,6 @@ describe('geographic signal attribution', () => {
     ingest('Neverland');
     expect(signalAggregator.getCountryClusters().map(c => c.country)).toEqual(['XX']);
   });
-});
-
-it('preserves unknown sanctions and fire countries while using resolved fire names', async () => {
-  const { signalAggregator } = await import('@/services/signal-aggregator');
-  signalAggregator.ingestSanctionsPressure([{ countryCode: '', countryName: 'Neverland', entryCount: 30,
-    newEntryCount: 1, vesselCount: 0, aircraftCount: 0 }]);
-  expect(signalAggregator.getCountryClusters().map(c => c.country)).toEqual(['XX']);
-  signalAggregator.ingestSanctionsPressure([{ countryCode: 'UKR', countryName: 'Ukraine', entryCount: 30,
-    newEntryCount: 1, vesselCount: 0, aircraftCount: 0 }]);
-  expect(signalAggregator.getCountryClusters().map(c => c.country)).toEqual(['UA']);
-  signalAggregator.ingestSanctionsPressure([{ countryCode: 'IL', countryName: 'Ukraine', entryCount: 30,
-    newEntryCount: 1, vesselCount: 0, aircraftCount: 0 }]);
-  expect(signalAggregator.getCountryClusters().map(c => c.country)).toEqual(['IL']);
-  signalAggregator.clear();
-  const fire = { lat: 0, lon: 0, brightness: 370, frp: 10, acq_date: new Date().toISOString() };
-  signalAggregator.ingestSatelliteFires([{ ...fire, region: 'Neverland' }]);
-  expect(signalAggregator.getCountryClusters().map(c => c.country)).toEqual(['XX']);
-  await loadGeometry();
-  signalAggregator.ingestSatelliteFires([{ ...fire, region: 'Israel' }]);
-  expect(signalAggregator.getCountryClusters().map(c => c.country)).toEqual(['IL']);
 });
 
 describe('unified alert lifecycle', () => {

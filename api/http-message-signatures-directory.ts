@@ -26,8 +26,6 @@
  * `application/http-message-signatures-directory+json`.
  */
 
-import { guardMetadataMethod } from './_agent-metadata';
-
 export const config = { runtime: 'edge' };
 
 // Ed25519 public key, base64url without padding (43 chars = 32 bytes). The
@@ -63,8 +61,16 @@ async function jwkThumbprint(x: string): Promise<string> {
 }
 
 export default async function handler(req: Request): Promise<Response> {
-  const guarded = guardMetadataMethod(req);
-  if (guarded) return guarded;
+  const cors = { 'Access-Control-Allow-Origin': '*' };
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: { ...cors, 'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS' },
+    });
+  }
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return new Response(null, { status: 405, headers: { ...cors, Allow: 'GET, HEAD, OPTIONS' } });
+  }
 
   const notBefore = Math.floor(Date.now() / 1000) - CLOCK_SKEW_SECONDS;
   const kid = await jwkThumbprint(ED25519_PUBLIC_KEY_X);

@@ -1,3 +1,4 @@
+import { denyRetiredRpc } from '../../../../api/_retired-routes.js';
 /**
  * Market service handler -- thin composition of per-RPC modules.
  *
@@ -23,10 +24,6 @@ import { listEtfFlows } from './list-etf-flows';
 import { getCountryStockIndex } from './get-country-stock-index';
 import { getPriceHistory } from './get-price-history';
 import { listGulfQuotes } from './list-gulf-quotes';
-import { analyzeStock } from './analyze-stock';
-import { getStockAnalysisHistory } from './get-stock-analysis-history';
-import { backtestStock } from './backtest-stock';
-import { listStoredStockBacktests } from './list-stored-stock-backtests';
 import { listCryptoSectors } from './list-crypto-sectors';
 import { listDefiTokens } from './list-defi-tokens';
 import { listAiTokens } from './list-ai-tokens';
@@ -34,29 +31,26 @@ import { listOtherTokens } from './list-other-tokens';
 import { getFearGreedIndex } from './get-fear-greed-index';
 import { listEarningsCalendar } from './list-earnings-calendar';
 import { getCotPositioning } from './get-cot-positioning';
-import { getInsiderTransactions } from './get-insider-transactions';
 import { getMarketBreadthHistory } from './get-market-breadth-history';
 import { getGoldIntelligence } from './get-gold-intelligence';
 import { getHyperliquidFlow } from './get-hyperliquid-flow';
-import { getPhysicalPremiums } from './get-physical-premiums';
-import { getPhysicalDivergenceIndex } from './get-physical-divergence-index';
 
 export const marketHandler: MarketServiceHandler = {
   listMarketQuotes,
   listCryptoQuotes,
   listCommodityQuotes,
-  getPhysicalPremiums,
-  getPhysicalDivergenceIndex,
+  getPhysicalPremiums: denyRetiredRpc,
+  getPhysicalDivergenceIndex: denyRetiredRpc,
   getSectorSummary,
   listStablecoinMarkets,
   listEtfFlows,
   getCountryStockIndex,
   getPriceHistory,
   listGulfQuotes,
-  analyzeStock,
-  getStockAnalysisHistory,
-  backtestStock,
-  listStoredStockBacktests,
+  analyzeStock: denyRetiredRpc,
+  getStockAnalysisHistory: denyRetiredRpc,
+  backtestStock: denyRetiredRpc,
+  listStoredStockBacktests: denyRetiredRpc,
   listCryptoSectors,
   listDefiTokens,
   listAiTokens,
@@ -64,7 +58,7 @@ export const marketHandler: MarketServiceHandler = {
   getFearGreedIndex,
   listEarningsCalendar,
   getCotPositioning,
-  getInsiderTransactions,
+  getInsiderTransactions: denyRetiredRpc,
   getMarketBreadthHistory,
   getGoldIntelligence,
   getHyperliquidFlow,

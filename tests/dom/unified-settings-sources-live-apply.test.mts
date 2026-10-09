@@ -30,8 +30,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, type Mock, vi }
 
 import { initTestI18n } from './helpers/i18n.mts';
 import type { UnifiedSettingsConfig } from '@/components/UnifiedSettings';
-import type { AuthSession } from '@/services/auth-state';
-import type { EntitlementState } from '@/services/entitlements';
 
 const session: AuthSession = {
   user: { id: 'A', name: 'User A', email: 'a@example.com', role: 'pro' },
@@ -61,39 +59,12 @@ const storage: Storage = {
   setItem: (key, value) => { storageValues.set(key, value); },
 };
 
-vi.mock('@/services/auth-state', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/auth-state')>()),
-  getAuthState: () => session,
-  subscribeAuthState: () => () => {},
-}));
-
-vi.mock('@/services/entitlements', () => ({
-  getEntitlementState: () => entitlementState,
-  getEntitlementVerificationStatus: () => 'ready',
-  hasFeature: () => true,
-  hasEmbedAccessForAccount: () => true,
-  isEntitled: () => true,
-  onEntitlementChange: () => () => {},
-  onEntitlementVerificationChange: () => () => {},
-}));
-
-vi.mock('@/services/panel-gating', () => ({
-  hasPremiumAccess: () => true,
-}));
-
 vi.mock('@/services/widget-store', () => ({
   isProUser: () => true,
 }));
 
 vi.mock('@/services/preferences-content', () => ({
   renderPreferences: () => ({
-    html: '',
-    attach: () => () => {},
-  }),
-}));
-
-vi.mock('@/services/notifications-settings', () => ({
-  renderNotificationsSettings: () => ({
     html: '',
     attach: () => () => {},
   }),
@@ -119,47 +90,6 @@ vi.mock('@/config/panels', () => ({
 
 vi.mock('@/config/variant', () => ({
   SITE_VARIANT: 'full',
-}));
-
-vi.mock('@/services/billing', () => ({
-  getSubscription: () => null,
-  isSubscriptionLoaded: () => true,
-  onSubscriptionChange: () => () => {},
-  openBillingPortal: async () => ({ outcome: 'no-customer' as const }),
-  prereserveBillingPortalTab: () => null,
-  listBusinessSeats: async () => ({
-    businessSubscriptionId: null,
-    ownerDomain: null,
-    ownerIsCorporateDomain: false,
-    seats: [],
-  }),
-  inviteBusinessSeats: async () => ({ invited: [] }),
-  removeBusinessSeat: async () => ({ status: 'removed' as const }),
-}));
-
-// Partial so the real status-tone helpers stay available: a full stub goes
-// stale the moment billing-state gains an export the panel renders (#7315).
-vi.mock('@/services/billing-state', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/billing-state')>()),
-  deriveBillingUxState: () => 'active',
-  getReactivationHref: () => '/pro#pricing',
-}));
-
-vi.mock('@/services/api-keys', () => ({
-  createApiKey: vi.fn(),
-  listApiKeys: vi.fn(),
-  revokeApiKey: vi.fn(),
-}));
-
-vi.mock('@/services/api-plan-limit-notices', () => ({
-  acknowledgePlanLimitNotice: vi.fn(),
-  listCurrentPlanLimitNotices: vi.fn(),
-}));
-
-vi.mock('@/services/mcp-clients', () => ({
-  listMcpClients: vi.fn(),
-  fetchMcpQuota: vi.fn(),
-  revokeMcpClient: vi.fn(),
 }));
 
 const { UnifiedSettings } = await import('@/components/UnifiedSettings');

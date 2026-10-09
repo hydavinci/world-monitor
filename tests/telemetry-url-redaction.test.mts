@@ -1,155 +1,106 @@
-/**
- * Telemetry URL redaction (#8369-1, re-cut). Vercel Analytics redacts per
- * event, the boot strip removes only params nobody reads, and DebugBear RUM
- * (tests/debugbear-rum.test.mts) holds its collector while the shared list
- * still matches the live URL. One list feeds all of them.
- *
- * Run: node --test tests/telemetry-url-redaction.test.mts
- */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-import {
-  redactAnalyticsUrl,
-  stripSensitiveParamsFromUrl,
-} from '../src/bootstrap/secondary-startup.ts';
+import { stripSensitiveParamsFromUrl } from '../src/bootstrap/secondary-startup.ts';
 import {
   SENSITIVE_URL_PARAM_RE,
   redactSensitiveUrl,
   urlCarriesSensitiveParams,
 } from '../shared/sensitive-url-params.ts';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const read = (rel: string) => readFileSync(resolve(root, rel), 'utf8');
+describe('shared sensitive URL redaction without external collectors', () => {
+  it('strips sensitive query parameters while retaining ordinary navigation', () => {
+    const keys = [
+      'email', 'license_key', 'subscription_id', 'payment_id', 'accept-business-invite',
+      'token', 'access_token', 'ref', 'wm_referral', '__clerk_handshake',
+      '__clerk_ticket', '__clerk_foo', 'checkoutProduct', 'checkoutDiscount',
+    ];
+    const url = new URL('https://www.worldmonitor.app/dashboard?tab=news');
+    for (const key of keys) url.searchParams.set(key, 'sensitive-value');
+    const result = new URL(redactSensitiveUrl(url.href));
+    for (const key of keys) assert.equal(result.searchParams.get(key), null, key);
+    assert.equal(result.searchParams.get('tab'), 'news');
+  });
 
-describe('Vercel Analytics URL redaction', () => {
-  it('strips checkout secrets, invite tokens, referral, and Clerk params', () => {
-    const redacted = redactAnalyticsUrl({
-      type: 'pageview',
-      url: 'https://www.worldmonitor.app/dashboard?email=a@b.com&license_key=SEKRET&subscription_id=sub_1&payment_id=pay_1&accept-business-invite=g1&token=tok123&access_token=qsecret&ref=abc&wm_referral=xyz&__clerk_handshake=h&__clerk_ticket=t&__clerk_foo=bar&checkoutProduct=pro&checkoutDiscount=SAVE&tab=news',
-    });
-    // Parsed params, never substrings: URLSearchParams re-encodes '@' as %40,
-    // so `!includes('a@b.com')` could not fail.
-    const params = new URL(redacted.url).searchParams;
-    for (const key of ['email', 'license_key', 'subscription_id', 'payment_id', 'accept-business-invite', 'token', 'access_token', 'ref', 'wm_referral', '__clerk_handshake', '__clerk_ticket', '__clerk_foo', 'checkoutProduct', 'checkoutDiscount']) {
-      assert.equal(params.get(key), null, `${key} must be redacted`);
+  it('retains absolute and relative URL shapes', () => {
+    assert.equal(
+      redactSensitiveUrl('https://www.worldmonitor.app/dashboard?token=secret&tab=news'),
+      'https://www.worldmonitor.app/dashboard?tab=news',
+    );
+    assert.equal(
+      redactSensitiveUrl('/dashboard?ref=secret&tab=news', 'https://www.worldmonitor.app'),
+      '/dashboard?tab=news',
+    );
+    assert.equal(redactSensitiveUrl('/?ref=secret', 'https://www.worldmonitor.app'), '/');
+  });
+
+  it('scrubs OAuth and route fragments', () => {
+    for (const href of [
+      'https://www.worldmonitor.app/dashboard#access_token=secret&token_type=Bearer',
+      'https://www.worldmonitor.app/dashboard#/r?ref=secret&checkoutProduct=pro&keep=1',
+    ]) {
+      assert.ok(!redactSensitiveUrl(href).includes('secret'));
     }
-    assert.equal(params.get('tab'), 'news', 'benign params survive');
+    assert.ok(redactSensitiveUrl('/dashboard#/r?ref=secret&keep=1', 'https://www.worldmonitor.app').includes('keep=1'));
   });
 
-  it('keeps a redacted absolute URL absolute', () => {
-    const redacted = redactAnalyticsUrl({
-      type: 'pageview',
-      url: 'https://www.worldmonitor.app/dashboard?token=tok123&tab=news',
-    });
-    assert.ok(redacted.url.startsWith('https://www.worldmonitor.app/'), redacted.url);
+  it('leaves ordinary URLs unchanged', () => {
+    const href = 'https://www.worldmonitor.app/dashboard?tab=news';
+    assert.equal(redactSensitiveUrl(href), href);
   });
 
-  it('scrubs OAuth-style hash fragments without a ?', () => {
-    const redacted = redactAnalyticsUrl({
-      type: 'pageview',
-      url: 'https://www.worldmonitor.app/dashboard#access_token=xyz&token_type=Bearer',
-    });
-    assert.ok(!redacted.url.includes('xyz'));
-  });
-
-  it('scrubs fragment-carried params', () => {
-    const redacted = redactAnalyticsUrl({
-      type: 'pageview',
-      url: 'https://www.worldmonitor.app/dashboard#/r?ref=abc&checkoutProduct=pro&keep=1',
-    });
-    assert.ok(!redacted.url.includes('ref=abc'));
-    assert.ok(!redacted.url.includes('checkoutProduct'));
-    assert.ok(redacted.url.includes('keep=1'));
-  });
-
-  it('keeps a redacted relative URL relative', () => {
-    assert.equal(redactSensitiveUrl('/dashboard?ref=abc&tab=news', 'https://www.worldmonitor.app'), '/dashboard?tab=news');
-    assert.equal(redactSensitiveUrl('/?ref=abc', 'https://www.worldmonitor.app'), '/');
-  });
-
-  it('returns the original event object when nothing is sensitive', () => {
-    const event = { type: 'pageview', url: 'https://www.worldmonitor.app/dashboard?tab=news' } as const;
-    assert.equal(redactAnalyticsUrl(event), event);
-  });
-
-  it('beforeSend redacts before sampling, so no sampled event skips redaction', () => {
-    const src = read('src/bootstrap/secondary-startup.ts');
-    assert.match(src, /beforeSend:\s*\(event\)\s*=>\s*\{\s*const redacted = redactAnalyticsUrl\(event\);/);
+  it('keeps sensitive-parameter detection aligned with redaction', () => {
+    for (const key of ['ref', 'wm_referral', 'accept-business-invite', 'token', 'invite_token', '__clerk_ticket', '__clerk_status', '__clerk_handshake', 'checkoutReferral', 'email', 'license_key']) {
+      const href = `https://www.worldmonitor.app/dashboard?${key}=secret&tab=news`;
+      assert.equal(urlCarriesSensitiveParams(href), true, key);
+      assert.equal(new URL(redactSensitiveUrl(href)).searchParams.get(key), null, key);
+    }
+    assert.equal(urlCarriesSensitiveParams('https://www.worldmonitor.app/dashboard?tab=news&utm_source=x'), false);
+    assert.equal(urlCarriesSensitiveParams(undefined), false);
+    assert.ok(SENSITIVE_URL_PARAM_RE.test('__clerk_db_jwt'));
   });
 });
 
-describe('boot-time URL strip', () => {
+describe('boot-time URL privacy', () => {
   function runBootStrip(href: string): string[] {
     const replaced: string[] = [];
-    const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'window');
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
         location: { href },
-        history: { replaceState: (_s: unknown, _t: string, url: string) => replaced.push(url) },
+        history: { replaceState: (_state: unknown, _title: string, url: string) => replaced.push(url) },
       },
     });
     try {
       stripSensitiveParamsFromUrl();
       return replaced;
     } finally {
-      if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
-      else delete (globalThis as { window?: unknown }).window;
+      if (original) Object.defineProperty(globalThis, 'window', original);
+      else Reflect.deleteProperty(globalThis, 'window');
     }
   }
 
-  it('removes unread secrets (email, license_key)', () => {
-    const replaced = runBootStrip('https://www.worldmonitor.app/dashboard?email=a@b.com&license_key=SEKRET&tab=news');
-    assert.equal(replaced.length, 1);
-    const params = new URLSearchParams(replaced[0]!.split('?')[1]);
-    assert.equal(params.get('email'), null);
-    assert.equal(params.get('license_key'), null);
-    assert.equal(params.get('tab'), 'news');
+  it('removes unread secrets but retains the selected tab', () => {
+    assert.deepEqual(
+      runBootStrip('https://www.worldmonitor.app/dashboard?email=secret&license_key=secret&tab=news'),
+      ['/dashboard?tab=news'],
+    );
   });
 
-  it('preserves params deferred consumers must still read', () => {
-    // captureReferralFromUrl, capturePendingCheckoutIntentFromUrl, the invite
-    // acceptor, handleCheckoutReturn, and the Clerk SDK (__clerk_status /
-    // __clerk_ticket, read after requestIdleCallback) all run after main.ts.
+  it('preserves parameters owned by deferred readers', () => {
     for (const href of [
       'https://www.worldmonitor.app/dashboard?ref=abc&checkoutProduct=pro&accept-business-invite=g1&token=tok123&subscription_id=sub_1&tab=news',
       'https://www.worldmonitor.app/?__clerk_status=verified&__clerk_created_session=sess_1&__clerk_ticket=tkt_1',
       'https://www.worldmonitor.app/dashboard#/r?ref=abc&checkoutProduct=pro',
-    ]) {
-      assert.equal(runBootStrip(href).length, 0, href);
-    }
+    ]) assert.deepEqual(runBootStrip(href), []);
   });
 
-  it('runs in main.ts before analytics and RUM init', () => {
-    const main = read('src/main.ts');
+  it('scrubs the live URL before fetch wrappers and sharing metadata initialize', () => {
+    const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
     const strip = main.indexOf('stripSensitiveParamsFromUrl();');
-    assert.ok(strip > 0, 'main.ts must call stripSensitiveParamsFromUrl()');
-    assert.ok(strip < main.indexOf('void initAnalytics();'));
-    assert.ok(strip < main.indexOf('initVercelAnalytics();'));
-    assert.ok(strip < main.indexOf('initDebugBearRum();'));
-  });
-});
-
-describe('one sensitive-param list for every telemetry vendor', () => {
-  it('the DebugBear gate matches exactly what analytics redacts', () => {
-    for (const key of ['ref', 'wm_referral', 'accept-business-invite', 'token', 'invite_token', '__clerk_ticket', '__clerk_status', '__clerk_handshake', 'checkoutReferral', 'email', 'license_key']) {
-      const href = `https://www.worldmonitor.app/dashboard?${key}=v&tab=news`;
-      assert.equal(urlCarriesSensitiveParams(href), true, `${key} must hold DebugBear`);
-      const redacted = redactAnalyticsUrl({ type: 'pageview', url: href });
-      assert.equal(new URL(redacted.url).searchParams.get(key), null, `${key} must be redacted for Vercel`);
-    }
-    assert.equal(urlCarriesSensitiveParams('https://www.worldmonitor.app/dashboard?tab=news&utm_source=x'), false);
-    assert.equal(urlCarriesSensitiveParams(undefined), false);
-  });
-
-  it('Vercel, Umami, and both DebugBear loaders import the shared list', () => {
-    for (const rel of ['src/bootstrap/secondary-startup.ts', 'src/services/analytics.ts', 'src/bootstrap/debugbear-rum.ts', 'pro-test/src/debugbear-rum.ts']) {
-      assert.match(read(rel), /sensitive-url-params/, `${rel} must use the shared list`);
-    }
-    assert.ok(SENSITIVE_URL_PARAM_RE.test('__clerk_db_jwt'));
+    assert.ok(strip > 0);
+    assert.ok(strip < main.indexOf('initMetaTags();'));
+    assert.ok(strip < main.indexOf('installFetchFailureAttribution();'));
   });
 });

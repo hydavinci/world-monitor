@@ -1,7 +1,6 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
 import handler from './embed.js';
-import { TRUSTED_RETURN_URL_ORIGINS } from '../../convex/payments/returnUrlOrigin.ts';
 
 function makeRequest(query = '') {
   return new Request(`https://worldmonitor.app/api/youtube/embed${query}`);
@@ -64,7 +63,8 @@ test('does not accept wildcard parentOrigin query parameter', async () => {
 
 test('preserves app, team preview, and local origins for the player and parent', async () => {
   for (const origin of [
-    ...TRUSTED_RETURN_URL_ORIGINS,
+    ...['', 'www.', 'app.', 'api.', 'tech.', 'finance.', 'commodity.', 'happy.', 'energy.']
+      .map(host => `https://${host}worldmonitor.app`),
     'https://worldmonitor-git-feature-eliewm.vercel.app',
     'http://localhost:3000', 'https://localhost',
     'http://127.0.0.1:46123', 'https://127.0.0.1', 'tauri://localhost',
