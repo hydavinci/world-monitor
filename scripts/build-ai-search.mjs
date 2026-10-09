@@ -130,7 +130,7 @@ export function buildCoverageBullets({ stats, resilience }) {
     `- ${count(stats.freshnessSources)} named live data streams whose staleness is tracked and surfaced individually — a different axis from the ${count(SOURCE_DOMAINS.length)} signal domains above, which group the source catalog by subject`,
     mapLayerCoverage(stats),
     `- ${count(stats.panelClasses)} concrete panel implementations across ${count(stats.variantCount)} product variants`,
-    `- ${count(stats.mcpToolCount)} MCP tools; use \`tools/list\` for the live inventory`,
+    `- ${count(stats.mcpToolCount)} MCP tools for the retired product-data interface (unavailable in this public-only fork) — anonymous documentation MCP is an upstream transport proxy; in-browser WebMCP is a separate dashboard interface. Neither is counted here`,
     `- ${count(stats.locales)} supported interface languages`,
     `- ${count(stats.tier1Countries)} countries scored by the Country Instability Index (CII v8)`,
     `- ${count(stats.rankableUniverseCountries)}-country rankable universe for the Country Resilience Index, of which ${count(resilience.ranked)} are ranked in the published snapshot captured ${resilience.capturedAt}`,

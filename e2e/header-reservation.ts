@@ -1,7 +1,5 @@
 import { expect, type Page } from '@playwright/test';
 
-export const HEADER_AUTH_SLOT_WIDTH = 200;
-
 type Box = {
   height: number;
   width: number;
@@ -22,89 +20,35 @@ const expectBoxesToMatch = (actual: Box, expected: Box, message: string): void =
   expect(Math.abs(actual.height - expected.height), `${message} height`).toBeLessThanOrEqual(1);
 };
 
-export const assertSignedOutAuthHydrationKeepsHeaderStable = async (page: Page): Promise<void> => {
-  await page.locator('.header').waitFor();
-  const result = await page.evaluate(() => {
-    const header = document.querySelector<HTMLElement>('.header');
-    const authMount = document.getElementById('authWidgetMount');
-    if (!header || !authMount) {
-      throw new Error('missing header auth reservation elements');
-    }
+export const assertPublicHeaderKeepsLayoutStable = async (page: Page): Promise<void> => {
+  await expect(page.locator('.header')).toBeVisible();
+  await expect(page.locator('#unifiedSettingsBtn')).toBeVisible();
+  await expect(page.locator('#authWidgetMount, .auth-header-widget, .auth-signin-btn')).toHaveCount(0);
 
+  const measure = async () => page.evaluate(() => {
+    const header = document.querySelector<HTMLElement>('.header');
+    const settings = document.getElementById('unifiedSettingsBtn');
+    if (!header || !settings) throw new Error('missing public header controls');
     const rectOf = (element: Element): Box => {
       const rect = element.getBoundingClientRect();
-      return {
-        height: rect.height,
-        width: rect.width,
-        x: rect.x,
-        y: rect.y,
-      };
+      return { height: rect.height, width: rect.width, x: rect.x, y: rect.y };
     };
-
-    const beforeHeaderBox = rectOf(header);
-    const beforeAuthMountBox = rectOf(authMount);
-    const pendingSkeletonCount = authMount.querySelectorAll('.auth-header-skeleton').length;
-
-    const widget = document.createElement('div');
-    widget.className = 'auth-header-widget';
-
-    const signInButton = document.createElement('button');
-    signInButton.className = 'auth-signin-btn';
-    signInButton.type = 'button';
-    signInButton.textContent = 'Sign In';
-    widget.appendChild(signInButton);
-
-    const signUpButton = document.createElement('button');
-    signUpButton.className = 'auth-signup-link';
-    signUpButton.type = 'button';
-    signUpButton.textContent = 'Create account';
-    widget.appendChild(signUpButton);
-
-    authMount.replaceChildren(widget);
-
-    return {
-      beforeAuthMountBox,
-      beforeHeaderBox,
-      pendingSkeletonCount,
-    };
+    return { header: rectOf(header), settings: rectOf(settings) };
   });
 
   await waitForLayoutFrame(page);
+  const before = await measure();
+  await page.locator('#unifiedSettingsBtn').click();
+  await expect(page.locator('#unifiedSettingsModal.active')).toBeVisible();
+  await waitForLayoutFrame(page);
+  const whileOpen = await measure();
+  expectBoxesToMatch(whileOpen.header, before.header, 'public header while settings is open');
+  expectBoxesToMatch(whileOpen.settings, before.settings, 'settings control while settings is open');
+  await page.locator('#unifiedSettingsModal .unified-settings-close').click();
+  await expect(page.locator('#unifiedSettingsModal')).toBeHidden();
+  await waitForLayoutFrame(page);
+  const after = await measure();
 
-  const hydrated = await page.evaluate(() => {
-    const header = document.querySelector<HTMLElement>('.header');
-    const authMount = document.getElementById('authWidgetMount');
-    const widget = authMount?.querySelector<HTMLElement>('.auth-header-widget');
-    if (!header || !authMount || !widget) {
-      throw new Error('missing hydrated header auth elements');
-    }
-
-    const rectOf = (element: Element): Box => {
-      const rect = element.getBoundingClientRect();
-      return {
-        height: rect.height,
-        width: rect.width,
-        x: rect.x,
-        y: rect.y,
-      };
-    };
-
-    return {
-      afterAuthMountBox: rectOf(authMount),
-      afterHeaderBox: rectOf(header),
-      hydratedWidgetBox: rectOf(widget),
-      authMountMinWidth: getComputedStyle(authMount).minWidth,
-    };
-  });
-
-  expect(hydrated.authMountMinWidth).toBe(`${HEADER_AUTH_SLOT_WIDTH}px`);
-  expect(result.beforeAuthMountBox.width).toBeGreaterThanOrEqual(HEADER_AUTH_SLOT_WIDTH);
-  expect(hydrated.afterAuthMountBox.width).toBeGreaterThanOrEqual(HEADER_AUTH_SLOT_WIDTH);
-  expect(hydrated.hydratedWidgetBox.width).toBeGreaterThan(180);
-  expect(hydrated.hydratedWidgetBox.width).toBeLessThanOrEqual(HEADER_AUTH_SLOT_WIDTH + 1);
-  if (result.pendingSkeletonCount > 0) {
-    expect(result.pendingSkeletonCount).toBe(2);
-  }
-  expectBoxesToMatch(hydrated.afterAuthMountBox, result.beforeAuthMountBox, 'auth mount');
-  expectBoxesToMatch(hydrated.afterHeaderBox, result.beforeHeaderBox, 'header');
+  expectBoxesToMatch(after.header, before.header, 'public header');
+  expectBoxesToMatch(after.settings, before.settings, 'settings control');
 };

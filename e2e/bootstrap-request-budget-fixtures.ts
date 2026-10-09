@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test';
+import { publicPanelsWorkspaceStorage } from './public-workspace-fixture';
 
 // Shared bootstrap request-budget fixtures. Two specs assert against the same
 // startup surface — the energy on-demand budget (#7046) and the hydration reuse
@@ -112,7 +113,7 @@ export async function seedAnonymousDashboard(
   variant: 'full' | 'happy' | 'energy',
   options: AnonymousDashboardSeedOptions = {},
 ): Promise<void> {
-  await page.addInitScript(({ selectedVariant, seedOptions }) => {
+  await page.addInitScript(({ selectedVariant, seedOptions, workspaceStorage }) => {
     const initializeOnce = seedOptions.initializeOnce;
     const shouldInitialize = !initializeOnce
       || !sessionStorage.getItem(initializeOnce.sessionKey);
@@ -129,6 +130,9 @@ export async function seedAnonymousDashboard(
     localStorage.setItem('wm-pro-banner-launched-dismissed', String(Date.now()));
     localStorage.setItem('worldmonitor-mission-preset-dismissed-v1', '1');
     localStorage.setItem('worldmonitor-variant', selectedVariant);
+    for (const [key, value] of Object.entries(workspaceStorage)) {
+      if (!localStorage.getItem(key)) localStorage.setItem(key, value);
+    }
 
     if (shouldInitialize && initializeOnce) {
       for (const [key, value] of Object.entries(initializeOnce.localStorage ?? {})) {
@@ -142,7 +146,7 @@ export async function seedAnonymousDashboard(
     if (shouldInitialize && initializeOnce) {
       sessionStorage.setItem(initializeOnce.sessionKey, '1');
     }
-  }, { selectedVariant: variant, seedOptions: options });
+  }, { selectedVariant: variant, seedOptions: options, workspaceStorage: publicPanelsWorkspaceStorage(variant) });
 }
 
 export async function waitForStartup(page: Page): Promise<void> {

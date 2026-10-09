@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { assertSignedOutAuthHydrationKeepsHeaderStable, HEADER_AUTH_SLOT_WIDTH } from './header-reservation';
+import { assertPublicHeaderKeepsLayoutStable } from './header-reservation';
 
 declare global {
   interface Window {
@@ -88,15 +88,13 @@ test.describe('header CLS reservations', () => {
       const header = document.querySelector<HTMLElement>('.header');
       const missionMount = document.getElementById('missionPresetMount');
       const settingsMount = document.getElementById('unifiedSettingsMount');
-      const authMount = document.getElementById('authWidgetMount');
-      if (!header || !missionMount || !settingsMount || !authMount) {
-        throw new Error('missing header reservation elements');
+      if (!header || !missionMount || !settingsMount) {
+        throw new Error('missing public header reservation elements');
       }
 
       const headerStyle = getComputedStyle(header);
       const missionStyle = getComputedStyle(missionMount);
       const settingsStyle = getComputedStyle(settingsMount);
-      const authStyle = getComputedStyle(authMount);
 
       return {
         headerContain: headerStyle.contain,
@@ -110,11 +108,6 @@ test.describe('header CLS reservations', () => {
         settingsMinHeight: settingsStyle.minHeight,
         settingsWidth: settingsMount.getBoundingClientRect().width,
         settingsHeight: settingsMount.getBoundingClientRect().height,
-        authDisplay: authStyle.display,
-        authMinWidth: authStyle.minWidth,
-        authMinHeight: authStyle.minHeight,
-        authWidth: authMount.getBoundingClientRect().width,
-        authHeight: authMount.getBoundingClientRect().height,
       };
     });
 
@@ -129,13 +122,7 @@ test.describe('header CLS reservations', () => {
     expect(styles.settingsMinHeight).toBe('28px');
     expect(styles.settingsWidth).toBeGreaterThanOrEqual(28);
     expect(styles.settingsHeight).toBeGreaterThanOrEqual(28);
-    expect(styles.authDisplay).toMatch(/^(inline-)?flex$/);
-    expect(styles.authMinWidth).toBe(`${HEADER_AUTH_SLOT_WIDTH}px`);
-    expect(styles.authMinHeight).toBe('32px');
-    expect(styles.authWidth).toBeGreaterThanOrEqual(HEADER_AUTH_SLOT_WIDTH);
-    expect(styles.authHeight).toBeGreaterThanOrEqual(32);
-
-    await assertSignedOutAuthHydrationKeepsHeaderStable(page);
+    await assertPublicHeaderKeepsLayoutStable(page);
     await page.evaluate(() => new Promise<void>((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     }));
@@ -151,10 +138,8 @@ test.describe('header CLS reservations', () => {
           selector === '.header'
           || selector === '#missionPresetMount'
           || selector === '#unifiedSettingsMount'
-          || selector === '#authWidgetMount'
           || selector.startsWith('.header-')
           || selector.includes('mission-preset')
-          || selector.includes('auth-')
           || selector.includes('unified-settings')
         )));
       const header = headerEntries.reduce((sum, entry) => sum + entry.value, 0);

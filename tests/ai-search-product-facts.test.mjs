@@ -14,7 +14,8 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writ
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { describe, it } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { getCompleteLayerCatalogKeys } from '../src/config/map-layer-definitions.ts';
 
 import {
   AI_SEARCH_PATH,
@@ -29,13 +30,38 @@ import {
 } from '../scripts/build-ai-search.mjs';
 import { VERSION_HEADER_RE, withVersionHeader } from '../scripts/build-llms-full.mjs';
 import { SOURCE_DOMAINS } from '../scripts/crawlable-sources-page.mjs';
-import { validateVolatileInventoryClaims, withStatsRoot } from '../scripts/docs-stats.mjs';
 import { loadStatsForInventoryFacts } from '../scripts/generate-inventory-facts.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relativePath) => readFileSync(join(repoRoot, relativePath), 'utf8');
 /** The ISO date inside the coverage block's reconciliation line. */
 const RECONCILED_ISO = /(?<=Coverage reconciled: )\d{4}-\d{2}-\d{2}/;
+const publicationEnv = { PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin` };
+
+// Never copy local env files or untracked work into a publication fixture.
+async function withTrackedPublication(fn) {
+  const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, env: publicationEnv, encoding: 'utf8' })
+    .split('\0').filter(Boolean);
+  assert.deepEqual(
+    tracked.filter((path) => /(^|\/)\.env/.test(path) && !path.endsWith('/.env.example') && path !== '.env.example'),
+    [],
+    'publication fixtures must reject tracked private env files',
+  );
+  const deleted = new Set(execFileSync('git', ['ls-files', '--deleted', '-z'], {
+    cwd: repoRoot, env: publicationEnv, encoding: 'utf8',
+  }).split('\0').filter(Boolean));
+  const sandbox = mkdtempSync(join(tmpdir(), 'wm-publication-'));
+  try {
+    for (const path of tracked.filter((path) => !deleted.has(path))) {
+      mkdirSync(dirname(join(sandbox, path)), { recursive: true });
+      cpSync(join(repoRoot, path), join(sandbox, path), { recursive: true, verbatimSymlinks: true });
+    }
+    symlinkSync(join(repoRoot, 'node_modules'), join(sandbox, 'node_modules'), 'dir');
+    return await fn(sandbox);
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+}
 
 function section(source, heading) {
   const start = source.indexOf(`\n${heading}\n`);
@@ -59,6 +85,12 @@ describe('#6038 ai-search.md data coverage', () => {
       [],
       'every Data Coverage bullet must publish a citable figure, not a bare noun phrase',
     );
+    const mcp = bullets.find((line) => /^- \d[\d,]* MCP tools\b/.test(line));
+    assert.ok(mcp, 'retain the recognizable numeric MCP inventory claim');
+    assert.match(mcp, /retired product-data interface.*unavailable in this public-only fork/);
+    assert.match(mcp, /documentation MCP is an upstream transport proxy/);
+    assert.match(mcp, /in-browser WebMCP is a separate dashboard interface/);
+    assert.doesNotMatch(mcp, /tools\/list|live inventory/);
   });
 
   it('stamps the coverage section with a reconciliation date', () => {
@@ -77,34 +109,33 @@ describe('#6038 ai-search.md data coverage', () => {
     const briefing = read('public/ai-search.md');
     assert.match(briefing, /^Facts reconciled: \d{4}-\d{2}-\d{2}\b/m);
     assert.doesNotMatch(briefing, /^Last updated:/m);
+    assert.doesNotMatch(briefing, /https:\/\/(?:www\.)?worldmonitor\.app\/(?:pro\b|pricing\.md|mcp-server\.md|mcp\b)/);
+    assert.match(briefing, /anonymous documentation search and retrieval/i);
+    assert.match(briefing, /in-browser WebMCP/i);
+    assert.match(briefing, /static samples.*not live API entitlements/);
+    assert.match(briefing, /published country snapshots.*capture dates/);
   });
 });
 
 describe('#6038 ai-search.md is generated, not hand-maintained', () => {
-  it('publishes changed registry counts and OpenAPI bytes through the real build pipelines', { timeout: 120_000 }, () => {
-    const sandbox = mkdtempSync(join(tmpdir(), 'wm-publication-'));
-    const env = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot };
-    const run = (script) => spawnSync('npm', ['run', script], {
-      cwd: sandbox, env, encoding: 'utf8', timeout: 45_000,
-    });
-    const succeeds = (script) => {
-      const result = run(script);
-      assert.equal(result.status, 0, `${script}: ${result.stdout}\n${result.stderr}`);
-    };
-    const fixtureRead = (path) => readFileSync(join(sandbox, path), 'utf8');
-    try {
-      const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, env, encoding: 'utf8' });
-      for (const path of tracked.split('\0').filter(Boolean)) {
-        mkdirSync(dirname(join(sandbox, path)), { recursive: true });
-        cpSync(join(repoRoot, path), join(sandbox, path), { recursive: true, verbatimSymlinks: true });
-      }
-      symlinkSync(join(repoRoot, 'node_modules'), join(sandbox, 'node_modules'), 'dir');
+  it('publishes changed registry counts and OpenAPI bytes through the real publication scripts', { timeout: 120_000 }, async () => {
+    await withTrackedPublication(async (sandbox) => {
+      const run = (args, timeout = 45_000) => spawnSync(process.execPath, args, {
+        cwd: sandbox, env: publicationEnv, encoding: 'utf8', timeout,
+      });
+      const succeeds = (args, timeout) => {
+        const result = run(args, timeout);
+        assert.equal(result.status, 0, `${args.join(' ')}: ${result.stdout}\n${result.stderr}`);
+      };
+      const fixtureRead = (path) => readFileSync(join(sandbox, path), 'utf8');
       const originalLocales = loadStatsForInventoryFacts().locales;
       writeFileSync(join(sandbox, 'src/locales/zz.json'), '{}\n');
       const yaml = `${fixtureRead('docs/api/worldmonitor.openapi.yaml')}\nx-publication-fixture: café\n`;
       writeFileSync(join(sandbox, 'docs/api/worldmonitor.openapi.yaml'), yaml);
-      succeeds('product:facts');
-      succeeds('build:openapi');
+      succeeds(['scripts/generate-inventory-facts.mjs']);
+      succeeds(['--import', 'tsx', 'scripts/build-ai-search.mjs']);
+      cpSync(join(sandbox, 'docs/api/worldmonitor.openapi.yaml'), join(sandbox, 'public/openapi.yaml'));
+      succeeds(['scripts/build-openapi-json.mjs']);
 
       const ai = fixtureRead(AI_SEARCH_PATH);
       assert.ok(ai.includes(`${originalLocales + 1} supported interface languages`));
@@ -115,28 +146,51 @@ describe('#6038 ai-search.md is generated, not hand-maintained', () => {
       assert.equal(JSON.parse(fixtureRead('public/openapi.json'))['x-publication-fixture'], 'café');
       const outputs = [AI_SEARCH_PATH, 'public/product-facts.json', 'public/llms.txt', 'public/openapi.json'];
       const before = outputs.map(fixtureRead);
-      succeeds('product:facts');
-      succeeds('build:openapi');
+      succeeds(['scripts/generate-inventory-facts.mjs']);
+      succeeds(['--import', 'tsx', 'scripts/build-ai-search.mjs']);
+      cpSync(join(sandbox, 'docs/api/worldmonitor.openapi.yaml'), join(sandbox, 'public/openapi.yaml'));
+      succeeds(['scripts/build-openapi-json.mjs']);
       assert.deepEqual(outputs.map(fixtureRead), before);
-      succeeds('build:ai-search:check');
+      succeeds(['--import', 'tsx', 'scripts/build-ai-search.mjs', '--check']);
+      const freshnessArgs = ['--test', '--test-name-pattern=annotates the oversized', 'tests/llms-txt-mcp-tools.test.mjs'];
+      succeeds(freshnessArgs, 10_000);
 
       writeFileSync(join(sandbox, AI_SEARCH_PATH), ai.replace(`${originalLocales + 1} supported interface languages`, '999 supported interface languages'));
-      assert.notEqual(run('build:ai-search:check').status, 0);
+      const stale = run(['--import', 'tsx', 'scripts/build-ai-search.mjs', '--check']);
+      assert.notEqual(stale.status, 0);
+      assert.match(stale.stderr, /is stale/);
       const prose = fixtureRead('public/llms.txt');
       writeFileSync(join(sandbox, 'public/llms.txt'), prose.replace(`${expectedBytes} bytes`, '999 bytes'));
-      const freshness = spawnSync(process.execPath, ['--test', '--test-name-pattern=annotates the oversized', 'tests/llms-txt-mcp-tools.test.mjs'], {
-        cwd: sandbox, env, encoding: 'utf8', timeout: 10_000,
-      });
+      const freshness = run(freshnessArgs, 10_000);
       assert.notEqual(freshness.status, 0);
-      assert.match(freshness.stdout, /annotates the oversized/);
+      assert.match(freshness.stdout, /OpenAPI YAML byte annotation must match/);
       assert.ok(fixtureRead('public/llms.txt').includes('999 bytes'));
       writeFileSync(join(sandbox, 'public/llms.txt'), prose.replace(`${expectedBytes} bytes`, 'unknown size'));
-      const broken = run('build:openapi');
+      const broken = run(['scripts/build-openapi-json.mjs']);
       assert.notEqual(broken.status, 0);
       assert.match(broken.stderr, /exactly one OpenAPI YAML byte-size annotation/);
-    } finally {
-      rmSync(sandbox, { recursive: true, force: true });
-    }
+    });
+  });
+
+  it('preserves the comparison splice anchor and corpus provenance on idempotent publication', async () => {
+    await withTrackedPublication(async (sandbox) => {
+      const run = (...args) => spawnSync(process.execPath, ['--import', 'tsx', 'scripts/build-llms-full.mjs', ...args], {
+        cwd: sandbox, env: publicationEnv, encoding: 'utf8', timeout: 45_000,
+      });
+      const check = run('--check');
+      assert.equal(check.status, 0, `${check.stdout}\n${check.stderr}`);
+      const result = run();
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      const paths = ['public/llms.txt', 'public/llms-full.txt'];
+      const before = paths.map((path) => readFileSync(join(sandbox, path), 'utf8'));
+      assert.match(before[0], /## Comparisons[\s\S]+## Live Instances/);
+      assert.match(before[1], /## Generated corpus[\s\S]+Published country resilience ranking/);
+      assert.match(before[1], /source attribution/i);
+      assert.match(before[1], /AGPL-3\.0/);
+      const again = run();
+      assert.equal(again.status, 0, `${again.stdout}\n${again.stderr}`);
+      assert.deepEqual(paths.map((path) => readFileSync(join(sandbox, path), 'utf8')), before);
+    });
   });
 
   it('matches the generator byte for byte', () => {
@@ -199,19 +253,18 @@ describe('#6038 ai-search.md is generated, not hand-maintained', () => {
     );
   });
 
-  it('reconciles the map-layer figure the homepage publishes instead of contradicting it', () => {
+  it('reconciles the public full-variant catalog with the shared layer registry', () => {
     // Live probe 2026-09-04: the homepage hero reads "57 · Map layer types"
     // while the registry holds 58 entries. Both are true under different
     // definitions; publishing one of them alone is what makes AI answers
     // disagree, so ai-search.md must state both and name which is which.
     const coverage = section(read(AI_SEARCH_PATH), COVERAGE_HEADING);
-    const heroLayers = JSON.parse(read('pro-test/src/generated/hero-stats.json')).mapLayers;
+    const fullVariantLayers = getCompleteLayerCatalogKeys('full').length;
     const registryLayers = loadStatsForInventoryFacts().layerDefinitions;
 
-    assert.match(
-      coverage,
-      new RegExp(`${registryLayers} map layer types in the shared registry, ${heroLayers} of them reachable in the full variant`),
-      'the coverage block must name both the registry total and the homepage figure',
+    assert.ok(
+      coverage.includes(mapLayerCoverageText(registryLayers, fullVariantLayers)),
+      'the coverage block must publish the real public catalog and explain any registry gap',
     );
   });
 
@@ -228,7 +281,7 @@ describe('#6038 ai-search.md is generated, not hand-maintained', () => {
     assert.throws(() => mapLayerCoverageText(57, 58), /cannot exceed the registry/);
   });
 
-  it('fails the check run when the committed figures are stale', () => {
+  it('fails the check run when committed figures or product-interface qualification are stale', () => {
     // An unchanged repo can never look stale, so stage a tree whose coverage
     // block carries a wrong figure. Only public/ is copied; docs/ is symlinked
     // so the resilience-snapshot read resolves without duplicating the tree.
@@ -236,15 +289,24 @@ describe('#6038 ai-search.md is generated, not hand-maintained', () => {
     try {
       mkdirSync(join(sandbox, 'public'), { recursive: true });
       symlinkSync(join(repoRoot, 'docs'), join(sandbox, 'docs'), 'dir');
-      writeFileSync(
-        join(sandbox, AI_SEARCH_PATH),
-        read(AI_SEARCH_PATH).replace(/^- \d[\d,]* MCP tools.*$/m, '- 1 MCP tool; use `tools/list` for the live inventory'),
-      );
-      assert.throws(
-        () => writeAiSearch({ rootDir: sandbox, check: true }),
-        /is stale — run npm run build:ai-search/,
-        'a stale committed figure must fail --check rather than pass quietly',
-      );
+      const source = read(AI_SEARCH_PATH);
+      const path = join(sandbox, AI_SEARCH_PATH);
+      writeFileSync(path, source);
+      assert.equal(writeAiSearch({ rootDir: sandbox, check: true }).changed, false);
+      for (const replacement of [
+        '- 1 MCP tool; use `tools/list` for the live inventory',
+        `- ${loadStatsForInventoryFacts().mcpToolCount} MCP tools; use \`tools/list\` for the live inventory`,
+      ]) {
+        const stale = source.replace(/^- \d[\d,]* MCP tools.*$/m, replacement);
+        assert.notEqual(stale, source, 'the negative freshness fixture must actually differ');
+        writeFileSync(path, stale);
+        assert.throws(
+          () => writeAiSearch({ rootDir: sandbox, check: true }),
+          /is stale — run npm run build:ai-search/,
+          'a stale figure or misleading interface claim must fail --check',
+        );
+        assert.equal(readFileSync(path, 'utf8'), stale, '--check must not silently repair the fixture');
+      }
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
@@ -327,7 +389,8 @@ describe('#6038 ai-search.md is generated, not hand-maintained', () => {
   });
 
   it('keeps hand-authored copy outside the coverage block under the drift scanner', async () => {
-    await withStatsRoot(async (sandbox) => {
+    await withTrackedPublication(async (sandbox) => {
+      const { validateVolatileInventoryClaims } = await import(pathToFileURL(join(sandbox, 'scripts/docs-stats.mjs')).href);
       assert.deepEqual(validateVolatileInventoryClaims(), [], 'the sandbox copy must start clean');
       const path = join(sandbox, AI_SEARCH_PATH);
       const source = readFileSync(path, 'utf8');
@@ -358,7 +421,8 @@ describe('#6038 ai-search.md is generated, not hand-maintained', () => {
   });
 
   it('cannot have its exemption widened by an editorial heading change', async () => {
-    await withStatsRoot(async (sandbox) => {
+    await withTrackedPublication(async (sandbox) => {
+      const { validateVolatileInventoryClaims } = await import(pathToFileURL(join(sandbox, 'scripts/docs-stats.mjs')).href);
       const path = join(sandbox, AI_SEARCH_PATH);
       const source = readFileSync(path, 'utf8');
       // Demoting the following heading moved an inferred span's end past it,

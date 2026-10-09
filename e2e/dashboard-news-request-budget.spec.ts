@@ -1,7 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { attachBrowserLossDiagnostics, pageBrowserLossEvents } from './browser-loss-diagnostics';
+import { publicPanelsWorkspaceStorage } from './public-workspace-fixture';
 
-// Request budget for the news load on a default anonymous dashboard load (#5376).
+// Request budget for preset news and explicit public custom categories (#5376).
 //
 // What went wrong in production, measured on a live anonymous
 // www.worldmonitor.app/dashboard session via Resource Timing:
@@ -24,8 +25,9 @@ import { attachBrowserLossDiagnostics, pageBrowserLossEvents } from './browser-l
 //     App.ts's bootstrap fan-out). Every trigger re-fetched the digest even
 //     though nothing about the news load is viewport-gated.
 //
-// This spec is the budget guard for both: one digest request, zero rss-proxy
-// requests, and none of the `Custom category …` warnings.
+// The fork no longer registers the retired SupplyChainPanel; its canonical feed
+// category can now own a real NewsPanel. Isolate the preset-only budget from that
+// custom category and verify its bounded fetching and actual rendering separately.
 //
 // Note on the "zero rss-proxy" assertion: preset categories missing from the
 // digest do NOT fall back to per-feed fetching on web — that path is gated off
@@ -59,9 +61,8 @@ const SECOND_LOAD_SETTLE_MS = 8_000;
 const PER_FEED_FALLBACK_CATEGORY_FEED_LIMIT = 3;
 
 // A Tech news panel customized into a `full` session: absent from FULL_FEEDS, so
-// it resolves as a CUSTOM category and direct fetch is its only path. Priority 1
-// keeps it inside the 40-panel free-tier cap (FULL_PANELS enables 39 priority-1
-// panels), and its 10 TECH_FEEDS entries are well past the per-category cap.
+// it resolves as a CUSTOM category and direct fetch is its only path. Its 10
+// TECH_FEEDS entries are well past the per-category cap.
 const CUSTOM_CATEGORY_KEY = 'startups';
 const CUSTOM_CATEGORY_FEED_COUNT = 10;
 
@@ -191,23 +192,38 @@ async function readPersistedDigest(
 async function seedFreshAnonymousFullVariant(
   page: Page,
   extraPanels: Record<string, { name: string; enabled: boolean; priority: number }> = {},
+  panelOrder?: string[],
 ): Promise<void> {
-  await page.addInitScript((panels: Record<string, unknown>) => {
+  await page.addInitScript(({ panels, workspaceStorage, panelOrder }) => {
     if (sessionStorage.getItem('__news_request_budget_e2e_init__')) return;
     localStorage.clear();
     sessionStorage.clear();
     localStorage.setItem('worldmonitor-variant', 'full');
     // Overlays that would otherwise steal focus/paint during the load window.
     localStorage.setItem('wm-layer-warning-dismissed', 'true');
-    localStorage.setItem('wm-pro-banner-launched-dismissed', String(Date.now()));
     localStorage.setItem('worldmonitor-mission-preset-dismissed-v1', '1');
+    for (const [key, value] of Object.entries(workspaceStorage)) localStorage.setItem(key, value);
+    if (panelOrder) {
+      localStorage.setItem('wm_lcp_debug', '1');
+      localStorage.setItem('worldmonitor-panel-order-v1.9', 'done');
+      localStorage.setItem('worldmonitor-panel-prune-v1', 'done');
+      localStorage.setItem('worldmonitor-layout-reset-v2.5', 'done');
+      localStorage.setItem('panel-order', JSON.stringify(panelOrder));
+    }
     // Partial panel settings: App.ts merges every other ALL_PANELS key in at its
     // variant default, so this only overrides the panels named here.
     if (Object.keys(panels).length > 0) {
       localStorage.setItem('worldmonitor-panels', JSON.stringify(panels));
     }
     sessionStorage.setItem('__news_request_budget_e2e_init__', '1');
-  }, extraPanels as Record<string, unknown>);
+  }, {
+    panels: {
+      'supply-chain': { name: 'Supply Chain', enabled: false, priority: 1 },
+      ...extraPanels,
+    },
+    workspaceStorage: publicPanelsWorkspaceStorage('full'),
+    panelOrder,
+  });
 }
 
 /** Categories the healthy stub digest covers. */
@@ -253,6 +269,7 @@ async function installNewsRequestAccounting(
     healthyPoliticsHeadline?: string;
     degradedPoliticsHeadline?: string;
     failDigestLanguages?: readonly string[];
+    rssBody?: string;
   } = {},
 ): Promise<NewsRequestLog> {
   const log: NewsRequestLog = { digestUrls: [], rssProxyUrls: [] };
@@ -304,18 +321,22 @@ async function installNewsRequestAccounting(
     });
   });
 
-  // Abort rather than serve: a request reaching this handler is already a
-  // request the client should not have made.
+  // Preset-only requests are unexpected; explicit custom-category controls
+  // supply an RSS body to prove requests reach a real NewsPanel.
   await page.route(RSS_PROXY_GLOB, async (route) => {
     log.rssProxyUrls.push(route.request().url());
-    await route.abort('blockedbyclient');
+    if (options.rssBody !== undefined) {
+      await route.fulfill({ status: 200, contentType: 'application/rss+xml', body: options.rssBody });
+    } else {
+      await route.abort('blockedbyclient');
+    }
   });
 
   return log;
 }
 
 test.describe('dashboard news request budget (#5376)', () => {
-  test('a default anonymous load issues one digest and zero rss-proxy requests', async ({ page }) => {
+  test('a preset-only anonymous load issues one digest and zero rss-proxy requests', async ({ page }) => {
     const customCategoryWarnings: string[] = [];
     page.on('console', (message) => {
       const text = message.text();
@@ -362,6 +383,33 @@ test.describe('dashboard news request budget (#5376)', () => {
       `one page load must issue exactly one list-feed-digest request, got ${log.digestUrls.length}: ` +
         `${log.digestUrls.join(', ')}. More than one means loadAllData() re-ran the whole news load.`,
     ).toBe(1);
+  });
+
+  test('the public supply-chain news category fetches a bounded window and renders its sources', async ({ page }) => {
+    const capWarnings: string[] = [];
+    page.on('console', (message) => {
+      if (message.text().includes('[News] Custom category')) capWarnings.push(message.text());
+    });
+    await seedFreshAnonymousFullVariant(page, {
+      'supply-chain': { name: 'Supply Chain', enabled: true, priority: 1 },
+    });
+    const headline = 'Public logistics source fixture';
+    const log = await installNewsRequestAccounting(page, {
+      rssBody: `<rss version="2.0"><channel><title>Public Logistics</title><item>` +
+        `<title>${headline}</title><link>https://example.com/public-logistics</link>` +
+        `<pubDate>${new Date().toUTCString()}</pubDate></item></channel></rss>`,
+    });
+    await page.goto('/');
+    await page.waitForFunction(
+      () => document.documentElement.dataset.wmEventHandlersReady === 'true',
+    );
+    const panel = await mountDeferredPanel(page, 'supply-chain');
+    await expect(panel).toContainText(headline);
+    await page.waitForTimeout(SECOND_LOAD_SETTLE_MS);
+
+    expect(distinctProxiedFeeds(log.rssProxyUrls)).toHaveLength(PER_FEED_FALLBACK_CATEGORY_FEED_LIMIT);
+    expect(capWarnings.join(' | ')).toMatch(/fetching 3\/4 feeds directly.*rotation cycle 0/);
+    expect(log.digestUrls).toHaveLength(1);
   });
 
   // The other half of the fix: a category that legitimately STAYS custom — a
@@ -864,13 +912,6 @@ const INITIAL_FANOUT_COMPLETE_MARK = 'wm:data:initial-fanout-complete';
 async function seedScrollableDashboard(page: Page, panelOrder = SCROLL_HYDRATION_PANEL_ORDER): Promise<void> {
   await seedFreshAnonymousFullVariant(page, {
     stablecoins: { name: 'Stablecoins', enabled: true, priority: 1 },
-  });
-  await page.addInitScript((panelOrder: string[]) => {
-    localStorage.setItem('wm_lcp_debug', '1');
-    localStorage.setItem('worldmonitor-panel-order-v1.9', 'done');
-    localStorage.setItem('worldmonitor-panel-prune-v1', 'done');
-    localStorage.setItem('worldmonitor-layout-reset-v2.5', 'done');
-    localStorage.setItem('panel-order', JSON.stringify(panelOrder));
   }, panelOrder);
 }
 

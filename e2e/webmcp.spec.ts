@@ -1,7 +1,10 @@
 import { writeFile } from 'node:fs/promises';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
-import { runWebMcpCancellationScenario } from './helpers/webmcp-cancellation';
+import {
+  installReadinessRecorder,
+  runWebMcpCancellationScenario,
+} from './helpers/webmcp-cancellation';
 
 const requireWebMcp = process.env.WM_REQUIRE_WEBMCP === '1';
 const productionSmoke = process.env.WM_WEBMCP_PRODUCTION === '1';
@@ -28,7 +31,6 @@ const DASHBOARD_TOOL_NAMES = [
   'open_mission_picker',
   'open_search_result',
   'open_settings',
-  'open_sign_in',
   'rename_dashboard_tab',
   'search_dashboard',
   'select_dashboard_tab',
@@ -41,10 +43,6 @@ const DASHBOARD_TOOL_NAMES = [
   'set_panel_fullscreen',
   'set_time_range',
   'switch_monitor',
-];
-const HOMEPAGE_TOOL_NAMES = [
-  'getWorldMonitorMcpEndpoint',
-  'launchWorldMonitor',
 ];
 const PRODUCTION_DASHBOARDS = [
   { origin: 'https://www.worldmonitor.app', variant: 'full' },
@@ -326,10 +324,6 @@ async function executeDashboardToolObserved(
   return recovered;
 }
 
-async function installReadinessRecorder(page: Page): Promise<void> {
-  await page.addInitScript(() => localStorage.setItem('wm_lcp_debug', '1'));
-}
-
 async function installSignalCapableModelContext(page: Page): Promise<void> {
   await page.addInitScript(() => {
     type ToolDefinition = {
@@ -399,6 +393,7 @@ async function closeMissionPresetIfOpen(page: Page): Promise<void> {
 
 test('persists a first-session panel move through reload', async ({ page }) => {
   await dismissMissionPreset(page);
+  await installReadinessRecorder(page, true);
   await installSignalCapableModelContext(page);
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
   await waitForDashboardTools(page);
@@ -905,8 +900,8 @@ test.describe('top-level WebMCP dashboard contract', () => {
     'Requires an installed Chrome with WebMCPTesting enabled; normal browser CI stays model-free.',
   );
 
-  test('discovers the inventory and invokes free and denied paths', async ({ browser, page }, testInfo) => {
-    await installReadinessRecorder(page);
+  test('discovers the public inventory and invokes anonymous and denied paths', async ({ browser, page }, testInfo) => {
+    await installReadinessRecorder(page, !productionSmoke);
     await installColdStartContextProbe(page);
     const response = await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
     expect(response).not.toBeNull();
@@ -968,109 +963,41 @@ test.describe('top-level WebMCP dashboard contract', () => {
     }
 
     const accessContract = discoveredContracts.find((tool) => tool.name === 'get_access_context');
-    const signInContract = discoveredContracts.find((tool) => tool.name === 'open_sign_in');
     expect(accessContract?.schema).toMatchObject({ type: 'object', additionalProperties: false });
     expect(accessContract?.schema.properties ?? {}).toEqual({});
-    expect(signInContract?.schema).toMatchObject({ type: 'object', additionalProperties: false });
-    expect(Object.keys(signInContract?.schema.properties ?? {})).toEqual([]);
-    expect(JSON.stringify(signInContract?.schema ?? {})).not.toMatch(
-      /password|otp|one[-_]?time|credential|provider/i,
-    );
-
-    const accessAndSignIn = await page.evaluate(async () => {
-      type ExecutableModelContext = WebMCP.ModelContext & {
-        executeTool(
-          tool: WebMCP.RegisteredTool,
-          input: string,
-          options?: { signal?: AbortSignal },
-        ): Promise<unknown>;
-      };
-      const provider = document.modelContext as ExecutableModelContext | undefined;
-      if (!provider || typeof provider.executeTool !== 'function') {
-        throw new Error('Chrome WebMCP execution API is unavailable.');
-      }
-      const parseOutput = (value: unknown): unknown => {
-        if (typeof value !== 'string') return value;
-        try {
-          return JSON.parse(value);
-        } catch {
-          return value;
-        }
-      };
-      const tools = await provider.getTools();
-      const byName = new Map(tools.map((tool) => [tool.name, tool]));
-      const accessTool = byName.get('get_access_context');
-      const signInTool = byName.get('open_sign_in');
-      if (!accessTool || !signInTool) {
-        throw new Error('Expected access and sign-in tools were not discovered.');
-      }
-      const access = parseOutput(await provider.executeTool(accessTool, JSON.stringify({})));
-      let signInError: { message?: string; name?: string } | null = null;
-      let signInResult: unknown;
-      try {
-        signInResult = parseOutput(await provider.executeTool(signInTool, JSON.stringify({})));
-      } catch (error) {
-        signInError = {
-          name: error instanceof Error ? error.name : undefined,
-          message: error instanceof Error ? error.message : String(error),
-        };
-      }
-      return {
-        access,
-        clerkModalPresent: Boolean(document.querySelector(
-          '.cl-modalBackdrop, .cl-modal, [data-clerk-component="SignIn"]',
-        )),
-        signInError,
-        signInResult,
-      };
+    // The account surface is physically retired, not a dummy denial tool.
+    expect(discoveredContracts.map((tool) => tool.name)).not.toContain('open_sign_in');
+    const access = await executeDashboardTool(page, 'get_access_context', {});
+    const accessCancellationSupported = await readTargetCancellationSupported(page, 'get_access_context');
+    expect(access).toEqual({
+      mode: 'public',
+      capabilities: { dataExport: true },
+      limits: {
+        enabledPanels: { used: expect.any(Number), cap: null },
+        dashboardTabs: { used: expect.any(Number), cap: null, canCreate: true },
+      },
+      targetCancellationSupported: accessCancellationSupported,
     });
-    expect(accessAndSignIn.access).toEqual(expect.objectContaining({
-      accountState: expect.stringMatching(/^(signed_out|loading|signed_in)$/),
-      clerk: expect.stringMatching(/^(unavailable|loading|ready)$/),
-    }));
-    expect(JSON.stringify(accessAndSignIn.access)).not.toMatch(
+    const usage = (access as {
+      limits: { enabledPanels: { used: number }; dashboardTabs: { used: number } };
+    }).limits;
+    expect(usage.enabledPanels.used).toBeGreaterThan(0);
+    expect(usage.dashboardTabs.used).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(access)).not.toMatch(
       /@|user_|pk_test_|sk_live_|Bearer |sessionId|"email"|"name"|"token"/i,
     );
-    if (accessAndSignIn.signInError) {
-      throw new Error(
-        `open_sign_in must return a bounded result, not throw: ${accessAndSignIn.signInError.name}: ${accessAndSignIn.signInError.message}`,
-      );
-    }
-    const signInResult = accessAndSignIn.signInResult as {
-      ok?: boolean;
-      reason?: string;
-      status?: string;
-    };
-    const accessSnapshot = accessAndSignIn.access as { clerk?: string };
-    const signInEvidence = {
-      clerk: accessSnapshot.clerk ?? null,
-      clerkModalPresent: accessAndSignIn.clerkModalPresent,
-      signInResult,
-    };
-    // Production must prove the real Clerk modal. The clerk_unavailable
-    // denial is only valid on the local Vite fixture, where Clerk is
-    // explicitly unconfigured (`clerk: unavailable`).
-    const unconfiguredLocalFixture =
-      !productionSmoke && accessSnapshot.clerk === 'unavailable';
-    if (unconfiguredLocalFixture) {
-      expect(signInResult).toEqual({
-        ok: false,
-        status: 'denied',
-        reason: 'clerk_unavailable',
-      });
-      expect(accessAndSignIn.clerkModalPresent).toBe(false);
-    } else {
-      expect(
-        accessAndSignIn.clerkModalPresent,
-        productionSmoke
-          ? 'production smoke must open the real Clerk sign-in modal'
-          : 'configured Clerk must open the real sign-in modal',
-      ).toBe(true);
-      expect(signInResult).toEqual(expect.objectContaining({
-        ok: true,
-        status: expect.stringMatching(/^(opened|already_open)$/),
-      }));
-    }
+    await expect(page.locator(
+      '.cl-modalBackdrop, .cl-modal, [data-clerk-component="SignIn"]',
+    )).toHaveCount(0);
+    const followedCountries = await executeDashboardTool(page, 'list_followed_countries', {});
+    expect(followedCountries).toEqual({
+      ok: true,
+      enabled: true,
+      countries: [],
+      count: 0,
+      access: 'local',
+      limit: null,
+    });
 
     const catalogProbe = await page.evaluate(async (): Promise<DashboardPanelCatalogProbe> => {
       type ExecutableModelContext = WebMCP.ModelContext & {
@@ -1411,7 +1338,8 @@ test.describe('top-level WebMCP dashboard contract', () => {
           targetCancellationSupported: coldStart.targetCancellationSupported,
           ...panelProbe,
         },
-        signIn: { tool: 'open_sign_in', ...signInEvidence },
+        access: { tool: 'get_access_context', output: access },
+        followedCountries: { tool: 'list_followed_countries', output: followedCountries },
         ...(visibleMutation ? { visibleMutation: { tool: 'openSearch', ...visibleMutation } } : {}),
         ...(searchResultEffects ? { searchResultEffects } : {}),
       },
@@ -1521,6 +1449,7 @@ test.describe('top-level WebMCP dashboard contract', () => {
 
   test('persists set_panel_enabled in dashboard settings across reload', async ({ page }) => {
     test.skip(productionSmoke, 'Must not mutate production panel settings.');
+    await installReadinessRecorder(page, true);
     const response = await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
     expect(response).not.toBeNull();
     await expect.poll(async () => page.evaluate(async () => (
@@ -1557,19 +1486,12 @@ test.describe('top-level WebMCP dashboard contract', () => {
           { signal: controller.signal },
         ));
       };
-      // Default full layouts already sit at the free-tier counted cap, so
-      // enabling a disabled catalog panel first needs a counted slot freed.
-      const disableMarkets = await execute({ panelId: 'markets', enabled: false });
-      if (
-        disableMarkets
-        && typeof disableMarkets === 'object'
-        && (disableMarkets as { reason?: string }).reason === 'target_cancellation_unsupported'
-      ) {
-        return {
-          output: disableMarkets,
-          stored: window.localStorage.getItem('worldmonitor-panels'),
-        };
-      }
+      const accessTool = (await provider.getTools())
+        .find((candidate) => candidate.name === 'get_access_context');
+      if (!accessTool) throw new Error('get_access_context was not discovered.');
+      const accessBefore = parseOutput(await provider.executeTool(accessTool, '{}'));
+      // Anonymous dashboards are uncapped. Enable an additional panel without
+      // disabling an existing one to manufacture a former free-tier slot.
       const enableGiving = await execute({ panelId: 'giving', enabled: true });
       let openGiving: unknown = null;
       if (
@@ -1590,6 +1512,8 @@ test.describe('top-level WebMCP dashboard contract', () => {
       return {
         output: enableGiving,
         openOutput: openGiving,
+        accessBefore,
+        accessAfter: parseOutput(await provider.executeTool(accessTool, '{}')),
         stored: window.localStorage.getItem('worldmonitor-panels'),
       };
     });
@@ -1617,6 +1541,18 @@ test.describe('top-level WebMCP dashboard contract', () => {
     });
     const storedBeforeReload = JSON.parse(String(first.stored)) as Record<string, { enabled?: boolean }>;
     expect(storedBeforeReload.giving?.enabled).toBe(true);
+    expect(storedBeforeReload.markets?.enabled).toBe(true);
+    const beforeUsage = (first.accessBefore as {
+      limits: { enabledPanels: { used: number; cap: null } };
+    }).limits.enabledPanels;
+    expect(beforeUsage.cap).toBeNull();
+    expect(first.accessAfter).toMatchObject({
+      mode: 'public',
+      limits: { enabledPanels: { used: beforeUsage.used + 1, cap: null } },
+    });
+    const givingPanel = page.locator('.panel[data-panel="giving"]:not([data-deferred-panel])');
+    await givingPanel.scrollIntoViewIfNeeded();
+    await expect(givingPanel).toBeVisible();
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect.poll(async () => page.evaluate(async () => (
@@ -1647,9 +1583,12 @@ test.describe('top-level WebMCP dashboard contract', () => {
     });
     const storedAfterReload = JSON.parse(String(afterReload.stored)) as Record<string, { enabled?: boolean }>;
     expect(storedAfterReload.giving?.enabled).toBe(true);
+    expect(storedAfterReload.markets?.enabled).toBe(true);
     const enabledPanels = (afterReload.context as { panels?: { enabled?: string[] } })
       .panels?.enabled ?? [];
     expect(enabledPanels).toContain('giving');
+    await givingPanel.scrollIntoViewIfNeeded();
+    await expect(givingPanel).toBeVisible();
   });
 
   test('applies supply-chain-risk mission preset and persists across reload', async ({ page }) => {
@@ -1773,6 +1712,7 @@ test.describe('top-level WebMCP dashboard contract', () => {
     test.skip(productionSmoke, 'Must not mutate production panel layout.');
     testInfo.setTimeout(120_000);
     await dismissMissionPreset(page);
+    await installReadinessRecorder(page, true);
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
     await waitForDashboardTools(page);
@@ -2193,8 +2133,8 @@ test.describe('top-level WebMCP dashboard contract', () => {
       expect(homepageHeaders['permissions-policy']).toContain('tools=(self)');
       await expect.poll(async () => page.evaluate(async () => (
         (await document.modelContext?.getTools())?.map((tool) => tool.name).sort() ?? []
-      )), { message: 'canonical homepage WebMCP inventory', timeout: 60_000 }).toEqual(
-        HOMEPAGE_TOOL_NAMES,
+      )), { message: 'canonical root dashboard WebMCP inventory', timeout: 60_000 }).toEqual(
+        DASHBOARD_TOOL_NAMES,
       );
       const homepageToolNames = await page.evaluate(async () => (
         (await document.modelContext!.getTools()).map((tool) => tool.name).sort()
@@ -2214,7 +2154,8 @@ test.describe('top-level WebMCP dashboard contract', () => {
         document.body.appendChild(iframe);
       });
       const embedResponse = await embedResponsePromise;
-      expect(embedResponse.headers()['origin-agent-cluster']).toBe('?1');
+      // The public embed has its own denial headers, not dashboard enrollment.
+      expect(embedResponse.headers()['origin-agent-cluster']).toBeUndefined();
       expect(embedResponse.headers()['origin-trial']).toBeUndefined();
       expect(embedResponse.headers()['permissions-policy']).toContain('tools=()');
       await expect.poll(async () => {
@@ -2318,7 +2259,7 @@ test.describe('top-level WebMCP dashboard contract', () => {
 });
 
 for (const api of ['registerTool', 'provideContext'] as const) {
-  test(`discovers homepage and dashboard tools with legacy ${api}`, async ({ page }) => {
+  test(`discovers root and dashboard tools with legacy ${api}`, async ({ page }) => {
     test.skip(productionSmoke, 'Legacy provider fixtures run only against the local build.');
     await page.addInitScript((method) => {
       Object.defineProperty(document, 'modelContext', { value: undefined, configurable: true });
@@ -2334,7 +2275,7 @@ for (const api of ['registerTool', 'provideContext'] as const) {
       });
     }, api);
     for (const [route, expected] of [
-      ['/pro/welcome.html', HOMEPAGE_TOOL_NAMES],
+      ['/', DASHBOARD_TOOL_NAMES],
       ['/dashboard', DASHBOARD_TOOL_NAMES],
     ] as const) {
       await page.goto(route);

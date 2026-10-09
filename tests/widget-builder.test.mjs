@@ -1,9 +1,9 @@
 /**
- * AI Widget Builder — E2E / Static verification tests
+ * Widget relay and retained local widgets — isolated runtime / static tests
  *
  * Covers:
  *   1. Relay security  — SSRF guard, auth gate, isPublicRoute, body limit, CORS
- *   2. Widget store    — constants, span-map keys, `cw-` prefix, history trim
+ *   2. Local widgets   — size limits, span-map cleanup, basic rendering
  *   3. Title regex     — hyphens in titles (bug fixed: [^\n\-] → [^\n])
  *   4. HTML sanitizer  — allowlist shape, forbidden tags, unsafe style strip
  *   5. Panel guardrails — cw- exclusion in UnifiedSettings, event-handlers
@@ -18,6 +18,8 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import crypto from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
+import { transform } from 'esbuild';
+import { unsafeRawHtml } from '../src/utils/sanitize.ts';
 import widgetResponseParser from '../scripts/_widget-response-parser.cjs';
 import { WIDGET_DATA_CATALOG, buildWidgetDataUrl } from '../scripts/_widget-data-policy.cjs';
 
@@ -1382,7 +1384,6 @@ describe('widget-agent relay — security', () => {
 // ---------------------------------------------------------------------------
 describe('widget-store — constants and logic', () => {
   const store = src('src/services/widget-store.ts');
-  const browserKeySession = src('src/services/browser-key-session.ts');
 
   it('storage key is wm-custom-widgets', () => {
     assert.ok(
@@ -1391,57 +1392,24 @@ describe('widget-store — constants and logic', () => {
     );
   });
 
-  it('auth gate migrates wm-widget-key to an HttpOnly session instead of storing it', () => {
-    assert.ok(
-      store.includes("'wm-widget-key'"),
-      "Feature gate must know the legacy 'wm-widget-key' name for migration",
-    );
-    assert.ok(
-      store.includes('migrateLegacyKeysToHttpOnlySession') &&
-        browserKeySession.includes('establishWmKeySession'),
-      'Widget key writes must go through the server session endpoint',
-    );
-    assert.ok(
-      !/localStorage\.setItem\(['"]wm-widget-key['"]/.test(store),
-      'wm-widget-key must not be written to localStorage',
-    );
-    assert.ok(
-      !/document\.cookie\s*=.*wm-widget-key.*encodeURIComponent\(.*key/s.test(store),
-      'wm-widget-key must not be written to a JS-readable cookie',
-    );
+  it('local persistence has no account, entitlement or key-session dependency', () => {
+    assert.doesNotMatch(store, /auth-state|entitlements|browser-key-session|wm-(?:widget|pro)-key/);
   });
 
-  it('MAX_WIDGETS is 10', () => {
-    assert.ok(
-      store.includes('MAX_WIDGETS') && store.includes('10'),
-      'MAX_WIDGETS constant should be 10',
-    );
-    const match = store.match(/MAX_WIDGETS\s*=\s*(\d+)/);
-    assert.ok(match, 'MAX_WIDGETS not found');
-    assert.equal(Number(match[1]), 10, 'MAX_WIDGETS must be 10');
+  it('saveWidget retains at most ten widgets', () => {
+    assert.match(store, /JSON\.stringify\(\[\.\.\.loadWidgets\(\)[^\n]*\.slice\(-10\)\)/);
   });
 
-  it('MAX_HTML_CHARS is 50000', () => {
-    const match = store.match(/MAX_HTML_(?:CHARS|BYTES)\s*=\s*([\d_]+)/);
-    assert.ok(match, 'MAX_HTML_CHARS/BYTES constant not found');
-    const val = Number(match[1].replace(/_/g, ''));
-    assert.equal(val, 50000, 'HTML size limit must be 50,000 chars');
+  it('saveWidget bounds HTML to 50,000 characters before sanitization', () => {
+    assert.match(store, /sanitizeWidgetHtml\(spec\.html\.slice\(0, 50_000\)\)/);
   });
 
-  it('MAX_HISTORY is 10', () => {
-    const match = store.match(/MAX_HISTORY\s*=\s*(\d+)/);
-    assert.ok(match, 'MAX_HISTORY constant not found');
-    assert.equal(Number(match[1]), 10, 'MAX_HISTORY must be 10');
+  it('saveWidget retains at most ten conversation entries', () => {
+    assert.match(store, /conversationHistory: spec\.conversationHistory\.slice\(-10\)/);
   });
 
-  it('widget IDs use cw- prefix (in modal or store)', () => {
-    const modal = src('src/components/WidgetChatModal.ts');
-    assert.ok(
-      store.includes("'cw-'") || store.includes('"cw-"') ||
-      modal.includes("'cw-'") || modal.includes('"cw-"') ||
-      modal.includes('`cw-'),
-      "Widget IDs must use 'cw-' prefix (check widget-store.ts and WidgetChatModal.ts)",
-    );
+  it('local widget IDs use the cw- panel close path', () => {
+    assert.match(src('src/app/event-handlers.ts'), /panelId\.startsWith\('cw-'\)/);
   });
 
   it('deleteWidget cleans worldmonitor-panel-spans (aggregate map)', () => {
@@ -1474,7 +1442,7 @@ describe('widget-store — constants and logic', () => {
     assert.ok(saveIdx !== -1);
     const saveBody = store.slice(saveIdx, saveIdx + 800);
     assert.ok(
-      saveBody.includes('.slice(0, MAX_HTML'),
+      saveBody.includes('.slice(0, 50_000)'),
       'saveWidget must truncate html to MAX_HTML_CHARS',
     );
   });
@@ -1681,6 +1649,9 @@ describe('widget-agent relay — completion contract', () => {
 // ---------------------------------------------------------------------------
 describe('widget-sanitizer — allowlist verification', () => {
   const san = src('src/utils/widget-sanitizer.ts');
+  const configSource = san.match(/const PURIFY_CONFIG = (\{[\s\S]*?\n\});/);
+  assert.ok(configSource, 'sanitizer configuration must be extractable');
+  const config = vm.runInNewContext(`(${configSource[1]})`);
 
   const REQUIRED_ALLOWED_TAGS = ['div', 'span', 'p', 'table', 'svg', 'path'];
   const REQUIRED_FORBIDDEN_TAGS = ['button', 'input', 'script', 'iframe', 'form'];
@@ -1689,7 +1660,7 @@ describe('widget-sanitizer — allowlist verification', () => {
   for (const tag of REQUIRED_ALLOWED_TAGS) {
     it(`allowed tag '${tag}' is in ALLOWED_TAGS`, () => {
       assert.ok(
-        san.includes(`'${tag}'`) || san.includes(`"${tag}"`),
+        config.ALLOWED_TAGS.includes(tag),
         `Tag '${tag}' must be in ALLOWED_TAGS`,
       );
     });
@@ -1698,7 +1669,7 @@ describe('widget-sanitizer — allowlist verification', () => {
   for (const tag of REQUIRED_FORBIDDEN_TAGS) {
     it(`forbidden tag '${tag}' is in FORBID_TAGS`, () => {
       assert.ok(
-        san.includes(`'${tag}'`) || san.includes(`"${tag}"`),
+        config.FORBID_TAGS.includes(tag) && !config.ALLOWED_TAGS.includes(tag),
         `Tag '${tag}' must be in FORBID_TAGS`,
       );
     });
@@ -1707,14 +1678,19 @@ describe('widget-sanitizer — allowlist verification', () => {
   for (const attr of REQUIRED_ALLOWED_ATTRS) {
     it(`attribute '${attr}' is in ALLOWED_ATTR`, () => {
       assert.ok(
-        san.includes(`'${attr}'`) || san.includes(`"${attr}"`),
+        config.ALLOWED_ATTR.includes(attr),
         `Attr '${attr}' must be in ALLOWED_ATTR`,
       );
     });
   }
 
   it('FORCE_BODY is true (prevents <html> wrapper)', () => {
-    assert.ok(san.includes('FORCE_BODY: true'), 'FORCE_BODY must be true');
+    assert.equal(config.FORCE_BODY, true);
+  });
+
+  it('does not allow event handlers, resource URLs or data attributes', () => {
+    assert.equal(config.ALLOW_DATA_ATTR, false);
+    assert.ok(config.ALLOWED_ATTR.every(attr => !/^on|^(?:src|href|xlink:href|srcdoc)$/i.test(attr)));
   });
 
   it('post-pass strips url() from style attributes', () => {
@@ -1747,11 +1723,8 @@ describe('panel guardrails — cw- prefix handling', () => {
   const events = src('src/app/event-handlers.ts');
   const layout = src('src/app/panel-layout.ts');
 
-  it('UnifiedSettings filters out cw- panels from settings list', () => {
-    assert.ok(
-      settings.includes("startsWith('cw-')"),
-      "UnifiedSettings must filter panels with id.startsWith('cw-')",
-    );
+  it('UnifiedSettings excludes custom panels not present in the public catalog', () => {
+    assert.match(settings, /const config = ALL_PANELS\[key\];\s*if \(!config\) return false;/);
   });
 
   it('event-handlers confirms before deleting cw- panels', () => {
@@ -1776,38 +1749,26 @@ describe('panel guardrails — cw- prefix handling', () => {
     );
   });
 
-  it('event-handlers registers wm:widget-modify listener', () => {
-    assert.ok(
-      events.includes('wm:widget-modify'),
-      'Must listen for wm:widget-modify custom event',
-    );
+  it('event-handlers does not expose the retired AI modify action', () => {
+    assert.doesNotMatch(events, /wm:widget-modify|WidgetChatModal/);
   });
 
-  it('shows an accessible save failure message when widget persistence rejects', () => {
-    assert.match(
-      events,
-      /failed to save widget[\s\S]{0,220}showToast\(t\('widgets\.saveFailed'\)\)/,
-      'Modifying a widget must surface a rejected save to the user',
-    );
-    const createFailureHandlers = layout.match(
-      /failed to add widget[\s\S]{0,220}showToast\(t\('widgets\.saveFailed'\)\)/g,
-    ) ?? [];
-    assert.equal(
-      createFailureHandlers.length,
-      2,
-      'Both widget create entry points must surface a rejected save to the user',
-    );
+  it('local add rejects a failed save before changing layout state or mounting a panel', async () => {
+    const method = layout.match(/  async addCustomWidget\([\s\S]*?\n  \}/)?.[0];
+    assert.ok(method, 'retained local add method must exist');
+    const { code } = await transform(method.replace('async addCustomWidget', 'async function addCustomWidget'), { loader: 'ts' });
+    const run = vm.runInNewContext(`${code}\naddCustomWidget`, {
+      saveWidget: async () => { throw new Error('storage denied'); },
+      saveToStorage: () => assert.fail('layout state must not be written after save failure'),
+    });
+    const ctx = { panelSettings: {} };
+    await assert.rejects(run.call({ ctx, importPanel: () => assert.fail('panel must not mount after save failure') }, {}), /storage denied/);
+    assert.deepEqual(ctx.panelSettings, {});
   });
 
-  it('panel-layout loads widgets when feature is enabled', () => {
-    assert.ok(
-      layout.includes('hasPremiumAccess') || layout.includes('isProUser'),
-      'panel-layout must check hasPremiumAccess (or isProUser) before loading widgets',
-    );
-    assert.ok(
-      layout.includes('loadWidgets'),
-      'panel-layout must call loadWidgets() to restore persisted widgets',
-    );
+  it('panel-layout restores local widgets without a premium gate', () => {
+    assert.match(layout, /for \(const spec of loadWidgets\(\)\)/);
+    assert.doesNotMatch(layout, /hasPremiumAccess|isProUser/);
   });
 
   it('panel-layout has addCustomWidget method', () => {
@@ -1817,11 +1778,8 @@ describe('panel guardrails — cw- prefix handling', () => {
     );
   });
 
-  it('panel-layout AI button is gated by hasPremiumAccess', () => {
-    const hasCheck = layout.includes('hasPremiumAccess') || layout.includes('isProUser');
-    const buttonIdx = layout.indexOf('ai-widget-block');
-    assert.ok(hasCheck, 'hasPremiumAccess (or isProUser) not found in panel-layout');
-    assert.ok(buttonIdx !== -1, 'AI widget button not found in panel-layout');
+  it('panel-layout does not expose the retired AI or Pro creator', () => {
+    assert.doesNotMatch(layout, /ai-widget-block|WidgetChatModal|applyProBlockGating/);
   });
 
   it('panel-layout DEV warning excludes cw- panels', () => {
@@ -1879,119 +1837,6 @@ describe('widget-agent relay — SSE event protocol', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 7. WidgetChatModal — client-side SSE handling
-// ---------------------------------------------------------------------------
-describe('WidgetChatModal — SSE client protocol', () => {
-  const modal = src('src/components/WidgetChatModal.ts');
-
-  it('uses fetch (not EventSource) for POST SSE', () => {
-    assert.ok(modal.includes('fetch(widgetAgentUrl'), 'Must use fetch() not EventSource');
-    assert.ok(!modal.includes('new EventSource'), 'Must NOT use EventSource (POST not supported)');
-  });
-
-  it('sends X-Widget-Key header', () => {
-    assert.ok(
-      modal.includes('X-Widget-Key'),
-      'Must send X-Widget-Key header with request',
-    );
-  });
-
-  it('runs preflight against widget-agent health route on open', () => {
-    assert.ok(modal.includes('widgetAgentHealthUrl'), 'Modal must import widgetAgentHealthUrl()');
-    assert.ok(modal.includes('runPreflight'), 'Modal must define runPreflight()');
-    assert.ok(modal.includes("fetch(widgetAgentHealthUrl()"), 'Modal must fetch widgetAgentHealthUrl() during preflight');
-  });
-
-  it('AbortController used for cancellation', () => {
-    assert.ok(modal.includes('AbortController'), 'Must use AbortController for stream cancellation');
-  });
-
-  it('currentHtml sent as separate field (not embedded in conversationHistory)', () => {
-    const bodyIdx = modal.indexOf('JSON.stringify');
-    assert.ok(bodyIdx !== -1);
-    const bodyRegion = modal.slice(bodyIdx, bodyIdx + 400);
-    assert.ok(bodyRegion.includes('currentHtml'), 'Must send currentHtml as separate request field');
-    assert.ok(bodyRegion.includes('conversationHistory'), 'Must send conversationHistory');
-  });
-
-  it('prompt is sliced to 2000 chars before sending', () => {
-    assert.ok(
-      modal.includes('.slice(0, 2000)'),
-      'Prompt must be sliced to 2000 chars before sending',
-    );
-  });
-
-  it('history content is sliced to 500 chars per entry', () => {
-    assert.ok(
-      modal.includes('.slice(0, 500)'),
-      'Each history entry content must be sliced to 500 chars',
-    );
-  });
-
-  it('modal handles AbortError without showing error to user', () => {
-    assert.ok(
-      modal.includes('AbortError'),
-      'Must handle AbortError (e.g. from timeout or close) gracefully',
-    );
-  });
-
-  it('Escape key closes modal', () => {
-    assert.ok(
-      modal.includes('Escape') || modal.includes("'Escape'"),
-      'Escape key must close the modal',
-    );
-  });
-
-  it('action button says "Add to Dashboard" (create) or "Apply Changes" (modify)', () => {
-    assert.ok(modal.includes("t('widgets.addToDashboard')"), 'Create mode button must use widgets.addToDashboard');
-    assert.ok(modal.includes("t('widgets.applyChanges')"), 'Modify mode button must use widgets.applyChanges');
-  });
-
-  it('uses split layout and sticky footer action bar structure', () => {
-    assert.ok(modal.includes('widget-chat-layout'), 'Modal must render widget-chat-layout');
-    assert.ok(modal.includes('widget-chat-sidebar'), 'Modal must render widget-chat-sidebar');
-    assert.ok(modal.includes('widget-chat-main'), 'Modal must render widget-chat-main');
-    assert.ok(modal.includes('widget-chat-footer'), 'Modal must render widget-chat-footer');
-  });
-
-  it('renders prompt example chips', () => {
-    assert.ok(modal.includes('EXAMPLE_PROMPT_KEYS'), 'Modal must define prompt example keys');
-    assert.ok(modal.includes('widget-chat-example-chip'), 'Modal must render prompt example chips');
-  });
-
-  it('conversationHistory entries use literal role types (user | assistant)', () => {
-    // After our fix, these should use `as const`
-    assert.ok(
-      modal.includes("'user' as const") || modal.includes('"user" as const'),
-      "role must be typed as literal 'user' with `as const`",
-    );
-    assert.ok(
-      modal.includes("'assistant' as const") || modal.includes('"assistant" as const'),
-      "role must be typed as literal 'assistant' with `as const`",
-    );
-  });
-
-  it('multi-turn requests reuse mutable sessionHistory instead of original spec history', () => {
-    assert.ok(
-      modal.includes('const sessionHistory = [...(options.existingSpec?.conversationHistory ?? [])]'),
-      'Modal must keep a mutable sessionHistory array for iterative requests',
-    );
-    assert.ok(
-      modal.includes('conversationHistory: sessionHistory'),
-      'Outgoing request body must use the mutable sessionHistory array',
-    );
-    assert.ok(
-      modal.includes('sessionHistory.push('),
-      'Modal must append new user/assistant turns back into sessionHistory after success',
-    );
-    assert.ok(
-      modal.includes('conversationHistory: [...sessionHistory]'),
-      'Saved widget spec must persist the updated sessionHistory',
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
 // 8. Vite proxy + URL helper
 // ---------------------------------------------------------------------------
 describe('proxy routing — widgetAgentUrl', () => {
@@ -2028,15 +1873,8 @@ describe('proxy routing — widgetAgentUrl', () => {
     );
   });
 
-  it('vite.config.ts proxies /widget-agent to proxy.worldmonitor.app', () => {
-    assert.ok(
-      vite.includes('/widget-agent'),
-      'vite.config.ts must have proxy entry for /widget-agent',
-    );
-    assert.ok(
-      vite.includes('proxy.worldmonitor.app'),
-      'Vite proxy target must be proxy.worldmonitor.app',
-    );
+  it('the public fork does not proxy the retired widget builder route', () => {
+    assert.doesNotMatch(vite, /['"]\/widget-agent['"]\s*:/);
   });
 
   it('widgetAgentHealthUrl() exists and targets /widget-agent/health', () => {
@@ -2114,14 +1952,8 @@ describe('i18n — widgets section completeness', () => {
     );
   });
 
-  it('widget UI sources labels from i18n keys instead of hardcoded English copy', () => {
-    const modal = src('src/components/WidgetChatModal.ts');
-    const panel = src('src/components/CustomWidgetPanel.ts');
+  it('local widget deletion uses the localized confirmation label', () => {
     const events = src('src/app/event-handlers.ts');
-    assert.ok(modal.includes("t('widgets.chatTitle')"), 'WidgetChatModal must use widgets.chatTitle');
-    assert.ok(modal.includes("t('widgets.modifyTitle')"), 'WidgetChatModal must use widgets.modifyTitle');
-    assert.ok(modal.includes("t('widgets.inputPlaceholder')"), 'WidgetChatModal must use widgets.inputPlaceholder');
-    assert.ok(panel.includes("t('widgets.modifyWithAi')"), 'CustomWidgetPanel must use widgets.modifyWithAi');
     assert.ok(events.includes("t('widgets.confirmDelete')"), 'Delete confirmation must use widgets.confirmDelete');
   });
 
@@ -2139,15 +1971,12 @@ describe('i18n — widgets section completeness', () => {
 // ---------------------------------------------------------------------------
 // 10. CustomWidgetPanel
 // ---------------------------------------------------------------------------
-describe('CustomWidgetPanel — header buttons and events', () => {
+describe('CustomWidgetPanel — local rendering', () => {
   const panel = src('src/components/CustomWidgetPanel.ts');
   const sanitizer = src('src/utils/widget-sanitizer.ts');
 
-  it('dispatches wm:widget-modify event from chat button', () => {
-    assert.ok(
-      panel.includes('wm:widget-modify'),
-      'CustomWidgetPanel must dispatch wm:widget-modify CustomEvent',
-    );
+  it('does not expose the retired AI modify action', () => {
+    assert.doesNotMatch(panel, /wm:widget-modify|WidgetChatModal/);
   });
 
   it('applies --widget-accent CSS variable', () => {
@@ -2179,18 +2008,114 @@ describe('CustomWidgetPanel — header buttons and events', () => {
     );
   });
 
-  it('renderWidget branches on tier — PRO uses wrapProWidgetHtml', () => {
-    assert.ok(
-      panel.includes('wrapProWidgetHtml'),
-      "renderWidget must call wrapProWidgetHtml() for PRO tier",
-    );
+  it('does not render executable Pro iframes', () => {
+    assert.doesNotMatch(panel, /wrapProWidgetHtml|mountProWidget/);
   });
 
-  it('PRO badge rendered in header when tier is pro', () => {
-    assert.ok(
-      panel.includes('widget-pro-badge'),
-      'CustomWidgetPanel must render .widget-pro-badge for PRO widgets',
+  it('does not display the retired Pro badge', () => {
+    assert.doesNotMatch(panel, /widget-pro-badge/);
+  });
+});
+
+// Execute retained widget code without browser imports, config or app startup.
+async function localWidgetRenderer() {
+  const sanitizerCalls = [];
+  let styleHook;
+  const sanitizerModule = { exports: {} };
+  const sanitizerCode = await transform(src('src/utils/widget-sanitizer.ts'), { loader: 'ts', format: 'cjs' });
+  vm.runInNewContext(sanitizerCode.code, {
+    module: sanitizerModule, exports: sanitizerModule.exports,
+    require: name => {
+      assert.equal(name, 'dompurify');
+      return {
+        addHook(name, hook) {
+          assert.equal(name, 'uponSanitizeAttribute');
+          styleHook = hook;
+        },
+        sanitize(html, config) {
+          sanitizerCalls.push({ html, config });
+          return '<p>sanitized fixture</p>';
+        },
+      };
+    },
+  });
+  class Panel {
+    constructor() {
+      this.title = { textContent: '' };
+      this.header = { querySelector: selector => {
+        assert.equal(selector, '.panel-title');
+        return this.title;
+      } };
+      this.properties = new Map();
+      this.element = { style: {
+        setProperty: (name, value) => this.properties.set(name, value),
+        removeProperty: name => this.properties.delete(name),
+      } };
+    }
+    setSafeContent(html) { this.content = html.toString(); }
+  }
+  const panelModule = { exports: {} };
+  const panelCode = await transform(src('src/components/CustomWidgetPanel.ts'), { loader: 'ts', format: 'cjs' });
+  vm.runInNewContext(panelCode.code, {
+    module: panelModule, exports: panelModule.exports,
+    require: name => {
+      if (name === './Panel') return { Panel };
+      if (name === '@/utils/widget-sanitizer') return sanitizerModule.exports;
+      assert.equal(name, '@/utils/sanitize');
+      return { unsafeRawHtml };
+    },
+  });
+  return { sanitizerCalls, styleHook, ...sanitizerModule.exports, ...panelModule.exports };
+}
+
+describe('basic widgets — sanitizer boundary and renderer behavior', () => {
+  it('the production style hook rejects unsafe CSS without stripping ordinary styles', async () => {
+    const { styleHook } = await localWidgetRenderer();
+    for (const style of [
+      'background:url(https://example.com/x)', 'width:expression(alert(1))',
+      'color:javascript:alert(1)', '@import "https://example.com/x"', 'behavior:url(x)',
+    ]) {
+      const attribute = { attrName: 'style', attrValue: style, keepAttr: true };
+      styleHook(null, attribute);
+      assert.equal(attribute.keepAttr, false, style);
+    }
+    const safe = { attrName: 'style', attrValue: 'color:red', keepAttr: true };
+    styleHook(null, safe);
+    assert.equal(safe.keepAttr, true);
+    const title = { attrName: 'title', attrValue: 'url(example)', keepAttr: true };
+    styleHook(null, title);
+    assert.equal(title.keepAttr, true);
+  });
+
+  it('wraps the sanitizer result, not raw HTML, and removes a generated duplicate header', async () => {
+    const { wrapWidgetHtml, sanitizerCalls } = await localWidgetRenderer();
+    const result = wrapWidgetHtml(
+      '<div class="panel-header">Duplicate title</div><div onclick="alert(1)">42</div>',
     );
+    assert.equal(sanitizerCalls.length, 1);
+    assert.equal(sanitizerCalls[0].html, '<div onclick="alert(1)">42</div>');
+    assert.match(result, /<div class="wm-widget-shell"><div class="wm-widget-body">\s*<div class="wm-widget-generated"><p>sanitized fixture<\/p><\/div>/);
+    assert.doesNotMatch(result, /onclick|Duplicate title/);
+  });
+
+  it('renders and updates basic content, assigns titles as text, and resets accent state', async () => {
+    const { CustomWidgetPanel, sanitizerCalls } = await localWidgetRenderer();
+    const spec = {
+      id: 'cw-local', title: 'Local widget', tier: 'basic', html: '<div>First</div>',
+      prompt: '', accentColor: '#123456', conversationHistory: [], createdAt: 1, updatedAt: 1,
+    };
+    const panel = new CustomWidgetPanel(spec);
+    assert.equal(sanitizerCalls[0].html, '<div>First</div>');
+    assert.match(panel.content, /wm-widget-generated"><p>sanitized fixture<\/p>/);
+    assert.equal(panel.properties.get('--widget-accent'), '#123456');
+    const next = { ...spec, title: '<img src=x onerror=alert(1)>', html: '<p>Updated</p><script>alert(1)</script>', accentColor: null };
+    panel.updateSpec(next);
+    assert.equal(panel.title.textContent, next.title);
+    assert.equal(sanitizerCalls.length, 2);
+    assert.equal(sanitizerCalls[1].html, next.html);
+    assert.doesNotMatch(panel.content, /script|alert/);
+    assert.equal(panel.properties.has('--widget-accent'), false);
+    assert.equal(panel.getSpec(), next);
   });
 });
 
@@ -2313,226 +2238,10 @@ describe('PRO widget — relay auth and configuration', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 12. PRO widget — store and sanitizer
+// 12. Retained sandbox artifact — origin and event security
 // ---------------------------------------------------------------------------
-describe('PRO widget — store and sanitizer', () => {
-  const store = src('src/services/widget-store.ts');
-  const san = src('src/utils/widget-sanitizer.ts');
+describe('widget sandbox — origin and event security', () => {
   const sandbox = src('public/wm-widget-sandbox.html');
-
-  it('MAX_HTML_CHARS_PRO is 80000', () => {
-    const match = store.match(/MAX_HTML_CHARS_PRO\s*=\s*([\d_]+)/);
-    assert.ok(match, 'MAX_HTML_CHARS_PRO constant not found');
-    const val = Number(match[1].replace(/_/g, ''));
-    assert.equal(val, 80000, 'MAX_HTML_CHARS_PRO must be 80,000');
-  });
-
-  it('PRO auth migrates wm-pro-key to an HttpOnly session instead of storing it', () => {
-    const browserKeySession = src('src/services/browser-key-session.ts');
-    assert.ok(
-      store.includes("'wm-pro-key'"),
-      "isProWidgetEnabled must know the legacy 'wm-pro-key' name for migration",
-    );
-    assert.ok(
-      store.includes('isProWidgetEnabled'),
-      'isProWidgetEnabled function must be exported',
-    );
-    assert.ok(
-      store.includes('migrateLegacyKeysToHttpOnlySession') &&
-        browserKeySession.includes('establishWmKeySession'),
-      'PRO key writes must go through the server session endpoint',
-    );
-    assert.ok(
-      !/localStorage\.setItem\(['"]wm-pro-key['"]/.test(store),
-      'wm-pro-key must not be written to localStorage',
-    );
-    assert.ok(
-      !/document\.cookie\s*=.*wm-pro-key.*encodeURIComponent\(.*key/s.test(store),
-      'wm-pro-key must not be written to a JS-readable cookie',
-    );
-  });
-
-  it('user identity migrates legacy wm-pro-key instead of reading localStorage directly', () => {
-    const identity = src('src/services/user-identity.ts');
-    assert.ok(
-      identity.includes('readLegacySessionKey') && identity.includes('migrateLegacyKeysToHttpOnlySession'),
-      'user-identity must route legacy wm-pro-key through the HttpOnly migration helper',
-    );
-    assert.ok(
-      !/localStorage\.getItem\(['"]wm-pro-key['"]/.test(identity),
-      'user-identity must not read wm-pro-key directly from localStorage',
-    );
-  });
-
-  it('legacy wm-pro-html-{id} key remains supported for old PRO widgets', () => {
-    assert.ok(
-      store.includes('wm-pro-html-'),
-      "PRO HTML must still know the legacy 'wm-pro-html-{id}' localStorage key",
-    );
-  });
-
-  it('loadWidgets can hydrate legacy PRO HTML from the side key', () => {
-    const loadIdx = store.indexOf('function materializeWidgets');
-    assert.ok(loadIdx !== -1, 'shared widget materializer not found');
-    const loadBody = store.slice(loadIdx, loadIdx + 2_000);
-    assert.ok(
-      // Accessor-agnostic: #7833 moved this read onto safeStorageGet, and what
-      // the assertion is actually about is that the side key is consulted at
-      // all — pinning the spelling just re-breaks on the next migration.
-      /(?:localStorage\.getItem|safeStorageGet)\(proHtmlKey\(w\.id\)\)/.test(loadBody),
-      'loadWidgets must read legacy PRO HTML from the side key',
-    );
-  });
-
-  it('loadWidgets treats canonical PRO HTML as primary before legacy side key', () => {
-    const loadIdx = store.indexOf('function materializeWidgets');
-    const loadBody = store.slice(loadIdx, loadIdx + 2_000);
-    assert.ok(
-      loadBody.includes('storedHtml || sideKeyHtml'),
-      'loadWidgets must prefer canonical widget HTML before the legacy side key',
-    );
-  });
-
-  it('loadWidgets drops PRO entry only when no persisted HTML remains', () => {
-    const loadIdx = store.indexOf('function materializeWidgets');
-    const loadBody = store.slice(loadIdx, loadIdx + 2_000);
-    assert.ok(
-      loadBody.includes('if (!proHtml)') && loadBody.includes('continue'),
-      'loadWidgets must skip/drop PRO entries only when no HTML exists in either storage path',
-    );
-  });
-
-  it('saveWidget for PRO uses raw localStorage.setItem (not saveToStorage helper)', () => {
-    const saveIdx = store.indexOf('function saveWidget');
-    assert.ok(saveIdx !== -1, 'saveWidget not found');
-    const saveBody = store.slice(saveIdx, saveIdx + 800);
-    assert.ok(
-      saveBody.includes('localStorage.setItem'),
-      'PRO saveWidget must use raw localStorage.setItem for atomicity-safe writes',
-    );
-  });
-
-  it('saveWidget for PRO does not duplicate HTML into the legacy side key', () => {
-    const saveIdx = store.indexOf('function saveWidget');
-    const saveBody = store.slice(saveIdx, saveIdx + 800);
-    assert.ok(
-      !saveBody.includes('localStorage.setItem(proHtmlKey'),
-      'saveWidget must not write duplicate PRO HTML to the legacy side key',
-    );
-    assert.ok(
-      saveBody.includes('localStorage.removeItem(proHtmlKey'),
-      'saveWidget should clean up legacy PRO HTML side keys after a canonical save',
-    );
-  });
-
-  it('deleteWidget removes wm-pro-html-{id} key', () => {
-    const deleteIdx = store.indexOf('function deleteWidget');
-    assert.ok(deleteIdx !== -1, 'deleteWidget not found');
-    const deleteBody = store.slice(deleteIdx, deleteIdx + 400);
-    assert.ok(
-      deleteBody.includes('wm-pro-html') || deleteBody.includes('proHtmlKey'),
-      'deleteWidget must also remove the wm-pro-html-{id} key',
-    );
-  });
-
-  it('wrapProWidgetHtml returns iframe with sandbox="allow-scripts" only', () => {
-    assert.ok(san.includes('wrapProWidgetHtml'), 'wrapProWidgetHtml must be exported');
-    // Use 1500 chars to cover the full function body including the long CSP meta tag
-    const fnIdx = san.indexOf('wrapProWidgetHtml');
-    const fnBody = san.slice(fnIdx, fnIdx + 1500);
-    assert.ok(
-      fnBody.includes('sandbox="allow-scripts"') || fnBody.includes("sandbox='allow-scripts'"),
-      'iframe sandbox must be exactly "allow-scripts" — no allow-same-origin',
-    );
-    assert.ok(
-      !fnBody.includes('allow-same-origin'),
-      'sandbox must NOT include allow-same-origin',
-    );
-  });
-
-  it('widget document builder places CSP as first head child (client-owned skeleton)', () => {
-    assert.ok(
-      san.includes('Content-Security-Policy'),
-      'widget sanitizer must embed CSP in the document head',
-    );
-    // CSP meta should come before any style tag
-    const cspPos = san.indexOf('Content-Security-Policy');
-    const stylePos = san.indexOf('<style>');
-    assert.ok(
-      cspPos < stylePos,
-      'CSP meta must appear before <style> in the generated HTML skeleton',
-    );
-  });
-
-  it('widget document builder CSP restricts connect-src to cdn.jsdelivr.net only', () => {
-    assert.ok(
-      san.includes('connect-src https://cdn.jsdelivr.net'),
-      'CSP connect-src must allow only cdn.jsdelivr.net (for Chart.js source maps) and nothing else',
-    );
-    assert.ok(
-      !san.includes("connect-src 'none'") && !san.includes('connect-src *'),
-      'CSP connect-src must not be wildcard or none',
-    );
-  });
-
-  it('wrapProWidgetHtml uses sandbox page src (not srcdoc) for CSP isolation', () => {
-    const fnIdx = san.indexOf('wrapProWidgetHtml');
-    const fnBody = san.slice(fnIdx, fnIdx + 500);
-    assert.ok(
-      fnBody.includes('wm-widget-sandbox.html'),
-      'wrapProWidgetHtml must load the dedicated sandbox page (not srcdoc) to get its own CSP',
-    );
-    assert.ok(
-      !fnBody.includes('srcdoc'),
-      'wrapProWidgetHtml must NOT use srcdoc — srcdoc inherits parent CSP',
-    );
-  });
-
-  it('PRO widget iframe uses nonce handshake before posting HTML', () => {
-    assert.ok(
-      san.includes('data-wm-token') && san.includes('wm-widget-ready'),
-      'parent must mint a per-widget token and wait for sandbox readiness',
-    );
-    assert.ok(
-      san.includes('event.source !== iframe.contentWindow'),
-      'parent must bind ready messages to the mounted iframe window',
-    );
-    assert.ok(
-      san.includes('event.data.id !== mounted.id')
-        && san.includes('event.data.token !== mounted.token'),
-      'parent must verify ready message id and token before sending HTML',
-    );
-    assert.ok(
-      sandbox.includes('e.source !== window.parent') && sandbox.includes('e.data.token !== widgetToken'),
-      'sandbox must only accept HTML from its parent with the expected token',
-    );
-  });
-
-  it('PRO widget postMessage targetOrigins match the opaque sandbox model', () => {
-    const parentDelivery = san.match(
-      /iframe\.contentWindow\?\.postMessage\(\s*\{[\s\S]*?type:\s*['"]wm-html['"][\s\S]*?\},\s*(['"])\*\1,\s*\)/,
-    );
-    assert.ok(
-      parentDelivery,
-      'parent-to-sandbox HTML delivery must use "*" because sandbox="allow-scripts" gives the iframe an opaque origin',
-    );
-    assert.ok(
-      san.includes('origin is opaque') && san.includes('per-widget id/token'),
-      'wildcard targetOrigin must be documented as required after source and nonce gating',
-    );
-
-    const readyDelivery = sandbox.match(
-      /window\.parent\.postMessage\(\s*\{[\s\S]*?type:\s*['"]wm-widget-ready['"][\s\S]*?\},\s*parentOrigin,\s*\)/,
-    );
-    assert.ok(
-      readyDelivery,
-      'sandbox-to-parent readiness must target the parsed parentOrigin, not a wildcard',
-    );
-    assert.ok(
-      !/window\.parent\.postMessage\(\s*\{[\s\S]*?type:\s*['"]wm-widget-ready['"][\s\S]*?\},\s*(['"])\*\1/.test(sandbox),
-      'sandbox readiness postMessage must not use wildcard targetOrigin',
-    );
-  });
 
   it('widget sandbox allows approved Vercel previews and rejects lookalike origins', () => {
     assert.ok(
@@ -2927,283 +2636,27 @@ window.dispatchEvent(new Event('click'));
     assert.equal(sandboxWindow.clickCalls, 1, 'listener objects and normal event options must still work');
   });
 
-  it('PRO widget message listener has AbortController cleanup wired to iframe removal', () => {
-    // P1 (greptile #3912): the global `message` listener registered by
-    // mountProWidget would otherwise retain a strong reference to the
-    // iframe (and its ~80 KB HTML payload) for the lifetime of the page,
-    // even after the iframe is removed from the DOM — a real leak in any
-    // dashboard session that adds/removes widgets repeatedly. The fix is
-    // an AbortController per iframe + a MutationObserver `removedNodes`
-    // pass that calls `unmountProWidget`, which aborts the listener and
-    // clears every per-iframe WeakMap entry.
-    assert.ok(
-      san.includes('iframeAbortStore') && san.includes('new AbortController()'),
-      'mountProWidget must create an AbortController per iframe and store it',
-    );
-    assert.ok(
-      san.includes("{ signal: controller.signal }"),
-      'message listener must be registered with the AbortController signal so abort() removes it',
-    );
-    assert.ok(
-      san.includes('function unmountProWidget') && san.includes('controller.abort')
-        || (san.includes('function unmountProWidget') && san.includes('iframeAbortStore.get(iframe)?.abort()')),
-      'unmountProWidget must abort the controller (tearing down the listener)',
-    );
-    assert.ok(
-      san.includes('iframeAbortStore.delete(iframe)')
-        && san.includes('iframeTokenStore.delete(iframe)')
-        && san.includes('iframeHtmlStore.delete(iframe)'),
-      'unmountProWidget must clear every per-iframe WeakMap entry to release the HTML payload',
-    );
-    assert.ok(
-      san.includes('mut.removedNodes') && san.includes('unmountProWidget'),
-      'MutationObserver must scan removedNodes and call unmountProWidget so the cleanup actually fires when widgets are removed',
-    );
-  });
-
-  it('PRO widget re-deliveries are rate-limited to bound document.write storms', () => {
-    // P2 (greptile #3912): a malicious widget that re-reads its token from
-    // window.location.hash and re-posts wm-widget-ready could trigger an
-    // unbounded document.write loop (parent responds → write replaces doc
-    // → new doc re-posts ready → parent responds again). Rate-limiting
-    // deliveries to once per second per iframe is the smallest fix that
-    // bounds the loop while preserving legitimate drag/drop re-navigation
-    // (which is human-paced and trivially clears the floor). Greptile's
-    // suggested verbatim fix (delete iframeTokenStore after first delivery)
-    // would break the documented re-navigation use case at the call site,
-    // so we keep the token alive and gate on time instead.
-    assert.ok(
-      san.includes('MIN_DELIVERY_INTERVAL_MS') && san.includes('iframeLastDeliveryMs'),
-      'must declare a per-iframe last-delivery timestamp store and a minimum interval',
-    );
-    const intervalMatch = san.match(/MIN_DELIVERY_INTERVAL_MS\s*=\s*(\d+)/);
-    assert.ok(intervalMatch, 'MIN_DELIVERY_INTERVAL_MS must be a numeric literal');
-    const interval = Number(intervalMatch[1]);
-    assert.ok(
-      interval >= 500 && interval <= 5000,
-      `MIN_DELIVERY_INTERVAL_MS must be between 500ms and 5s (got ${interval}) — too low fails to bound a loop, too high breaks drag/drop`,
-    );
-    assert.ok(
-      san.includes('now - last < MIN_DELIVERY_INTERVAL_MS'),
-      'message handler must return early when called within the throttle window',
-    );
-    assert.ok(
-      san.includes('iframeLastDeliveryMs.set(iframe, now)'),
-      'message handler must record the delivery time so the next call is throttled',
-    );
-  });
-
-  it('widget document builder injects panel CSS classes for design-system alignment', () => {
-    assert.ok(san.includes('.panel-header'), 'must define .panel-header');
-    assert.ok(san.includes('.panel-title'), 'must define .panel-title');
-    assert.ok(san.includes('.panel-tabs'), 'must define .panel-tabs');
-    assert.ok(san.includes('.panel-tab'), 'must define .panel-tab');
-    assert.ok(san.includes('.disp-stats-grid'), 'must define .disp-stats-grid');
-    assert.ok(san.includes('.disp-stat-box'), 'must define .disp-stat-box');
-    assert.ok(san.includes('--accent'), 'must define --accent CSS variable');
-  });
-
-  it('widget document builder injects Chart.js from jsdelivr so new Chart() is available', () => {
-    assert.ok(
-      san.includes('cdn.jsdelivr.net') && san.includes('chart.js'),
-      'widget sanitizer must inject Chart.js CDN script so widgets can call new Chart(...)',
-    );
-    // Script must appear before <body> so Chart is defined when body scripts run
-    const scriptPos = san.indexOf('chart.js');
-    const bodyPos = san.indexOf('<body>');
-    assert.ok(
-      scriptPos < bodyPos,
-      'Chart.js script tag must be in <head>, before <body>',
-    );
-  });
 });
 
 // ---------------------------------------------------------------------------
-// 13. PRO widget — modal and layout
+// 14. Retained local widget styles
 // ---------------------------------------------------------------------------
-describe('PRO widget — modal and layout integration', () => {
-  const modal = src('src/components/WidgetChatModal.ts');
-  const layout = src('src/app/panel-layout.ts');
-
-  it('modal sends tier in request body', () => {
-    const bodyIdx = modal.indexOf('JSON.stringify');
-    assert.ok(bodyIdx !== -1);
-    const bodyRegion = modal.slice(bodyIdx, bodyIdx + 400);
-    assert.ok(bodyRegion.includes('tier'), "Request body must include 'tier' field");
-  });
-
-  it('modal sends X-Pro-Key header for PRO requests', () => {
-    assert.ok(
-      modal.includes('X-Pro-Key'),
-      'Modal must send X-Pro-Key header for PRO tier requests',
-    );
-  });
-
-  it('modal timeout outlasts the relay timeout: 200 s PRO, 170 s basic', () => {
-    assert.ok(modal.includes('const timeoutMs = isPro ? 200_000 : 170_000;'));
-  });
-
-  it('modal shows preflightProUnavailable when proKeyConfigured is false', () => {
-    assert.ok(
-      modal.includes('proKeyConfigured') || modal.includes('preflightProUnavailable'),
-      'Modal must handle proKeyConfigured=false from health endpoint',
-    );
-  });
-
-  it('pendingSaveSpec includes tier field', () => {
-    assert.ok(
-      modal.includes('pendingSaveSpec'),
-      'Modal must use pendingSaveSpec before saving',
-    );
-    // tier should be part of the spec being saved
-    const specIdx = modal.indexOf('pendingSaveSpec');
-    const specRegion = modal.slice(specIdx, specIdx + 200);
-    assert.ok(
-      specRegion.includes('tier') || modal.includes("tier: currentTier"),
-      'pendingSaveSpec must include tier field',
-    );
-  });
-
-  it('PRO example chips defined (separate from basic examples)', () => {
-    assert.ok(
-      modal.includes('PRO_EXAMPLE_PROMPT_KEYS'),
-      'Modal must define PRO_EXAMPLE_PROMPT_KEYS for PRO example chips',
-    );
-  });
-
-  it('layout has PRO create button when hasPremiumAccess', () => {
-    assert.ok(
-      layout.includes('hasPremiumAccess') || layout.includes('isProUser'),
-      'panel-layout must import/call hasPremiumAccess (or isProUser)',
-    );
-    assert.ok(
-      layout.includes('ai-widget-block-pro'),
-      'panel-layout must render PRO create button (.ai-widget-block-pro)',
-    );
-  });
-
-  it('layout PRO button opens modal with tier: pro', () => {
-    const proButtonIdx = layout.indexOf('ai-widget-block-pro');
-    assert.ok(proButtonIdx !== -1);
-    // Use 1200 chars to cover the full button element including the click handler
-    const proButtonRegion = layout.slice(proButtonIdx, proButtonIdx + 1200);
-    assert.ok(
-      proButtonRegion.includes("tier: 'pro'") || proButtonRegion.includes("tier:'pro'") || proButtonRegion.includes('"pro"'),
-      "PRO button must open modal with tier: 'pro'",
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 14. PRO widget — i18n and CSS
-// ---------------------------------------------------------------------------
-describe('PRO widget — i18n keys and CSS', () => {
-  const en = JSON.parse(src('src/locales/en.json'));
+describe('basic widget — CSS containment', () => {
   const css = src('src/styles/main.css');
 
-  const PRO_REQUIRED_KEYS = [
-    'createInteractive',
-    'proBadge',
-    'preflightProUnavailable',
-  ];
-
-  for (const key of PRO_REQUIRED_KEYS) {
-    it(`widgets.${key} is defined and non-empty`, () => {
-      assert.ok(
-        en.widgets && typeof en.widgets[key] === 'string' && en.widgets[key].length > 0,
-        `en.json must have non-empty widgets.${key}`,
-      );
-    });
-  }
-
-  it('widgets.proExamples has all 4 example keys', () => {
-    const exKeys = ['interactiveChart', 'sortableTable', 'animatedCounters', 'tabbedComparison'];
-    for (const key of exKeys) {
-      assert.ok(
-        en.widgets?.proExamples?.[key] && en.widgets.proExamples[key].length > 0,
-        `en.json must have non-empty widgets.proExamples.${key}`,
-      );
-    }
+  it('local panel borders use the per-widget accent with the dashboard fallback', () => {
+    assert.match(css, /\.custom-widget-panel\s*\{[^}]*border-top:[^;]*var\(--widget-accent, var\(--accent\)\)/);
   });
 
-  it('.widget-pro-badge CSS class defined', () => {
-    assert.ok(
-      css.includes('.widget-pro-badge'),
-      'CSS must define .widget-pro-badge class for PRO pill badge',
-    );
-  });
-
-  it('.wm-widget-pro iframe CSS sets 400px height', () => {
-    assert.ok(
-      css.includes('.wm-widget-pro'),
-      'CSS must target .wm-widget-pro for PRO iframe container',
-    );
-    const proIdx = css.indexOf('.wm-widget-pro');
-    const proRegion = css.slice(proIdx, proIdx + 300);
-    assert.ok(
-      proRegion.includes('400px') || css.includes('400px'),
-      'PRO iframe must have 400px height defined in CSS',
-    );
+  it('basic generated content remains contained within its panel', () => {
+    const generated = css.match(/\.wm-widget-generated\s*\{([^}]+)\}/)?.[1];
+    assert.ok(generated);
+    assert.match(generated, /isolation:\s*isolate/);
+    assert.match(generated, /contain:\s*layout paint/);
+    assert.match(generated, /overflow:\s*clip/);
   });
 });
 
-// ---------------------------------------------------------------------------
-// PRO widget — edge-proxy auth (Convex entitlement fallback for paid users)
-// ---------------------------------------------------------------------------
-//
-// Dodo webhook does NOT sync Clerk publicMetadata.plan, so a paying subscriber's
-// Clerk session.role stays 'free' indefinitely. The edge proxy at
-// api/widget-agent.ts must accept EITHER Clerk role==='pro' OR Convex
-// entitlement tier>=1, mirroring server/_shared/premium-check.ts::isCallerPremium
-// and server/gateway.ts:521-526. A regression here surfaces as a misleading
-// "PRO key rejected. Update wm-pro-key…" 403 in the modal — the user has no
-// tester key, so the suggested action is a dead end.
-describe('widget-agent edge proxy — Convex entitlement fallback', () => {
-  const edge = src('api/widget-agent.ts');
-
-  it('imports getEntitlements from server/_shared/entitlement-check', () => {
-    assert.ok(
-      /import\s*\{[^}]*\bgetEntitlements\b[^}]*\}\s*from\s*['"][^'"]*entitlement-check['"]/.test(edge),
-      'api/widget-agent.ts must import getEntitlements for Dodo entitlement fallback',
-    );
-  });
-
-  it('Clerk JWT path falls back to Convex entitlement when role !== "pro"', () => {
-    const bearerIdx = edge.indexOf("authHeader?.startsWith('Bearer ')");
-    assert.ok(bearerIdx !== -1, 'Bearer-token branch not found in api/widget-agent.ts');
-    // Constrain the search to the bearer-token branch only.
-    const region = edge.slice(bearerIdx, bearerIdx + 2000);
-    assert.ok(
-      region.includes('getEntitlements(session.userId)'),
-      'Bearer-token branch must call getEntitlements(session.userId) when Clerk role !== "pro"',
-    );
-    assert.ok(
-      /features\.tier\s*>=\s*1/.test(region),
-      'Bearer-token branch must accept Convex entitlement tier >= 1',
-    );
-  });
-
-  it('does NOT 403 immediately on session.role !== "pro"', () => {
-    // The legacy shape `if (session.role !== 'pro') return 403` is the bug —
-    // it would short-circuit before the Convex fallback. Lock it out.
-    assert.ok(
-      !/if\s*\(\s*session\.role\s*!==\s*['"]pro['"]\s*\)\s*\{\s*return\s+json\([^}]*403/.test(edge),
-      'api/widget-agent.ts must NOT 403 on session.role !== "pro" without checking Convex entitlement',
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// entitlement-check — cache-write failure must NOT collapse to "no entitlement"
-// ---------------------------------------------------------------------------
-//
-// getEntitlements() returns null on three different failure modes — Convex
-// said no, Convex unreachable, and (the trap this test guards) cache-write
-// failed AFTER Convex confirmed the entitlement. Once Convex returns a valid
-// entitlement, an Upstash hiccup or any error inside setCachedJson must NOT
-// turn that yes into a null-meaning-no — that would 403 paying customers on
-// every call path this file gates, including the widget-agent fallback PR
-// #3505 just added.
 // ---------------------------------------------------------------------------
 // widget-agent relay — error classifier (no more opaque "Agent error")
 // ---------------------------------------------------------------------------
@@ -3369,200 +2822,6 @@ describe('widget-agent relay — error classifier', () => {
     assert.ok(
       /catch\s*\(\s*err[^)]*\)[\s\S]*?toolCallCount/.test(region),
       'Catch payload must still reference toolCallCount, otherwise this test is guarding nothing',
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// panel-layout — Pro CTAs must re-evaluate on Convex entitlement updates
-// ---------------------------------------------------------------------------
-//
-// "Create Interactive Widget" (proBlock) and "Connect MCP" (mcpBlock) are
-// gated by applyProBlockGating(hasPremiumAccess(...)). For a paying Dodo
-// subscriber whose Clerk publicMetadata.plan is never written, hasPremiumAccess
-// only flips true once the Convex entitlement snapshot lands via
-// onEntitlementChange — NOT via subscribeAuthState. Subscribing only to
-// subscribeAuthState (the prior shape) meant the CTAs stayed display:none for
-// the entire page lifetime for paying users. Lock the dual-subscription.
-describe('panel-layout — Pro add-block gating reacts to entitlement updates', () => {
-  const layout = src('src/app/panel-layout.ts');
-
-  it('imports onEntitlementChange', () => {
-    assert.ok(
-      /import\s*\{[^}]*\bonEntitlementChange\b[^}]*\}\s*from\s*['"][^'"]*entitlements['"]/.test(layout),
-      'panel-layout must import onEntitlementChange to re-evaluate Pro CTA gating on Convex snapshots',
-    );
-  });
-
-  it('proBlock + mcpBlock gating subscribes to BOTH auth and entitlement changes', () => {
-    // Anchor on the gating function to scope the search to its surroundings.
-    const gateFnIdx = layout.indexOf('applyProBlockGating');
-    assert.ok(gateFnIdx !== -1, 'applyProBlockGating not found in panel-layout');
-    const region = layout.slice(gateFnIdx, gateFnIdx + 1500);
-    assert.ok(
-      region.includes('subscribeAuthState'),
-      'Pro CTA gating must subscribe to subscribeAuthState (legacy auth-driven path)',
-    );
-    assert.ok(
-      region.includes('onEntitlementChange'),
-      'Pro CTA gating MUST subscribe to onEntitlementChange so paying Dodo users flip from hidden->visible when the Convex entitlement snapshot lands',
-    );
-  });
-
-  it('teardown clears the entitlement subscription so a destroyed layout does not leak callbacks', () => {
-    assert.ok(
-      layout.includes('proBlockEntitlementUnsubscribe'),
-      'panel-layout must hold a proBlockEntitlementUnsubscribe handle and clear it in destroy()',
-    );
-    // Look for the destroy() block
-    const destroyIdx = layout.indexOf('destroy(): void {');
-    assert.ok(destroyIdx !== -1, 'destroy() not found');
-    const destroyRegion = layout.slice(destroyIdx, destroyIdx + 2000);
-    assert.ok(
-      destroyRegion.includes('proBlockEntitlementUnsubscribe'),
-      'destroy() must invoke proBlockEntitlementUnsubscribe to avoid leaking callbacks across layout init/destroy cycles',
-    );
-  });
-});
-
-describe('entitlement-check — cache-write failure does not collapse confirmed entitlement', () => {
-  const src_ = src('server/_shared/entitlement-check.ts');
-
-  it('setCachedJson call is wrapped in its own try/catch', () => {
-    // Find the success-path block: `if (result) { … setCachedJson(…) … return result }`
-    const successIdx = src_.indexOf('if (result) {');
-    assert.ok(successIdx !== -1, 'success-path "if (result)" branch not found');
-    const region = src_.slice(successIdx, successIdx + 1500);
-
-    const setIdx = region.indexOf('setCachedJson(');
-    assert.ok(setIdx !== -1, 'setCachedJson call missing from success path');
-
-    // Walk backward from setCachedJson to find the nearest enclosing `try {`
-    // BEFORE the outer catch. The outer try is at the top of the function,
-    // far away — we want a LOCAL try/catch around the cache write so the
-    // safety property is explicit at the call site.
-    const beforeSet = region.slice(0, setIdx);
-    const lastTry = beforeSet.lastIndexOf('try {');
-    const lastCatch = beforeSet.lastIndexOf('catch');
-    assert.ok(
-      lastTry !== -1 && lastTry > lastCatch,
-      'setCachedJson must be inside a LOCAL try/catch within the success branch — relying on setCachedJson to swallow its own errors is fragile',
-    );
-
-    // The success-path return must come AFTER the try/catch, not inside the catch.
-    const returnIdx = region.indexOf('return result', setIdx);
-    assert.ok(
-      returnIdx !== -1,
-      '`return result` must follow the cache-write try/catch so a swallowed cache error still returns the confirmed entitlement',
-    );
-  });
-
-  it('cache-write catch logs but does not return null or throw', () => {
-    const successIdx = src_.indexOf('if (result) {');
-    const region = src_.slice(successIdx, successIdx + 1500);
-    // The catch block for cache write must NOT contain `return null` — that
-    // would re-introduce the bug. It also must not rethrow.
-    const cacheCatchMatch = region.match(/catch\s*\(\s*cacheErr[^)]*\)\s*\{([^}]*)\}/);
-    assert.ok(cacheCatchMatch, 'cache-write catch block must be named distinctly (e.g. cacheErr) so future readers see the intent');
-    const cacheCatchBody = cacheCatchMatch[1];
-    assert.ok(
-      !/return\s+null/.test(cacheCatchBody),
-      'cache-write catch must NOT return null — a confirmed entitlement must survive cache-write failure',
-    );
-    assert.ok(
-      !/throw\b/.test(cacheCatchBody),
-      'cache-write catch must NOT rethrow — that would bubble to the outer catch and collapse to null',
-    );
-  });
-});
-
-describe('WidgetChatModal — preflight 403 message branches on auth mode', () => {
-  const modal = src('src/components/WidgetChatModal.ts');
-  const en = JSON.parse(src('src/locales/en.json'));
-
-  it('buildWidgetAuthHeaders returns usedTesterKey flag', () => {
-    assert.ok(
-      modal.includes('usedTesterKey'),
-      'buildWidgetAuthHeaders must report whether a tester key was used so the 403 message can branch',
-    );
-  });
-
-  it('resolvePreflightMessage takes usedTesterKey and branches Clerk path on isPro', () => {
-    const fnIdx = modal.indexOf('function resolvePreflightMessage');
-    assert.ok(fnIdx !== -1, 'resolvePreflightMessage not found');
-    const fnEnd = modal.indexOf('\nfunction setReadinessState', fnIdx);
-    assert.ok(fnEnd !== -1, 'resolvePreflightMessage boundary not found');
-    const region = modal.slice(fnIdx, fnEnd);
-    assert.ok(
-      region.includes('usedTesterKey'),
-      'resolvePreflightMessage must take usedTesterKey to branch on auth mode',
-    );
-    assert.ok(
-      region.includes('preflightProSubscriptionRequired'),
-      'Clerk-auth 403 (isPro=true) must surface preflightProSubscriptionRequired',
-    );
-    assert.ok(
-      region.includes('preflightProRequired'),
-      'Clerk-auth 403 (isPro=false, free user) must surface preflightProRequired (clean upgrade ask, no "just upgraded" language)',
-    );
-  });
-
-  it('en.json defines widgets.preflightProSubscriptionRequired (just-upgraded / outage)', () => {
-    assert.ok(
-      typeof en.widgets?.preflightProSubscriptionRequired === 'string'
-        && en.widgets.preflightProSubscriptionRequired.length > 0,
-      'en.json must define widgets.preflightProSubscriptionRequired',
-    );
-    assert.ok(
-      !/wm-pro-key/i.test(en.widgets.preflightProSubscriptionRequired),
-      'preflightProSubscriptionRequired must not mention wm-pro-key — Clerk users have no tester key',
-    );
-  });
-
-  it('en.json defines widgets.preflightProRequired (free-user upgrade ask, no "just upgraded" language)', () => {
-    assert.ok(
-      typeof en.widgets?.preflightProRequired === 'string'
-        && en.widgets.preflightProRequired.length > 0,
-      'en.json must define widgets.preflightProRequired',
-    );
-    assert.ok(
-      !/wm-pro-key/i.test(en.widgets.preflightProRequired),
-      'preflightProRequired must not mention wm-pro-key',
-    );
-    assert.ok(
-      !/just upgraded|refresh the page|contact support/i.test(en.widgets.preflightProRequired),
-      'preflightProRequired is for genuinely-free users — must not include "just upgraded / refresh / contact support" language',
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// widget-agent edge proxy — observability for fail-closed entitlement 403s
-// ---------------------------------------------------------------------------
-//
-// When getEntitlements returns null, callers can't tell "user genuinely not
-// entitled" from "entitlement service degraded" — both shapes 403 paying users
-// during a Convex/Upstash outage. Emit a structured log at the 403 site so
-// on-call can grep Vercel logs and disambiguate incident vs not-entitled
-// without waiting for refund tickets.
-describe('widget-agent edge proxy — fail-closed observability', () => {
-  const edge = src('api/widget-agent.ts');
-
-  it('403 site emits a structured log with reason + userId + entitlementTier', () => {
-    const idx = edge.indexOf("error: 'Pro subscription required'");
-    assert.ok(idx !== -1, 'Pro-required 403 site not found');
-    // Walk backward from the 403 to find the preceding console.warn — must
-    // sit in the same allowed-check block, not in some unrelated error path.
-    const before = edge.slice(Math.max(0, idx - 1500), idx);
-    assert.ok(
-      /console\.warn\([^)]*widget-agent[^)]*pro-required/i.test(before),
-      'A console.warn naming "widget-agent" + "pro-required" must precede the 403 return',
-    );
-    assert.ok(before.includes('reason'), 'Structured log must include "reason" field (not_entitled vs service_unavailable)');
-    assert.ok(before.includes('userId'), 'Structured log must include userId for grep/correlation');
-    assert.ok(
-      before.includes('service_unavailable') && before.includes('not_entitled'),
-      'Structured log must distinguish service_unavailable (Convex/Redis down) from not_entitled (real free user)',
     );
   });
 });

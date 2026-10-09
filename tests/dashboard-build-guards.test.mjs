@@ -68,7 +68,7 @@ function runGuardProbe(expectBuiltOutput) {
 }
 
 describe('built-output guard contract', () => {
-  it('builds /pro before full and focused prehydration browser checks', () => {
+  it('runs public prehydration checks without a retired Pro build prerequisite', () => {
     const packageJson = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'));
     const fullE2eScript = packageJson.scripts?.['test:e2e:full'] ?? '';
     const prehydrationScript = packageJson.scripts?.['test:e2e:prehydration'] ?? '';
@@ -77,36 +77,26 @@ describe('built-output guard contract', () => {
       'utf8',
     );
     const workflow = readFileSync(workflowPath, 'utf8').replaceAll('\r\n', '\n');
-    const expectedCiSequence = [
-      '      - name: Build /pro artifacts for prehydration browser checks',
-      '        # public/pro/ is built output since #6898. Keep this explicit and',
-      '        # immediately before the focused spec so the browser checks cannot run',
-      '        # against missing or stale bytes from another build.',
-      '        run: npm run build:pro',
-      '      - name: Run fail-closed prehydration browser checks',
-      '        id: prehydration',
-      '        run: npm run test:e2e:prehydration',
-    ].join('\n');
-
     assert.match(
       fullE2eScript,
-      /^npm run build:pro && /,
-      'test:e2e:full must build ignored /pro output before Playwright starts',
+      /VITE_VARIANT=full playwright test/,
+      'full browser checks must retain the public dashboard variant',
     );
     assert.match(
       prehydrationScript,
-      /playwright test e2e\/prehydration-shell\.spec\.ts --project=chromium --grep [^&]*server-rendered welcome page\|dashboard shell without JavaScript/,
-      'the focused CI script must execute all formerly guarded prehydration checks in Chromium',
+      /playwright test e2e\/prehydration-shell\.spec\.ts --project=chromium --grep "dashboard shell without JavaScript"/,
+      'the focused CI script must execute the retained no-JavaScript dashboard check in Chromium',
     );
     assert.doesNotMatch(
       prehydrationSource,
-      /test\.skip\(!proWelcomeBuilt/,
-      'the prehydration spec must fail when /pro output is absent, not silently skip',
+      /test\.skip\(/,
+      'the public prehydration checks must not silently skip',
     );
     assert.ok(
-      workflow.includes(expectedCiSequence),
-      'PR CI must build /pro immediately before the focused prehydration browser checks',
+      workflow.includes('        run: npm run test:e2e:prehydration'),
+      'CI must execute the public prehydration script',
     );
+    assert.doesNotMatch(`${fullE2eScript}\n${prehydrationScript}\n${workflow}`, /\bbuild:pro\b/);
   });
 
   it('keeps the dashboard build immediately before the marker-enabled data test in CI', () => {
@@ -118,7 +108,6 @@ describe('built-output guard contract', () => {
     // against the dist the step above just built, and the gate cannot drift
     // to a position where dist/ might be stale or absent.
     const expectedSequence = [
-      '        run: npm run build:pro',
       '      - name: Build dashboard artifacts for built-output tests',
       '        run: VITE_VARIANT=full ./node_modules/.bin/vite build',
       '      - name: Client bundle size budget (#7111, #7119)',
@@ -126,14 +115,13 @@ describe('built-output guard contract', () => {
     const expectedTailSequence = [
       '        run: |',
       '          npm run bundle:check',
-      '          npm run bundle:check:pro',
       '          npm run bundle:check:embed',
-      '      - run: WM_EXPECT_BUILT_OUTPUT=1 npm run test:data',
+      '      - run: WM_EXPECT_BUILT_OUTPUT=1 npm run test:data -- --built-output=only --concurrency=4 --timings=${{ runner.temp }}/data-test-timings.jsonl',
     ].join('\n');
 
     assert.ok(
       workflow.includes(expectedSequence),
-      'the unit job must build /pro then dashboard artifacts, then run the bundle-size gate against that fresh dist',
+      'the public built-output job must build dashboard artifacts before checking their size',
     );
     assert.ok(
       workflow.includes(expectedTailSequence),
@@ -146,86 +134,15 @@ describe('built-output guard contract', () => {
     );
   });
 
-  it('wires the /pro guard to the shared primitive and the prerendered page', async () => {
-    // The skip/fail behaviour itself is proven with teeth by the probe cases
-    // below, which exercise the shared primitive. What that probe cannot reach
-    // is the /pro wrapper, because it resolves its own path -- so pin the two
-    // things the wrapper contributes: which file it watches, and that it
-    // delegates rather than reimplementing the skip/fail decision.
-    const proGuard = await import('./_lib/pro-built-output.mjs');
-    assert.match(
-      proGuard.PRO_BUILT_MARKER,
-      /public\/pro\/welcome\.html$/,
-      'the /pro marker must be the prerendered welcome page',
-    );
-
-    const source = readFileSync(resolve(repoRoot, 'tests/_lib/pro-built-output.mjs'), 'utf8');
-    assert.match(
-      source,
-      /from '\.\/built-output-guard\.mjs'/,
-      'the /pro helper must delegate to the shared built-output primitive, not fork it',
-    );
-    assert.match(
-      source,
-      /shouldSkipBuiltOutput\(PRO_BUILT_MARKER\)/,
-      'shouldSkipProBuiltOutput must ask the shared primitive about the /pro marker',
-    );
-    assert.match(
-      source,
-      /guardBuiltOutput\(PRO_BUILT_MARKER/,
-      'guardProBuiltOutput must ask the shared primitive about the /pro marker',
-    );
-
-    const sentrySource = readFileSync(resolve(repoRoot, 'tests/pro-sentry-chunk.test.mjs'), 'utf8');
-    assert.match(
-      sentrySource,
-      /from '\.\/_lib\/built-output-guard\.mjs'/,
-      'the pro Sentry chunk suite must use the shared built-output primitive',
-    );
-    assert.match(
-      sentrySource,
-      /skip: shouldSkipBuiltOutput\(ASSETS_DIR\)/,
-      'the pro Sentry chunk suite must skip specifically when public/pro/assets is absent',
-    );
-    assert.match(
-      sentrySource,
-      /guardBuiltOutput\(ASSETS_DIR, undefined, REBUILD_HINT\)/,
-      'the pro Sentry chunk suite must fail closed on the same assets path when CI expects built output',
-    );
-    assert.match(
-      sentrySource,
-      /Run `npm run build:pro` first/,
-      'the pro Sentry chunk failure must name the /pro build command',
-    );
-  });
-
-  it('keeps the /pro build-output existence check in the freshness workflow', () => {
-    // The only thing standing between a broken pro build and a 404 at /pro is
-    // this check: #6898 stopped committing public/pro/, so no byte in git covers
-    // for a build that emitted nothing. `vite build` succeeding is not the same
-    // as the two entry pages existing -- a rollupOptions.input rename would ship
-    // a green build and an empty route.
-    const freshness = readFileSync(
-      resolve(repoRoot, '.github/workflows/pro-bundle-freshness.yml'),
-      'utf8',
-    ).replaceAll('\r\n', '\n');
-
-    for (const page of ['public/pro/index.html', 'public/pro/welcome.html']) {
-      assert.ok(
-        freshness.includes(page),
-        `pro-bundle-freshness.yml must assert ${page} exists after the build`,
-      );
+  it('wires public built-output suites to the shared fail-closed primitive', () => {
+    for (const file of ['dashboard-eager-chunks.test.mjs', 'dashboard-critical-css.test.mjs']) {
+      const source = readFileSync(resolve(repoRoot, 'tests', file), 'utf8');
+      assert.match(source, /from '\.\/_lib\/built-output-guard\.mjs'/);
+      assert.match(source, /shouldSkipBuiltOutput\(dashboardHtml\)/);
+      assert.match(source, /guardBuiltOutput\(dashboardHtml\)/);
     }
-    assert.match(
-      freshness,
-      /if \[ ! -s "\$page" \]; then/,
-      'the existence check must test for a NON-EMPTY file (-s), not merely a present one',
-    );
-    assert.match(
-      freshness,
-      /run: cd pro-test && npm run build/,
-      'the existence check is only meaningful if the workflow actually builds pro-test',
-    );
+    assert.equal(existsSync(resolve(repoRoot, '.github/workflows/pro-bundle-freshness.yml')), false);
+    assert.equal(existsSync(resolve(repoRoot, 'pro-test')), false);
   });
 
   it('skips the built-output suite when the marker is absent and output is missing', () => {

@@ -29,8 +29,31 @@ async function attachJsonEvidence(
   await testInfo.attach(name, { path, contentType: 'application/json' });
 }
 
-async function installReadinessRecorder(page: Page): Promise<void> {
-  await page.addInitScript(() => localStorage.setItem('wm_lcp_debug', '1'));
+export async function installReadinessRecorder(
+  page: Page,
+  panelsWorkspace = false,
+): Promise<void> {
+  await page.addInitScript((usePanelsWorkspace) => {
+    localStorage.setItem('wm_lcp_debug', '1');
+    if (usePanelsWorkspace && localStorage.getItem('worldmonitor-tabs-v1:full') === null) {
+      // Main intentionally defaults to map-only. These scenarios require the
+      // public panels view; do not change live global settings/order or reset
+      // this tab on reload. An active tab's snapshot is not authoritative until
+      // switching away, when production captures the live panel preferences.
+      const id = 'tab-webmcp-panels';
+      localStorage.setItem('worldmonitor-tabs-v1:full', JSON.stringify({
+        activeTabId: id,
+        tabs: [{
+          id,
+          name: 'WebMCP Panels',
+          view: 'panels',
+          panelSettings: {},
+          panelOrder: [],
+          bottomSet: [],
+        }],
+      }));
+    }
+  }, panelsWorkspace);
 }
 
 async function installColdStartCancellationProbe(
@@ -194,7 +217,7 @@ export async function runWebMcpCancellationScenario(
   });
   const cancelTool = productionSmoke ? 'get_dashboard_context' : 'set_map_view';
   const cancelInput = productionSmoke ? '{}' : JSON.stringify({ view: 'eu', zoom: 4 });
-  await installReadinessRecorder(page);
+  await installReadinessRecorder(page, true);
   await installColdStartCancellationProbe(page, cancelTool, cancelInput);
   await page.addInitScript(() => {
     const rejectionLog: Array<{ name: string; message: string }> = [];
@@ -205,7 +228,7 @@ export async function runWebMcpCancellationScenario(
     window.addEventListener('unhandledrejection', (event) => {
       if (rejectionLog.length >= 20) return;
       const reason = event.reason;
-      let name = typeof reason;
+      let name: string = typeof reason;
       let message = String(reason);
       try {
         if (reason && (typeof reason === 'object' || typeof reason === 'function')) {

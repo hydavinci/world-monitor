@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, it } from 'node:test';
 import { createDomainGateway } from '../server/gateway.ts';
 import { marketHandler } from '../server/worldmonitor/market/v1/handler.ts';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { retiredRouteResponse } from '../api/_retired-routes.js';
 
 const originalFetch = globalThis.fetch;
@@ -17,6 +17,10 @@ const protectedPaths: string[] = [
   '/api/scenario/v1/run-scenario',
   '/api/chat-analyst',
   '/api/v2/shipping/webhooks/customer/delete',
+  '/api/create-checkout',
+  '/api/customer-portal',
+  '/pro',
+  '/pricing',
 ];
 const credentials: Record<string, string>[] = [
   {},
@@ -33,6 +37,18 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   if (originalKeys === undefined) delete process.env.WORLDMONITOR_VALID_KEYS;
   else process.env.WORLDMONITOR_VALID_KEYS = originalKeys;
+});
+
+it('does not ship retired checkout, referral or paid-page resume producers', () => {
+  for (const path of [
+    'src/services/checkout.ts',
+    'src/services/checkout-no-user-policy.ts',
+    'src/services/referral-capture.ts',
+    'shared/checkout-attribution.ts',
+    'pro-test/src/services/checkout-intent-url.ts',
+  ]) {
+    assert.equal(existsSync(new URL(`../${path}`, import.meta.url)), false, path);
+  }
 });
 
 for (const path of protectedPaths) {
@@ -115,6 +131,10 @@ it('retires encoded, version-first and alternate-document routes before routing'
     '/api/internal/mcp-grant-context',
     '/api/internal/mcp-grant-mint',
     '/api/notification-suppressions',
+    '/api/create-checkout.json?checkoutProduct=pro_monthly&checkoutReferral=previous',
+    '/api/%63ustomer-portal/',
+    '/pro?checkoutProduct=pro_annual',
+    '/pricing.json/',
   ]) {
     const response = retiredRouteResponse(new Request(`https://worldmonitor.app${path}`));
     assert.equal(response?.status, 403, path);

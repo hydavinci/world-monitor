@@ -1,12 +1,12 @@
 import { expect, test, type Request } from '@playwright/test';
-import { assertSignedOutAuthHydrationKeepsHeaderStable } from './header-reservation';
+import { assertPublicHeaderKeepsLayoutStable } from './header-reservation';
+import { publicPanelsWorkspaceStorage } from './public-workspace-fixture';
 import {
   apiPath,
   captureLocalApiResponse,
   isLocalApiUrl,
   type ApiDiagnostic,
 } from './variant-live-smoke-response-capture';
-import { PREMIUM_RPC_PATHS } from '../src/shared/premium-paths';
 
 type VariantName = 'full' | 'tech' | 'finance' | 'commodity' | 'energy' | 'happy';
 
@@ -26,19 +26,6 @@ const EXPECTED_BOOT_PANELS: Record<VariantName, string[]> = {
   happy: ['positive-feed', 'progress', 'counters'],
 };
 
-const AUTH_OR_PREMIUM_401_PREFIXES = [
-  '/api/create-checkout',
-  '/api/customer-portal',
-  '/api/latest-brief',
-  '/api/local-',
-  '/api/me/',
-  '/api/notification-channels',
-  '/api/oauth/',
-  '/api/referral/',
-  '/api/user/',
-  '/api/wm-session',
-];
-
 const IGNORABLE_PAGE_ERROR_PATTERNS = [
   /could not compile fragment shader/i,
   /Failed to fetch dynamically imported module/i,
@@ -55,19 +42,6 @@ const normalizeVariant = (variant: string | undefined): VariantName => {
     return variant;
   }
   return 'full';
-};
-
-const isExpected401 = (path: string): boolean => {
-  if (
-    typeof (PREMIUM_RPC_PATHS as { has?: unknown }).has === 'function' &&
-    (PREMIUM_RPC_PATHS as Set<string>).has(path)
-  ) {
-    return true;
-  }
-  if (Array.isArray(PREMIUM_RPC_PATHS) && PREMIUM_RPC_PATHS.includes(path)) {
-    return true;
-  }
-  return AUTH_OR_PREMIUM_401_PREFIXES.some((prefix) => path.startsWith(prefix));
 };
 
 const truncate = (text: string, maxLength = 360): string => {
@@ -125,6 +99,11 @@ test.describe('variant live reliability smoke', () => {
       consoleIssues.push({ type: msg.type(), text: msg.text() });
     });
 
+    await page.addInitScript((workspaceStorage) => {
+      for (const [key, value] of Object.entries(workspaceStorage)) {
+        if (!localStorage.getItem(key)) localStorage.setItem(key, value);
+      }
+    }, publicPanelsWorkspaceStorage(variant));
     await page.goto('/?variantSmoke=1', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toBeVisible();
 
@@ -143,7 +122,7 @@ test.describe('variant live reliability smoke', () => {
       .toBeGreaterThan(1);
 
     await page.waitForTimeout(10_000);
-    await assertSignedOutAuthHydrationKeepsHeaderStable(page);
+    await assertPublicHeaderKeepsLayoutStable(page);
 
     const panelDiagnostics = await page.evaluate((ids) => {
       const expected = new Set(ids);
@@ -237,7 +216,7 @@ test.describe('variant live reliability smoke', () => {
     }, expectedPanelIds);
 
     const unexpected401 = apiResponses.filter(
-      (response) => response.status === 401 && !isExpected401(response.path)
+      (response) => response.status === 401
     );
     const unexpectedPageErrors = pageErrors.filter(
       (error) => !IGNORABLE_PAGE_ERROR_PATTERNS.some((pattern) => pattern.test(error))

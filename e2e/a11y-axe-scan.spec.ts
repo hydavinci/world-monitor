@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { publicPanelsWorkspaceStorage } from './public-workspace-fixture';
 import {
   compareAxeViolationBaseline,
   type KnownAxeViolationBaseline,
@@ -23,6 +24,11 @@ import {
  */
 
 async function loadDashboard(page: Page): Promise<void> {
+  await page.addInitScript((workspaceStorage) => {
+    for (const [key, value] of Object.entries(workspaceStorage)) {
+      if (!localStorage.getItem(key)) localStorage.setItem(key, value);
+    }
+  }, publicPanelsWorkspaceStorage('full'));
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(
     () => document.documentElement.dataset.wmInitialDataReady === 'true',

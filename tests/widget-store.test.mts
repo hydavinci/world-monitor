@@ -30,31 +30,13 @@ function restoreGlobal(name: string, snapshot: GlobalSnapshot): void {
   delete (globalThis as Record<string, unknown>)[name];
 }
 
-const localStorageSnapshot = snapshotGlobal('localStorage');
-
-it('successful nonempty key setters enable access and notify subscribers', async () => {
-  const store = await loadWidgetStore();
-  let changes = 0;
-  const unsubscribe = store.subscribeWidgetAccess(() => { changes++; });
-  try {
-    assert.equal(await store.setWidgetKey('widget-fixture'), true);
-    assert.equal(store.isWidgetFeatureEnabled(), true);
-    assert.equal(changes, 1);
-    assert.equal(await store.setProKey('pro-fixture'), true);
-    assert.equal(store.isProWidgetEnabled(), true);
-    assert.equal(changes, 2);
-    assert.equal(await store.setWidgetKey(''), true);
-    assert.equal(await store.setProKey(''), true);
-    assert.equal(store.isWidgetFeatureEnabled(), false);
-    assert.equal(store.isProWidgetEnabled(), false);
-    assert.equal(changes, 4);
-  } finally {
-    unsubscribe();
-  }
-});
+const globalSnapshots = new Map(
+  ['localStorage', 'window', '__clearedPanelSpans', '__clearedPanelColSpans']
+    .map(name => [name, snapshotGlobal(name)]),
+);
 
 afterEach(() => {
-  restoreGlobal('localStorage', localStorageSnapshot);
+  for (const [name, snapshot] of globalSnapshots) restoreGlobal(name, snapshot);
 });
 
 async function loadWidgetStore(): Promise<WidgetStore> {
@@ -87,25 +69,12 @@ async function loadWidgetStore(): Promise<WidgetStore> {
       }
     `],
     ['widget-sanitizer-stub', `export function sanitizeWidgetHtml(html) { return 'sanitized:' + String(html); }`],
-    ['auth-state-stub', `export function getAuthState() { return { user: { role: 'pro' } }; }`],
-    ['entitlements-stub', `
-      export function isEntitled() { return true; }
-      export function getEntitlementState() { return { planKey: 'pro' }; }
-    `],
-    ['browser-key-session-stub', `
-      export function clearBrowserKeySession() { return Promise.resolve(true); }
-      export function migrateLegacyKeysToHttpOnlySession() { return Promise.resolve(true); }
-      export function readLegacySessionKey() { return ''; }
-    `],
   ]);
 
   const aliasMap = new Map([
     ['@/utils', 'utils-stub'],
     ['@/utils/panel-storage', 'panel-storage-stub'],
     ['@/utils/widget-sanitizer', 'widget-sanitizer-stub'],
-    ['@/services/auth-state', 'auth-state-stub'],
-    ['@/services/entitlements', 'entitlements-stub'],
-    ['@/services/browser-key-session', 'browser-key-session-stub'],
   ]);
 
   const result = await build({
@@ -138,6 +107,13 @@ async function loadWidgetStore(): Promise<WidgetStore> {
 
 function installLocalStorage(initial: Record<string, string> = {}): Map<string, string> {
   const values = new Map(Object.entries(initial));
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    writable: true,
+    value: new EventTarget(),
+  });
+  (globalThis as Record<string, unknown>).__clearedPanelSpans = [];
+  (globalThis as Record<string, unknown>).__clearedPanelColSpans = [];
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     writable: true,
@@ -156,21 +132,17 @@ function installLocalStorage(initial: Record<string, string> = {}): Map<string, 
   return values;
 }
 
-function proHtmlKey(id: string): string {
-  return `wm-pro-html-${id}`;
-}
-
-function makeProWidget(overrides: Partial<CustomWidgetSpec> = {}): CustomWidgetSpec {
+function makeWidget(overrides: Partial<CustomWidgetSpec> = {}): CustomWidgetSpec {
   return {
-    id: 'cw-pro-reload',
-    title: 'Reloadable Pro Widget',
+    id: 'cw-basic-reload',
+    title: 'Reloadable Local Widget',
     html: '<div class="reload-marker">survives reload</div>',
     prompt: 'Build a reloadable widget',
-    tier: 'pro',
+    tier: 'basic',
     accentColor: null,
     conversationHistory: [
       { role: 'user', content: 'Build a reloadable widget' },
-      { role: 'assistant', content: 'Generated Reloadable Pro Widget' },
+      { role: 'assistant', content: 'Generated Reloadable Local Widget' },
     ],
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_000_001,
@@ -178,17 +150,17 @@ function makeProWidget(overrides: Partial<CustomWidgetSpec> = {}): CustomWidgetS
   };
 }
 
-describe('widget-store PRO persistence', () => {
-  it('strict loads distinguish empty storage from malformed storage', async () => {
+describe('widget-store local persistence', () => {
+  it('loads empty and malformed storage resiliently', async () => {
     installLocalStorage();
-    const { loadWidgetsStrict } = await loadWidgetStore();
-    assert.deepEqual(loadWidgetsStrict(), []);
+    const { loadWidgets } = await loadWidgetStore();
+    assert.deepEqual(loadWidgets(), []);
 
     localStorage.setItem('wm-custom-widgets', '{not-json');
-    assert.throws(() => loadWidgetsStrict(), SyntaxError);
+    assert.deepEqual(loadWidgets(), []);
   });
 
-  it('strict loads propagate storage access failures', async () => {
+  it('loads resiliently when storage access is denied', async () => {
     installLocalStorage();
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
@@ -198,19 +170,31 @@ describe('widget-store PRO persistence', () => {
         },
       },
     });
-    const { loadWidgetsStrict } = await loadWidgetStore();
-    assert.throws(() => loadWidgetsStrict(), /storage denied/);
+    const { loadWidgets } = await loadWidgetStore();
+    assert.deepEqual(loadWidgets(), []);
   });
 
-  it('strict loads reject a Pro widget that the resilient loader would drop', async () => {
-    const spec = makeProWidget({ html: '' });
-    installLocalStorage({
-      'wm-custom-widgets': JSON.stringify([spec]),
-    });
-    const { loadWidgets, loadWidgetsStrict } = await loadWidgetStore();
-
-    assert.throws(() => loadWidgetsStrict(), /missing HTML/);
+  it('rejects non-array storage and rows without string IDs or HTML', async () => {
+    installLocalStorage({ 'wm-custom-widgets': JSON.stringify({ widgets: [] }) });
+    const { loadWidgets } = await loadWidgetStore();
     assert.deepEqual(loadWidgets(), []);
+    localStorage.setItem('wm-custom-widgets', JSON.stringify([
+      null, {}, { id: 1, html: '<div>invalid ID</div>' }, { id: 'cw-bad', html: null },
+      makeWidget(),
+    ]));
+    assert.deepEqual(loadWidgets(), [makeWidget()]);
+  });
+
+  it('drops retired Pro rows even when canonical or side-key HTML exists', async () => {
+    const pro = { ...makeWidget(), id: 'cw-pro', tier: 'pro' };
+    installLocalStorage({
+      'wm-custom-widgets': JSON.stringify([pro, { ...pro, id: 'cw-pro-side', html: '' }, makeWidget()]),
+      'wm-pro-html-cw-pro-side': '<script>retired()</script>',
+    });
+    const { loadWidgets, getWidget } = await loadWidgetStore();
+    assert.deepEqual(loadWidgets(), [makeWidget()]);
+    assert.equal(getWidget('cw-pro'), null);
+    assert.equal(getWidget('cw-pro-side'), null);
   });
 
   it('resilient loads normalize a legacy widget with no tier field to basic instead of dropping it', async () => {
@@ -228,48 +212,45 @@ describe('widget-store PRO persistence', () => {
     installLocalStorage({
       'wm-custom-widgets': JSON.stringify([legacyWidget]),
     });
-    const { loadWidgets, loadWidgetsStrict } = await loadWidgetStore();
+    const { loadWidgets } = await loadWidgetStore();
 
     const loaded = loadWidgets();
     assert.equal(loaded.length, 1);
     assert.equal(loaded[0]!.tier, 'basic');
     assert.equal(loaded[0]!.id, 'cw-legacy-no-tier');
 
-    // The strict activation-eligibility loader normalizes the same row to
-    // 'basic' as well — a legacy pre-tier widget is not malformed.
-    const strictLoaded = loadWidgetsStrict();
-    assert.equal(strictLoaded.length, 1);
-    assert.equal(strictLoaded[0]!.tier, 'basic');
-    assert.equal(strictLoaded[0]!.id, 'cw-legacy-no-tier');
+    assert.equal(loaded[0]!.html, '<div>legacy</div>');
   });
 
-  it('saveWidget persists PRO generated HTML in the canonical widget entry', async () => {
+  it('saveWidget persists sanitized basic HTML in the canonical widget entry', async () => {
     const storage = installLocalStorage();
     const { saveWidget } = await loadWidgetStore();
 
-    const save = saveWidget(makeProWidget());
+    const save = saveWidget(makeWidget());
     assert.ok(save instanceof Promise, 'saving a widget should defer optional sanitizer loading');
     await save;
 
     const stored = JSON.parse(localStorage.getItem('wm-custom-widgets') ?? '[]') as Array<{ html?: string }>;
     assert.equal(stored.length, 1);
-    assert.match(stored[0]?.html ?? '', /reload-marker/);
-    assert.equal(storage.has(proHtmlKey('cw-pro-reload')), false);
+    assert.equal(stored[0]?.html, 'sanitized:<div class="reload-marker">survives reload</div>');
+    assert.deepEqual([...storage.keys()], ['wm-custom-widgets']);
+    const reloaded = await loadWidgetStore();
+    assert.equal(reloaded.getWidget('cw-basic-reload')?.html, stored[0]?.html);
   });
 
-  it('loads the sanitizer only when persisting a basic widget', async () => {
+  it('truncates HTML to 50,000 characters before sanitizing', async () => {
     installLocalStorage();
     const { saveWidget } = await loadWidgetStore();
-    const basic = makeProWidget({ id: 'cw-basic', tier: 'basic', html: '<div>basic</div>' });
+    const basic = makeWidget({ html: 'a'.repeat(50_000) + 'discarded' });
 
     await saveWidget(basic);
 
     const stored = JSON.parse(localStorage.getItem('wm-custom-widgets') ?? '[]') as Array<{ html?: string }>;
-    assert.equal(stored[0]?.html, 'sanitized:<div>basic</div>');
+    assert.equal(stored[0]?.html, 'sanitized:' + 'a'.repeat(50_000));
   });
 
-  it('loadWidgets restores PRO HTML from the canonical entry when the side key is absent', async () => {
-    const spec = makeProWidget();
+  it('loadWidgets restores basic HTML from the canonical entry', async () => {
+    const spec = makeWidget();
     installLocalStorage({
       'wm-custom-widgets': JSON.stringify([spec]),
     });
@@ -282,11 +263,11 @@ describe('widget-store PRO persistence', () => {
     assert.match(widgets[0]?.html ?? '', /reload-marker/);
   });
 
-  it('loadWidgets restores legacy PRO HTML from the side key when canonical HTML is absent', async () => {
-    const spec = makeProWidget({ html: '' });
+  it('ignores retired side-key HTML for a basic widget', async () => {
+    const spec = makeWidget();
     installLocalStorage({
       'wm-custom-widgets': JSON.stringify([spec]),
-      [proHtmlKey(spec.id)]: '<div class="legacy-side-key">legacy widget</div>',
+      [`wm-pro-html-${spec.id}`]: '<script>retired()</script>',
     });
     const { loadWidgets } = await loadWidgetStore();
 
@@ -294,35 +275,88 @@ describe('widget-store PRO persistence', () => {
 
     assert.equal(widgets.length, 1);
     assert.equal(widgets[0]?.id, spec.id);
-    assert.match(widgets[0]?.html ?? '', /legacy-side-key/);
+    assert.equal(widgets[0]?.html, spec.html);
   });
 
-  it('loadWidgets prefers canonical PRO HTML over a stale side key', async () => {
-    const spec = makeProWidget({
-      html: '<div class="canonical-html">current widget</div>',
-    });
-    installLocalStorage({
-      'wm-custom-widgets': JSON.stringify([spec]),
-      [proHtmlKey(spec.id)]: '<div class="stale-side-key">old widget</div>',
-    });
-    const { loadWidgets } = await loadWidgetStore();
+  it('updates an existing widget without duplicating it or discarding other widgets', async () => {
+    const original = makeWidget();
+    const other = makeWidget({ id: 'cw-other', title: 'Other widget' });
+    installLocalStorage({ 'wm-custom-widgets': JSON.stringify([original, other]) });
+    const { saveWidget, loadWidgets, getWidget } = await loadWidgetStore();
+    await saveWidget({ ...original, title: 'Updated', html: '<div>new</div>', updatedAt: 2 });
 
-    const widgets = loadWidgets();
-
-    assert.equal(widgets.length, 1);
-    assert.match(widgets[0]?.html ?? '', /canonical-html/);
-    assert.doesNotMatch(widgets[0]?.html ?? '', /stale-side-key/);
+    assert.deepEqual(loadWidgets().map(widget => widget.id), ['cw-other', original.id]);
+    assert.equal(getWidget(original.id)?.title, 'Updated');
+    assert.equal(getWidget(original.id)?.html, 'sanitized:<div>new</div>');
+    assert.equal(getWidget(original.id)?.updatedAt, 2);
+    assert.deepEqual(getWidget(other.id), other);
+    assert.equal(getWidget('cw-missing'), null);
   });
 
-  it('loadWidgets drops PRO widgets when no persisted HTML remains', async () => {
-    const spec = makeProWidget({ html: '' });
-    installLocalStorage({
-      'wm-custom-widgets': JSON.stringify([spec]),
-    });
-    const { loadWidgets } = await loadWidgetStore();
+  it('persists only the latest ten widgets and ten conversation entries', async () => {
+    installLocalStorage();
+    const { saveWidget, loadWidgets } = await loadWidgetStore();
+    const history = Array.from({ length: 12 }, (_, i) => ({ role: 'user' as const, content: `turn-${i}` }));
+    for (let i = 0; i < 12; i++) await saveWidget(makeWidget({ id: `cw-${i}`, conversationHistory: history }));
 
-    const widgets = loadWidgets();
+    assert.deepEqual(loadWidgets().map(widget => widget.id), [
+      'cw-2', 'cw-3', 'cw-4', 'cw-5', 'cw-6', 'cw-7', 'cw-8', 'cw-9', 'cw-10', 'cw-11',
+    ]);
+    assert.deepEqual(loadWidgets()[9]!.conversationHistory.map(turn => turn.content), [
+      'turn-2', 'turn-3', 'turn-4', 'turn-5', 'turn-6', 'turn-7', 'turn-8', 'turn-9', 'turn-10', 'turn-11',
+    ]);
+    assert.equal(history.length, 12, 'saving must not mutate the caller history');
+  });
 
-    assert.equal(widgets.length, 0);
+  it('save failures reject without publishing a local change', async () => {
+    const storage = installLocalStorage();
+    const { saveWidget, subscribeWidgets } = await loadWidgetStore();
+    let changes = 0;
+    const unsubscribe = subscribeWidgets(() => { changes++; });
+    localStorage.setItem = () => { throw new Error('quota exceeded'); };
+    try {
+      await assert.rejects(saveWidget(makeWidget()), /quota exceeded/);
+      assert.equal(changes, 0);
+      assert.equal(storage.has('wm-custom-widgets'), false);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('deletes the requested widget and both panel span entries', async () => {
+    const first = makeWidget();
+    const other = makeWidget({ id: 'cw-other' });
+    installLocalStorage({ 'wm-custom-widgets': JSON.stringify([first, other]) });
+    const { deleteWidget, loadWidgets, getWidget } = await loadWidgetStore();
+    deleteWidget(first.id);
+
+    assert.deepEqual(loadWidgets(), [other]);
+    assert.equal(getWidget(first.id), null);
+    assert.deepEqual((globalThis as Record<string, unknown>).__clearedPanelSpans, [first.id]);
+    assert.deepEqual((globalThis as Record<string, unknown>).__clearedPanelColSpans, [first.id]);
+  });
+
+  it('notifies on local writes and relevant cross-tab changes, and unsubscribes', async () => {
+    installLocalStorage();
+    const { subscribeWidgets, saveWidget, deleteWidget } = await loadWidgetStore();
+    let changes = 0;
+    const unsubscribe = subscribeWidgets(() => { changes++; });
+    try {
+      await saveWidget(makeWidget());
+      assert.equal(changes, 1);
+      deleteWidget('cw-basic-reload');
+      assert.equal(changes, 2);
+      for (const [key, expected] of [['unrelated', 2], ['wm-custom-widgets', 3], [null, 4]] as const) {
+        const event = Object.assign(new Event('storage'), { key });
+        window.dispatchEvent(event);
+        assert.equal(changes, expected);
+      }
+      unsubscribe();
+      await saveWidget(makeWidget());
+      window.dispatchEvent(Object.assign(new Event('storage'), { key: null }));
+      assert.equal(changes, 4);
+    } finally {
+      unsubscribe();
+    }
   });
 });

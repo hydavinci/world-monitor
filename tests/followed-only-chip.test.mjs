@@ -9,11 +9,11 @@
  *  - Toggle persists to localStorage (`wm-followed-only-filter-${panelId}`).
  *  - Disabled state when `getFollowed()` is empty + tooltip wording.
  *  - Re-render on `WM_FOLLOWED_COUNTRIES_CHANGED` flips disabled state.
- *  - Hidden when feature flag off → empty html, no-op attach.
+ *  - Always available for anonymous local preferences.
  *  - onChange fires with the new active state.
  */
 
-import { describe, it, before, beforeEach, after } from 'node:test';
+import { describe, it, before, beforeEach, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 // ---------------------------------------------------------------------------
@@ -83,12 +83,26 @@ const svc = await import('../src/services/followed-countries.ts');
 const {
   FOLLOWED_COUNTRIES_STORAGE_KEY,
   WM_FOLLOWED_COUNTRIES_CHANGED,
-  _setDepsForTests,
-  _resetStateForTests,
+  isFollowed,
 } = svc;
 
 const chipMod = await import('../src/utils/followed-only-chip.ts');
-const { renderFollowedOnlyChip, _resetAllPersistedStateForTests } = chipMod;
+const { _resetAllPersistedStateForTests } = chipMod;
+const teardowns = [];
+function renderFollowedOnlyChip(props) {
+  const handle = chipMod.renderFollowedOnlyChip(props);
+  return {
+    ...handle,
+    attach(host) {
+      const teardown = handle.attach(host);
+      teardowns.push(teardown);
+      return teardown;
+    },
+  };
+}
+afterEach(() => {
+  for (const teardown of teardowns.splice(0)) teardown();
+});
 
 // ---------------------------------------------------------------------------
 // Mock host
@@ -144,31 +158,8 @@ function makeHost() {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function setupAnonymousFlagOn() {
-  _setDepsForTests({
-    getCurrentClerkUser: () => null,
-    getEntitlementState: () => null,
-    hasTier: () => false,
-    featureFlagEnabled: true,
-    convexClient: null,
-    convexApi: null,
-  });
-}
-
-function setupAnonymousFlagOff() {
-  _setDepsForTests({
-    getCurrentClerkUser: () => null,
-    getEntitlementState: () => null,
-    hasTier: () => false,
-    featureFlagEnabled: false,
-    convexClient: null,
-    convexApi: null,
-  });
-}
-
 beforeEach(() => {
   _localStorage.clear();
-  _resetStateForTests();
   _resetAllPersistedStateForTests();
 });
 
@@ -178,7 +169,6 @@ beforeEach(() => {
 
 describe('renderFollowedOnlyChip — default + persistence', () => {
   it('default off when no localStorage entry — html shows data-state="inactive"', () => {
-    setupAnonymousFlagOn();
     const handle = renderFollowedOnlyChip({ panelId: 'p1' });
     assert.match(handle.html, /data-state="inactive"/);
     assert.match(handle.html, /aria-pressed="false"/);
@@ -186,7 +176,6 @@ describe('renderFollowedOnlyChip — default + persistence', () => {
   });
 
   it('reads persisted "1" → renders active', () => {
-    setupAnonymousFlagOn();
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US'] }),
@@ -199,7 +188,6 @@ describe('renderFollowedOnlyChip — default + persistence', () => {
   });
 
   it('toggle on persists "1" to wm-followed-only-filter-${panelId}', () => {
-    setupAnonymousFlagOn();
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US'] }),
@@ -218,7 +206,6 @@ describe('renderFollowedOnlyChip — default + persistence', () => {
   });
 
   it('toggle off removes the key (default-off semantics preserved)', () => {
-    setupAnonymousFlagOn();
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US'] }),
@@ -236,7 +223,6 @@ describe('renderFollowedOnlyChip — default + persistence', () => {
   });
 
   it('per-panel scoping — toggling p1 does NOT affect p2', () => {
-    setupAnonymousFlagOn();
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US'] }),
@@ -259,14 +245,12 @@ describe('renderFollowedOnlyChip — default + persistence', () => {
 
 describe('renderFollowedOnlyChip — disabled state (empty watchlist)', () => {
   it('empty watchlist → chip rendered disabled with the tooltip', () => {
-    setupAnonymousFlagOn();
     const handle = renderFollowedOnlyChip({ panelId: 'p1' });
     assert.match(handle.html, /\bdisabled\b/);
     assert.match(handle.html, /Follow countries to enable this filter/);
   });
 
   it('non-empty watchlist → chip enabled', () => {
-    setupAnonymousFlagOn();
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US'] }),
@@ -276,7 +260,6 @@ describe('renderFollowedOnlyChip — disabled state (empty watchlist)', () => {
   });
 
   it('re-renders disabled state when WM_FOLLOWED_COUNTRIES_CHANGED fires', () => {
-    setupAnonymousFlagOn();
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US'] }),
@@ -299,7 +282,6 @@ describe('renderFollowedOnlyChip — disabled state (empty watchlist)', () => {
   });
 
   it('clickChip on disabled host is a no-op (does not flip state)', () => {
-    setupAnonymousFlagOn();
     const handle = renderFollowedOnlyChip({ panelId: 'p1' });
     const host = makeHost();
     const teardown = handle.attach(host);
@@ -314,29 +296,8 @@ describe('renderFollowedOnlyChip — disabled state (empty watchlist)', () => {
   });
 });
 
-describe('renderFollowedOnlyChip — feature flag off', () => {
-  it('empty html, no-op attach', () => {
-    setupAnonymousFlagOff();
-    const handle = renderFollowedOnlyChip({ panelId: 'p1' });
-    assert.equal(handle.html, '');
-    const host = makeHost();
-    const teardown = handle.attach(host);
-    assert.equal(host.listenerCount('click'), 0);
-    teardown();
-    teardown(); // idempotent
-  });
-
-  it('isActive() returns false even if a stale "1" is persisted', () => {
-    setupAnonymousFlagOff();
-    _localStorage.setItem('wm-followed-only-filter-p1', '1');
-    const handle = renderFollowedOnlyChip({ panelId: 'p1' });
-    assert.equal(handle.isActive(), false);
-  });
-});
-
 describe('renderFollowedOnlyChip — onChange callback', () => {
   it('fires with new active state on each toggle', () => {
-    setupAnonymousFlagOn();
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US'] }),
@@ -358,7 +319,6 @@ describe('renderFollowedOnlyChip — onChange callback', () => {
   });
 
   it('does NOT fire onChange on watchlist change (only on user toggle)', () => {
-    setupAnonymousFlagOn();
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US'] }),
@@ -383,7 +343,6 @@ describe('renderFollowedOnlyChip — onChange callback', () => {
   });
 
   it('teardown stops onChange firing on subsequent clicks', () => {
-    setupAnonymousFlagOn();
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US'] }),
@@ -417,7 +376,6 @@ describe('renderFollowedOnlyChip — integration: filter pass against a country-
    * pass — not the DOM-tree of the panel.
    */
   it('chip on + watchlist=[US,IR]; 5-row list; filter yields 2 rows', () => {
-    setupAnonymousFlagOn();
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US', 'IR'] }),
@@ -435,11 +393,8 @@ describe('renderFollowedOnlyChip — integration: filter pass against a country-
     const teardown = handle.attach(host);
     host.clickChip(); // turn on
 
-    const followed = JSON.parse(
-      _localStorage.getItem(FOLLOWED_COUNTRIES_STORAGE_KEY),
-    ).countries;
     const filtered = handle.isActive()
-      ? items.filter((it) => followed.includes(it.code))
+      ? items.filter((item) => isFollowed(item.code))
       : items;
 
     assert.equal(filtered.length, 2);
@@ -448,7 +403,6 @@ describe('renderFollowedOnlyChip — integration: filter pass against a country-
   });
 
   it('chip off → returns full 5-row list', () => {
-    setupAnonymousFlagOn();
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US', 'IR'] }),
@@ -464,18 +418,14 @@ describe('renderFollowedOnlyChip — integration: filter pass against a country-
     const handle = renderFollowedOnlyChip({ panelId: 'integ-2' });
     handle.attach(makeHost());
 
-    const followed = JSON.parse(
-      _localStorage.getItem(FOLLOWED_COUNTRIES_STORAGE_KEY),
-    ).countries;
     const filtered = handle.isActive()
-      ? items.filter((it) => followed.includes(it.code))
+      ? items.filter((item) => isFollowed(item.code))
       : items;
 
     assert.equal(filtered.length, 5);
   });
 
   it('stale active + empty watchlist → clears persisted state and does not filter', () => {
-    setupAnonymousFlagOn();
     // Persist "1" as if the user toggled on previously, then unfollowed everything.
     _localStorage.setItem('wm-followed-only-filter-integ-3', '1');
     const items = [{ code: 'US' }, { code: 'CN' }, { code: 'IR' }];
@@ -491,10 +441,102 @@ describe('renderFollowedOnlyChip — integration: filter pass against a country-
     assert.equal(handle.isActive(), false);
     assert.equal(_localStorage.getItem('wm-followed-only-filter-integ-3'), null);
 
-    const followed = []; // empty watchlist
     const filtered = handle.isActive()
-      ? items.filter((it) => followed.includes(it.code))
+      ? items.filter((item) => isFollowed(item.code))
       : items;
     assert.equal(filtered.length, 3);
+  });
+
+  describe('renderFollowedOnlyChip — local persistence boundaries', () => {
+    it('is available anonymously and filters normalized public country identifiers', () => {
+      _localStorage.setItem(FOLLOWED_COUNTRIES_STORAGE_KEY,
+        JSON.stringify({ countries: ['usa', ' United Kingdom ', 'US', 'invalid'] }));
+      const handle = renderFollowedOnlyChip({ panelId: 'normalized' });
+      const host = makeHost();
+      handle.attach(host);
+      host.clickChip();
+      assert.match(host.innerHTML, /aria-pressed="true"/);
+      assert.deepEqual(['us', 'GBR', 'FR', 'unknown'].filter(isFollowed), ['us', 'GBR']);
+      assert.deepEqual(svc.getFollowed(), ['US', 'GB']);
+    });
+
+    it('storage read failure defaults to inactive and disabled without throwing', t => {
+      t.mock.method(_localStorage, 'getItem', () => { throw new Error('SecurityError'); });
+      const handle = renderFollowedOnlyChip({ panelId: 'blocked' });
+      const host = makeHost();
+      handle.attach(host);
+      host.clickChip();
+      assert.equal(handle.isActive(), false);
+      assert.match(host.innerHTML, /disabled/);
+      assert.match(host.innerHTML, /aria-pressed="false"/);
+    });
+
+    it('failed toggle-on does not claim persisted active state; callback reports attempted toggle', t => {
+      _localStorage.setItem(FOLLOWED_COUNTRIES_STORAGE_KEY, JSON.stringify({ countries: ['US'] }));
+      const calls = [];
+      const handle = renderFollowedOnlyChip({ panelId: 'quota', onChange: value => calls.push(value) });
+      const host = makeHost();
+      handle.attach(host);
+      t.mock.method(_localStorage, 'setItem', () => { throw new Error('QuotaExceededError'); });
+      host.clickChip();
+      assert.equal(handle.isActive(), false);
+      assert.equal(_localStorage.getItem('wm-followed-only-filter-quota'), null);
+      assert.match(host.innerHTML, /data-state="inactive"/);
+      assert.deepEqual(calls, [true]);
+    });
+
+    it('failed toggle-off retains the saved preference and renders it active', t => {
+      _localStorage.setItem(FOLLOWED_COUNTRIES_STORAGE_KEY, JSON.stringify({ countries: ['US'] }));
+      _localStorage.setItem('wm-followed-only-filter-blocked-off', '1');
+      const calls = [];
+      const handle = renderFollowedOnlyChip({ panelId: 'blocked-off', onChange: value => calls.push(value) });
+      const host = makeHost();
+      handle.attach(host);
+      t.mock.method(_localStorage, 'removeItem', () => { throw new Error('SecurityError'); });
+      host.clickChip();
+      assert.equal(handle.isActive(), true);
+      assert.equal(_localStorage.getItem('wm-followed-only-filter-blocked-off'), '1');
+      assert.match(host.innerHTML, /data-state="active"/);
+      assert.deepEqual(calls, [false]);
+    });
+
+    it('empty watchlist stays effectively inactive even when stale-key removal fails', t => {
+      _localStorage.setItem('wm-followed-only-filter-empty', '1');
+      t.mock.method(_localStorage, 'removeItem', () => { throw new Error('SecurityError'); });
+      const handle = renderFollowedOnlyChip({ panelId: 'empty' });
+      assert.equal(handle.isActive(), false);
+      assert.match(handle.html, /disabled/);
+      assert.match(handle.html, /aria-pressed="false"/);
+      assert.equal(_localStorage.getItem('wm-followed-only-filter-empty'), '1');
+    });
+
+    it('idempotent teardown unsubscribes and stops rendering on external changes', () => {
+      _localStorage.setItem(FOLLOWED_COUNTRIES_STORAGE_KEY, JSON.stringify({ countries: ['US'] }));
+      const handle = renderFollowedOnlyChip({ panelId: 'dispose' });
+      const host = makeHost();
+      const teardown = handle.attach(host);
+      const html = host.innerHTML;
+      teardown();
+      teardown();
+      assert.equal(host.listenerCount('click'), 0);
+      _localStorage.clear();
+      _window.dispatchEvent(new Event(WM_FOLLOWED_COUNTRIES_CHANGED));
+      assert.equal(host.innerHTML, html);
+    });
+
+    it('escapes custom labels and survives a throwing callback', t => {
+      _localStorage.setItem(FOLLOWED_COUNTRIES_STORAGE_KEY, JSON.stringify({ countries: ['US'] }));
+      const warn = t.mock.method(console, 'warn', () => {});
+      const handle = renderFollowedOnlyChip({
+        panelId: 'callback', label: '<Follow & filter>',
+        onChange: () => { throw new Error('consumer failure'); },
+      });
+      const host = makeHost();
+      handle.attach(host);
+      host.clickChip();
+      assert.match(host.innerHTML, /&lt;Follow &amp; filter&gt;/);
+      assert.equal(handle.isActive(), true);
+      assert.equal(warn.mock.callCount(), 1);
+    });
   });
 });

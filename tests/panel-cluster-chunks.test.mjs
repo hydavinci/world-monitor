@@ -299,7 +299,6 @@ function lazyPreloadOffendersFromHtml(html) {
     ...extractStringArray('PANEL_SUPPORT_CHUNK_NAMES'),
     'UnifiedSettings',
     'settings-window',
-    'checkout',
   ];
   return preloadHrefs.filter((href) => {
     const fileName = href.slice(href.lastIndexOf('/') + 1);
@@ -322,7 +321,7 @@ function builtSecondaryLazyChunksMissing() {
   const assetsDir = resolve(repoRoot, 'dist/assets');
   if (!existsSync(assetsDir)) return null;
   const files = readdirSync(assetsDir);
-  return ['UnifiedSettings', 'settings-window', 'checkout'].filter(
+  return ['UnifiedSettings', 'settings-window'].filter(
     (name) => !files.some((file) => new RegExp(`^${name}-[A-Za-z0-9_-]+\\.js$`).test(file)),
   );
 }
@@ -343,22 +342,6 @@ function startupSecondaryFlowImportOffenders() {
       if (specifier && blockedSpecifiers.has(specifier)) {
         offenders.push(`${relativePath}:${lineForPosition(ast, statement.getStart(ast))} imports ${specifier}`);
       }
-    }
-  }
-  return offenders;
-}
-
-function checkoutSdkValueImportOffenders() {
-  const filePath = resolve(repoRoot, 'src/services/checkout.ts');
-  const ast = astForPath(filePath);
-  const offenders = [];
-  for (const statement of ast.statements) {
-    if (!ts.isImportDeclaration(statement)) continue;
-    const importClause = statement.importClause;
-    if (!importClause || importClause.isTypeOnly) continue;
-    const specifier = stringValue(statement.moduleSpecifier);
-    if (specifier === 'dodopayments-checkout') {
-      offenders.push(`src/services/checkout.ts:${lineForPosition(ast, statement.getStart(ast))} imports ${specifier}`);
     }
   }
   return offenders;
@@ -474,8 +457,8 @@ describe('panel cluster chunk guardrails', () => {
     );
   });
 
-  it('keeps secondary settings and checkout chunks off the eager startup path', () => {
-    for (const chunkName of ['UnifiedSettings', 'settings-window', 'checkout']) {
+  it('keeps public settings chunks lazy without restoring checkout', () => {
+    for (const chunkName of ['UnifiedSettings', 'settings-window']) {
       assert.equal(
         hasStringElement('LAZY_HTML_PRELOAD_CHUNKS', chunkName),
         true,
@@ -487,11 +470,8 @@ describe('panel cluster chunk guardrails', () => {
       [],
       'Startup modules must use dynamic imports for the UnifiedSettings modal.',
     );
-    assert.deepEqual(
-      checkoutSdkValueImportOffenders(),
-      [],
-      'Checkout must dynamically import dodopayments-checkout so the SDK stays out of main.',
-    );
+    assert.equal(existsSync(resolve(repoRoot, 'src/services/checkout.ts')), false);
+    assert.equal(hasStringElement('LAZY_HTML_PRELOAD_CHUNKS', 'checkout'), false);
     const missingLazyChunks = builtSecondaryLazyChunksMissing();
     if (missingLazyChunks) {
       assert.deepEqual(

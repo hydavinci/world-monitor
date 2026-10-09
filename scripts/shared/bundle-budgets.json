@@ -1,5 +1,5 @@
 {
-  "comment": "Initial /dashboard bundle-size budgets (#7111). Gated on raw bytes: per chunk ±max(2048 B, 2%), total ±max(16384 B, 0.25%). The \"deferred\" section gates the application graph the entry imports on every visit with the same tolerances. Tolerance fields here are informational — the gate enforces its own constants and rejects a snapshot that disagrees. Regenerate after \"npm run build:pro && VITE_VARIANT=full ./node_modules/.bin/vite build\" with: npm run bundle:budgets",
+  "comment": "Initial /dashboard bundle-size budgets (#7111). Gated on raw bytes: per chunk ±max(2048 B, 2%), total ±max(16384 B, 0.25%). The \"deferred\" section gates the application graph the entry imports on every visit with the same tolerances. Tolerance fields here are informational — the gate enforces its own constants and rejects a snapshot that disagrees. Regenerate after \"VITE_VARIANT=full ./node_modules/.bin/vite build\" with: npm run bundle:budgets",
   "surface": "dashboard",
   "variant": "full",
   "tolerancePct": 2,
@@ -7,31 +7,11 @@
   "totalTolerancePct": 0.25,
   "totalToleranceBytes": 16384,
   "total": {
-    "raw": 450109
+    "raw": 373183
   },
   "chunks": {
-    "analytics": {
-      "raw": 47062,
-      "files": 1
-    },
-    "clerk": {
-      "raw": 18338,
-      "files": 1
-    },
-    "convex-client": {
-      "raw": 3469,
-      "files": 1
-    },
-    "debugbear-rum": {
-      "raw": 28906,
-      "files": 1
-    },
     "dom-utils": {
-      "raw": 2852,
-      "files": 1
-    },
-    "entitlements": {
-      "raw": 2585,
+      "raw": 2845,
       "files": 1
     },
     "font-settings": {
@@ -39,15 +19,11 @@
       "files": 1
     },
     "geo-convergence": {
-      "raw": 10200,
+      "raw": 11076,
       "files": 1
     },
     "geo-distance": {
       "raw": 28576,
-      "files": 1
-    },
-    "globe-marker-probe": {
-      "raw": 541,
       "files": 1
     },
     "i18n": {
@@ -55,15 +31,19 @@
       "files": 1
     },
     "main": {
-      "raw": 130368,
+      "raw": 125554,
       "files": 1
     },
-    "panels": {
-      "raw": 37549,
+    "map-layer-definitions": {
+      "raw": 35674,
+      "files": 1
+    },
+    "public-preferences": {
+      "raw": 33336,
       "files": 1
     },
     "runtime-config": {
-      "raw": 10346,
+      "raw": 10093,
       "files": 1
     },
     "tauri-bridge": {
@@ -71,7 +51,7 @@
       "files": 1
     },
     "theme-colors": {
-      "raw": 72995,
+      "raw": 69707,
       "files": 1
     },
     "theme-manager": {
@@ -81,55 +61,47 @@
   },
   "deferred": {
     "total": {
-      "raw": 1395243
+      "raw": 1139865
     },
     "chunks": {
       "App": {
-        "raw": 897143,
+        "raw": 746682,
         "files": 1
       },
       "ai-flow-settings": {
-        "raw": 2087,
+        "raw": 1964,
         "files": 1
       },
       "analysis-framework-store": {
-        "raw": 9563,
+        "raw": 9057,
         "files": 1
       },
       "base": {
-        "raw": 2460,
+        "raw": 2006,
         "files": 1
       },
       "cached-risk-scores": {
         "raw": 15029,
         "files": 1
       },
-      "checkout": {
-        "raw": 13469,
-        "files": 1
-      },
-      "cloud-prefs-sync": {
-        "raw": 6914,
-        "files": 1
-      },
       "continuous": {
         "raw": 4613,
         "files": 1
       },
-      "cross-domain-storage": {
-        "raw": 528,
+      "external-navigation": {
+        "raw": 3319,
         "files": 1
       },
       "feeds": {
-        "raw": 102673,
+        "raw": 179147,
         "files": 1
       },
       "gdelt-intel": {
-        "raw": 120181,
+        "raw": 72736,
         "files": 1
       },
       "index": {
-        "raw": 38634,
+        "raw": 45342,
         "files": 2
       },
       "layout-batch": {
@@ -140,52 +112,24 @@
         "raw": 9518,
         "files": 1
       },
-      "panel-gating": {
-        "raw": 3440,
-        "files": 1
-      },
-      "panel-storage": {
-        "raw": 1857,
-        "files": 1
-      },
       "persistent-cache": {
-        "raw": 3863,
-        "files": 1
-      },
-      "pinned-webcams": {
-        "raw": 2183,
+        "raw": 3827,
         "files": 1
       },
       "sanitize": {
         "raw": 1280,
         "files": 1
       },
-      "source-provenance": {
-        "raw": 78804,
-        "files": 1
-      },
       "storage-facility-registry-store": {
-        "raw": 14331,
-        "files": 1
-      },
-      "storage-quota": {
-        "raw": 356,
+        "raw": 2259,
         "files": 1
       },
       "string": {
         "raw": 20925,
         "files": 1
       },
-      "sync-keys": {
-        "raw": 1178,
-        "files": 1
-      },
       "user-location": {
-        "raw": 4701,
-        "files": 1
-      },
-      "widget-store": {
-        "raw": 22048,
+        "raw": 4696,
         "files": 1
       }
     }

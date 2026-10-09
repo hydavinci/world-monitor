@@ -20,12 +20,10 @@
  *
  *   VITE_VARIANT=full ./node_modules/.bin/vite build
  *
- * ENV PARITY MATTERS: budgets are seeded from a build with no .env/.env.local
- * present, because that is what CI builds. Local VITE_ vars change dead-code
- * elimination, not just inlined strings — a populated .env moved the protomaps
- * chunk from 18.1 KB to 55.6 KB. When re-seeding, temporarily move .env and
- * .env.local aside (they are symlinks in worktrees) or the snapshot will fail
- * in CI.
+ * ENV PARITY MATTERS: budgets are seeded from tracked source in an isolated
+ * checkout with no private env files and a clean child environment, matching
+ * CI. Local VITE_ vars change dead-code elimination, not just inlined strings
+ * — a populated .env moved the protomaps chunk from 18.1 KB to 55.6 KB.
  *
  * Surfaces (select with --surface):
  *   dashboard (default) — JS assets referenced by dist/dashboard.html: the
@@ -110,9 +108,9 @@ const SURFACE_TOLERANCES = {
   },
 };
 const BUILD_COMMANDS = {
-  dashboard: 'npm run build:pro && VITE_VARIANT=full ./node_modules/.bin/vite build',
+  dashboard: 'VITE_VARIANT=full ./node_modules/.bin/vite build',
   pro: 'npm run build:pro && VITE_VARIANT=full ./node_modules/.bin/vite build',
-  embed: 'npm run build:pro && VITE_VARIANT=full ./node_modules/.bin/vite build',
+  embed: 'VITE_VARIANT=full ./node_modules/.bin/vite build',
 };
 const DEFAULT_DIST_DIRS = {
   dashboard: 'dist',

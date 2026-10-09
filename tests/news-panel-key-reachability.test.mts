@@ -497,6 +497,13 @@ describe('news panel key reachability (#5871)', () => {
     }
   });
 
+  it('routes retained supply-chain feeds to a public NewsPanel after the data panel is retired', () => {
+    const created = replayNewsPanelPass();
+    assert.equal(created.get('supply-chain'), 'supply-chain');
+    assert.equal(dedicatedPanelKeys.has('supply-chain'), false);
+    assert.equal(nonNewsPanelKeys.has('supply-chain'), false);
+  });
+
   it('declares every feed-category panel registered after the loop as late-registered', () => {
     // The one thing the pass cannot derive. `ctx.panels` and `lazyPanelRegistrations`
     // only hold what registered ABOVE the loop, so a feed-category panel registered
@@ -533,11 +540,6 @@ describe('news panel key reachability (#5871)', () => {
         // CANONICAL_FEEDS['live-news'] exists to seed the energy variant's headline
         // sources, not to render a panel — deliberate since #4382.
         'live-news',
-        // COMMODITY_FEEDS/ENERGY_FEEDS category whose key SupplyChainPanel owns.
-        // No `supply-chain-news` catalog entry exists, so nothing is user-visible
-        // and #5376 already removed it from the client's news work-list. Shipping a
-        // panel for it is a product decision, not part of this fix (#5871).
-        'supply-chain',
       ],
       'a feed category whose key another panel owns renders nowhere — add a `${key}-news` catalog ' +
         'entry, or record it here with the reason it is intentional',

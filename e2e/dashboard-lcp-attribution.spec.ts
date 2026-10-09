@@ -1,4 +1,6 @@
 import { devices, expect, test, type Page } from '@playwright/test';
+import type { LcpMarkSnapshot } from '../src/utils/lcp-debug';
+import { publicPanelsWorkspaceStorage } from './public-workspace-fixture';
 
 const { defaultBrowserType: mobileDefaultBrowserType, ...mobileDevice } = devices['iPhone 14 Pro Max'];
 void mobileDefaultBrowserType;
@@ -27,7 +29,7 @@ type LcpDebugSnapshot = {
     startTime: number;
     url: string;
   }>;
-  marks: Array<{ name: string; startTime: number }>;
+  marks: LcpMarkSnapshot[];
   resources: Array<{ category: string; count: number; transferSize: number }>;
 };
 
@@ -82,12 +84,14 @@ const installLcpDebug = async (page: Page): Promise<void> => {
       },
     }),
   }));
-  await page.addInitScript(() => {
+  await page.addInitScript((workspaceStorage) => {
     localStorage.setItem('wm_lcp_debug', '1');
     localStorage.setItem('wm-layer-warning-dismissed', 'true');
-    localStorage.setItem('wm-pro-banner-launched-dismissed', String(Date.now()));
     localStorage.setItem('worldmonitor-mission-preset-dismissed-v1', '1');
-  });
+    for (const [key, value] of Object.entries(workspaceStorage)) {
+      if (!localStorage.getItem(key)) localStorage.setItem(key, value);
+    }
+  }, publicPanelsWorkspaceStorage('full'));
 };
 
 const CORE_MARKS = [

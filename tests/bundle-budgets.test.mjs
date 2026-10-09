@@ -72,6 +72,19 @@ function makeEmbedFixture(bytes) {
 const FIXTURE_ENTRY = 'main-DYSz1bMh.js';
 const FIXTURE_APP = 'App-Ab12Cd34.js';
 
+test('public budget regeneration instructions reference only retained npm scripts', () => {
+  const scripts = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).scripts;
+  for (const [surface, measured] of [
+    ['dashboard', measureDistChunks(makeDistFixture({ 'main-DYSz1bMh.js': 100_000 }))],
+    ['embed', measureEmbedJs(makeEmbedFixture(1000))],
+  ]) {
+    const snapshot = buildBudgetSnapshot(measured, surface);
+    for (const [, script] of snapshot.comment.matchAll(/npm run ([a-z][\w:-]*)/g)) {
+      assert.ok(Object.hasOwn(scripts, script), `${surface} regeneration requires deleted script ${script}`);
+    }
+  }
+});
+
 /** Writes an entry that loads its chunks the way the built dashboard entry does. */
 function writeEntryLoader(root, bytes, table, loaders) {
   const source = `const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=${JSON.stringify(table)})))=>i.map(i=>d[i]);`

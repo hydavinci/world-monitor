@@ -8,25 +8,21 @@
  *     `src/components/_cii-panel-partition.ts`). These are the actual
  *     functions the panel calls — no shadow re-implementations.
  *
- *  2. Integration: drive the live `getFollowed()` from
- *     `src/services/followed-countries.ts` via its `_setDepsForTests`
- *     hook, mutate the watchlist, dispatch
- *     `WM_FOLLOWED_COUNTRIES_CHANGED`, and assert the partition reads
- *     the new state. This locks in that the panel's
- *     `subscribeFollowed(() => rerenderRows())` wiring will see the
- *     same value the service exposes.
- *
- * We deliberately do NOT spin up the full `CIIPanel` here — `Panel.ts`
- * pulls in `import.meta.glob` (i18n) which the node:test runner can't
- * resolve, and the test would devolve into a DOM stub competition. The
- * partition helper is the load-bearing logic; the panel's `buildList`
- * is a thin DOM consumer of that result.
+ *  2. Local service integration and the actual CIIPanel constructor,
+ *     loaded with a closed import map instead of Vite/i18n startup.
  *
  * Mirrors the stubbing shape from `tests/follow-button.test.mjs`.
  */
 
-import { describe, it, before, beforeEach, after } from 'node:test';
+import { describe, it, before, beforeEach, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+import { MiniDocument, MiniNode } from './helpers/mini-dom.mts';
+import * as dom from '../src/utils/dom-utils.ts';
+import * as buttons from '../src/utils/follow-button.ts';
+import * as activation from '../src/utils/activation.ts';
 
 // ---------------------------------------------------------------------------
 // Browser-global stubs
@@ -66,15 +62,165 @@ before(() => {
     configurable: true,
     value: _window,
   });
-  if (typeof globalThis.CustomEvent === 'undefined') {
-    globalThis.CustomEvent = class extends Event {
-      constructor(type, init = {}) {
-        super(type, init);
-        this.detail = init.detail;
-      }
-    };
-  }
 });
+
+  // Compile production code without loading Panel's Vite/i18n graph. Imports are
+  // closed: an unexpected dependency fails instead of reaching the app or env.
+  function loadSource(source, filename, imports, globals = {}) {
+    const exports = {};
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    vm.runInNewContext(compiled, {
+      exports, ...globals,
+      require(id) {
+        assert.ok(Object.hasOwn(imports, id), `Unexpected production import: ${id}`);
+        return imports[id];
+      },
+    }, { filename });
+    return exports;
+  }
+
+  describe('CIIPanel — actual local pin rendering and persistence', () => {
+    let panel;
+    let documentDescriptor;
+    let nodeDescriptor;
+
+    before(() => {
+      documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+      nodeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Node');
+      Object.defineProperty(globalThis, 'document', { configurable: true, value: new MiniDocument() });
+      Object.defineProperty(globalThis, 'Node', { configurable: true, value: MiniNode });
+    });
+    after(() => {
+      for (const [key, descriptor] of [['document', documentDescriptor], ['Node', nodeDescriptor]]) {
+        if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+        else Reflect.deleteProperty(globalThis, key);
+      }
+    });
+
+    beforeEach(() => {
+      _localStorage.clear();
+      class PanelBoundary {
+        content = document.createElement('div');
+        showLoading() {}
+        setCount() {}
+        setDataBadge() {}
+        clearDataBadge() {}
+        setContentNodes(...nodes) { this.content.replaceChildren(...nodes); }
+        destroy() {}
+      }
+      const adapterSource = readFileSync(new URL('../src/services/cached-risk-scores.ts', import.meta.url), 'utf8');
+      const start = adapterSource.indexOf('export function toCountryScore(');
+      const end = adapterSource.indexOf('export function normalizeCiiCountryCode(', start);
+      assert.ok(start >= 0 && end > start);
+      const adapter = loadSource(adapterSource.slice(start, end), 'toCountryScore.ts', {});
+      const { CIIPanel } = loadSource(
+        readFileSync(new URL('../src/components/CIIPanel.ts', import.meta.url), 'utf8'),
+        'CIIPanel.ts',
+        {
+          './Panel': { Panel: PanelBoundary },
+          '@/utils': { getCSSColor: () => '#000000' },
+          '../services/i18n': { t: key => key },
+          '@/utils/dom-utils': {
+            ...dom,
+            // MiniDocument has no HTML template parser; icons aren't the pin contract.
+            rawHtml: () => document.createDocumentFragment(),
+          },
+          '@/services/cached-risk-scores': adapter,
+          '@/utils/follow-button': buttons,
+          '@/services/followed-countries': svc,
+          './_cii-panel-partition': partitionMod,
+          '@/utils/activation': activation,
+        },
+        { console: { log() {} } },
+      );
+      panel = new CIIPanel();
+    });
+    afterEach(() => panel.destroy());
+
+    function render() {
+      panel.renderFromCached({
+        cii: SCORES_5.map(score => ({ ...score, lastUpdated: '2026-10-09T00:00:00.000Z' })),
+        degraded: false, stale: false,
+      });
+    }
+    function codes() {
+      return panel.content.querySelectorAll('.cii-country').map(row => row.dataset.code);
+    }
+    function labels() {
+      return panel.content.querySelectorAll('.cii-section-label').map(label => label.textContent);
+    }
+
+    it('constructor subscribes; persisted follows pin in score order, not storage order', () => {
+      _localStorage.setItem(FOLLOWED_COUNTRIES_STORAGE_KEY, JSON.stringify({ countries: ['FR', 'RU'] }));
+      render();
+      assert.deepEqual(codes(), ['RU', 'FR', 'US', 'CN', 'GB']);
+      assert.deepEqual(labels(), ['components.cii.sectionFollowing', 'components.cii.sectionAll']);
+      const hosts = panel.content.querySelectorAll('.cii-follow-btn-host');
+      assert.equal(hosts.length, 5);
+      assert.match(hosts[0].innerHTML, /aria-pressed="true"/);
+      assert.match(hosts[2].innerHTML, /aria-pressed="false"/);
+    });
+
+    it('real local mutations reorder loaded rows and persist without refetching', async () => {
+      render();
+      assert.deepEqual(codes(), ['US', 'CN', 'RU', 'GB', 'FR']);
+      assert.deepEqual(labels(), []);
+      await addCountry('France');
+      // Unknown names are rejected; supported ISO-3 identifiers are normalized.
+      assert.deepEqual(codes(), ['US', 'CN', 'RU', 'GB', 'FR']);
+      await addCountry('FRA');
+      assert.deepEqual(codes(), ['FR', 'US', 'CN', 'RU', 'GB']);
+      assert.deepEqual(JSON.parse(_localStorage.getItem(FOLLOWED_COUNTRIES_STORAGE_KEY)), { countries: ['FR'] });
+      await addCountry('RU');
+      assert.deepEqual(codes(), ['RU', 'FR', 'US', 'CN', 'GB']);
+      await removeCountry('FRA');
+      assert.deepEqual(codes(), ['RU', 'US', 'CN', 'GB', 'FR']);
+    });
+
+    it('a row follow control persists, reorders and releases replaced controls', async () => {
+      render();
+      const oldHosts = panel.content.querySelectorAll('.cii-follow-btn-host');
+      oldHosts[4].dispatchEvent(new Event('click'));
+      await Promise.resolve();
+      assert.deepEqual(codes(), ['FR', 'US', 'CN', 'RU', 'GB']);
+      assert.deepEqual(getFollowed(), ['FR']);
+      oldHosts[0].dispatchEvent(new Event('click'));
+      await Promise.resolve();
+      assert.deepEqual(getFollowed(), ['FR'], 'detached old row cannot mutate');
+      assert.match(oldHosts[0].innerHTML, /aria-pressed="false"/);
+    });
+
+    it('all-followed has no dividers and retains original score order', async () => {
+      for (const code of ['FR', 'GB', 'RU', 'CN', 'US']) await addCountry(code);
+      render();
+      assert.deepEqual(codes(), ['US', 'CN', 'RU', 'GB', 'FR']);
+      assert.deepEqual(labels(), []);
+    });
+
+    it('failed persistence does not pin a new country or alter saved follows', async t => {
+      render();
+      t.mock.method(_localStorage, 'setItem', () => { throw new Error('QuotaExceededError'); });
+      assert.deepEqual(await addCountry('FR'), { ok: false, reason: 'STORAGE_FULL' });
+      assert.deepEqual(codes(), ['US', 'CN', 'RU', 'GB', 'FR']);
+      assert.deepEqual(labels(), []);
+      assert.deepEqual(getFollowed(), []);
+    });
+
+    it('destroy stops panel rerenders and all current row mutations', async () => {
+      render();
+      const hosts = panel.content.querySelectorAll('.cii-follow-btn-host');
+      panel.destroy();
+      panel.destroy();
+      await addCountry('FR');
+      assert.deepEqual(codes(), ['US', 'CN', 'RU', 'GB', 'FR']);
+      assert.match(hosts[4].innerHTML, /aria-pressed="false"/);
+      hosts[0].dispatchEvent(new Event('click'));
+      await Promise.resolve();
+      assert.deepEqual(getFollowed(), ['FR']);
+    });
+  });
 
 after(() => {
   delete globalThis.localStorage;
@@ -97,8 +243,8 @@ const {
   subscribe,
   FOLLOWED_COUNTRIES_STORAGE_KEY,
   WM_FOLLOWED_COUNTRIES_CHANGED,
-  _setDepsForTests,
-  _resetStateForTests,
+  addCountry,
+  removeCountry,
 } = svc;
 
 // ---------------------------------------------------------------------------
@@ -132,31 +278,8 @@ const SCORES_5 = [
   makeScore('FR', 40),
 ];
 
-function setupAnonymousFreeWithFlagOn() {
-  _setDepsForTests({
-    getCurrentClerkUser: () => null,
-    getEntitlementState: () => null,
-    hasTier: () => false,
-    featureFlagEnabled: true,
-    convexClient: null,
-    convexApi: null,
-  });
-}
-
-function setupAnonymousFreeWithFlagOff() {
-  _setDepsForTests({
-    getCurrentClerkUser: () => null,
-    getEntitlementState: () => null,
-    hasTier: () => false,
-    featureFlagEnabled: false,
-    convexClient: null,
-    convexApi: null,
-  });
-}
-
 beforeEach(() => {
   _localStorage.clear();
-  _resetStateForTests();
 });
 
 // ---------------------------------------------------------------------------
@@ -289,29 +412,20 @@ describe('shouldRenderSectionLabels', () => {
 // ---------------------------------------------------------------------------
 
 describe('partition + service integration — reactive watchlist', () => {
-  it('feature flag off → getFollowed() returns []; partition is identity', () => {
-    setupAnonymousFreeWithFlagOff();
-    // Even with localStorage populated, flag-off must yield empty.
+  it('anonymous local follows are enabled and normalized before partitioning', () => {
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,
-      JSON.stringify({ countries: ['US', 'GB'] }),
+      JSON.stringify({ countries: [' usa ', 'United Kingdom', 'US', 'invalid'] }),
     );
-    // NOTE: when the flag is off the service short-circuits MUTATIONS, not
-    // reads — `getFollowed()` returns whatever localStorage holds. The
-    // panel must still partition correctly. The relevant guarantee is
-    // that no row breaks; the divider may render or not depending on
-    // which countries the user followed pre-flag-flip. That's fine.
+    assert.equal(isFollowFeatureEnabled(), true);
     const followed = getFollowed();
     const partition = partitionByFollowed(SCORES_5, followed);
-    // Sanity: no throw, no error; either group is fully populated.
-    assert.equal(
-      partition.followed.length + partition.unfollowed.length,
-      SCORES_5.length,
-    );
+    assert.deepEqual(partition.followed.map(s => s.code), ['US', 'GB']);
+    assert.deepEqual(partition.unfollowed.map(s => s.code), ['CN', 'RU', 'FR']);
+    assert.equal(shouldRenderSectionLabels(partition), true);
   });
 
   it('empty localStorage → partition is identity passthrough', () => {
-    setupAnonymousFreeWithFlagOn();
     const followed = getFollowed();
     assert.deepEqual(followed, []);
     const partition = partitionByFollowed(SCORES_5, followed);
@@ -324,7 +438,6 @@ describe('partition + service integration — reactive watchlist', () => {
     // Locks in the panel's contract: it subscribes via subscribe(), and
     // the handler must fire when an external mutation dispatches the
     // canonical event. This is the rerenderRows() trigger path.
-    setupAnonymousFreeWithFlagOn();
 
     let handlerCalls = 0;
     const unsubscribe = subscribe(() => {
@@ -337,7 +450,7 @@ describe('partition + service integration — reactive watchlist', () => {
       FOLLOWED_COUNTRIES_STORAGE_KEY,
       JSON.stringify({ countries: ['US'] }),
     );
-    _window.dispatchEvent(new CustomEvent(WM_FOLLOWED_COUNTRIES_CHANGED));
+    _window.dispatchEvent(new Event(WM_FOLLOWED_COUNTRIES_CHANGED));
 
     assert.equal(handlerCalls, 1, 'subscribe handler fires on external dispatch');
 
@@ -357,76 +470,20 @@ describe('partition + service integration — reactive watchlist', () => {
   });
 
   it('subscribe teardown stops further handler calls', async () => {
-    setupAnonymousFreeWithFlagOn();
 
     let handlerCalls = 0;
     const unsubscribe = subscribe(() => {
       handlerCalls += 1;
     });
-    _window.dispatchEvent(new CustomEvent(WM_FOLLOWED_COUNTRIES_CHANGED));
+    _window.dispatchEvent(new Event(WM_FOLLOWED_COUNTRIES_CHANGED));
     assert.equal(handlerCalls, 1);
 
     unsubscribe();
-    _window.dispatchEvent(new CustomEvent(WM_FOLLOWED_COUNTRIES_CHANGED));
+    _window.dispatchEvent(new Event(WM_FOLLOWED_COUNTRIES_CHANGED));
     assert.equal(handlerCalls, 1, 'no further calls after teardown');
   });
 
-  it('flag OFF + populated localStorage → CIIPanel gates partition input to [] → identity passthrough, no labels', () => {
-    // Mirrors the panel-side gating from CIIPanel.buildList:
-    //
-    //   const followed = isFollowFeatureEnabled() ? getFollowed() : [];
-    //   const partition = partitionByFollowed(scores, followed);
-    //
-    // The bug this guards against: `getFollowed()` reads localStorage in
-    // anonymous mode regardless of the flag (only mutations are
-    // short-circuited), so a panel that calls partitionByFollowed(scores,
-    // getFollowed()) without the flag gate would reorder rows + render
-    // FOLLOWING / ALL section labels even when the feature is off and
-    // FollowButton is hidden.
-    setupAnonymousFreeWithFlagOff();
-    _localStorage.setItem(
-      FOLLOWED_COUNTRIES_STORAGE_KEY,
-      JSON.stringify({ countries: ['US', 'GB'] }),
-    );
-
-    // Sanity: flag is reported off; getFollowed() still leaks localStorage.
-    assert.equal(isFollowFeatureEnabled(), false);
-    assert.deepEqual(getFollowed().sort(), ['GB', 'US']);
-
-    // Apply the panel's gate.
-    const followed = isFollowFeatureEnabled() ? getFollowed() : [];
-    const partition = partitionByFollowed(SCORES_5, followed);
-
-    // Identity passthrough — original scores order preserved.
-    assert.equal(partition.followed.length, 0, 'no rows pinned when flag off');
-    assert.deepEqual(
-      partition.unfollowed.map((s) => s.code),
-      ['US', 'CN', 'RU', 'GB', 'FR'],
-      'unfollowed group is the original scores order, untouched',
-    );
-    // Both groups → no FOLLOWING / ALL labels.
-    assert.equal(
-      shouldRenderSectionLabels(partition),
-      false,
-      'no section labels when flag off (matches pre-PR-B behaviour)',
-    );
-
-    // Same gate is the single source of truth for both render paths
-    // (buildList from refresh() AND rerenderRows() from the watchlist
-    // subscription). Re-running the gate after a simulated watchlist
-    // change must still produce identity passthrough.
-    _localStorage.setItem(
-      FOLLOWED_COUNTRIES_STORAGE_KEY,
-      JSON.stringify({ countries: ['US', 'GB', 'FR'] }),
-    );
-    const followed2 = isFollowFeatureEnabled() ? getFollowed() : [];
-    const partition2 = partitionByFollowed(SCORES_5, followed2);
-    assert.equal(partition2.followed.length, 0);
-    assert.equal(shouldRenderSectionLabels(partition2), false);
-  });
-
   it('partition reflects the pre-mutation list before dispatch (no premature update)', () => {
-    setupAnonymousFreeWithFlagOn();
     // Set up an initial state with US followed.
     _localStorage.setItem(
       FOLLOWED_COUNTRIES_STORAGE_KEY,

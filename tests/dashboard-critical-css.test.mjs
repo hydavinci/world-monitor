@@ -305,17 +305,18 @@ describe('dashboard critical CSS graph', () => {
     assert.match(mainCss, /\.btn-secondary\s*\{/);
   });
 
-  it('keeps in-dashboard notification channel styles on dashboard-owned CSS', () => {
-    // notifications-settings.ts renders inside the dashboard UnifiedSettings modal, which no
-    // longer imports settings-window.css. Any class it emits that is styled ONLY by
-    // settings-window.css would render unstyled on the dashboard — its rules must live in
-    // dashboard-owned main.css. (Guards the P1 that the original split introduced.)
-    const notif = src('src/services/notifications-settings.ts');
+  it('keeps local alert notification controls on dashboard-owned CSS', () => {
+    const notif = src('src/services/preferences-content.ts');
     const mainCss = src('src/styles/main.css');
     const settingsWindowCss = src('src/styles/settings-window.css');
 
-    const emitted = [...new Set([...notif.matchAll(/\bus-notif-[a-z0-9-]+/g)].map((m) => m[0]))];
-    assert.ok(emitted.length > 0, 'sanity: notifications-settings.ts should emit us-notif-* classes');
+    for (const id of ['us-notification-permission', 'us-notification-test', 'us-notification-status']) {
+      assert.ok(notif.includes(`id="${id}"`), `public alert control missing: ${id}`);
+    }
+    const emitted = [...new Set([...notif.matchAll(/class="([^"]+)"/g)]
+      .flatMap((m) => m[1].split(/\s+/))
+      .filter((cls) => /^[a-z][a-z0-9-]*$/.test(cls)))];
+    assert.ok(emitted.includes('btn-secondary'), 'local notification actions use dashboard buttons');
 
     const unstyledOnDashboard = emitted.filter((cls) => {
       const selector = new RegExp(`\\.${cls}\\b`);

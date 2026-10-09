@@ -57,7 +57,7 @@ type PanelManualChunkName = PanelChunkName | PanelSupportChunkName;
 //   - maplibre, deck-stack, protomaps: heavy WebGL deps, only reachable via MapContainer
 //   - MapContainer: the dynamic-import target itself
 //   - panels-*: panel domain chunks; keep them out of the entry HTML preload
-//   - UnifiedSettings, settings-window, checkout: secondary interaction flows;
+//   - UnifiedSettings, settings-window: secondary interaction flows;
 //     first paint only needs their header buttons and cheap event wiring
 const LAZY_HTML_PRELOAD_CHUNKS = [
   'maplibre',
@@ -87,12 +87,11 @@ const PANEL_CLUSTER: Record<string, PanelChunkName> = {
   Fx: 'panels-markets',
   GoldIntelligence: 'panels-markets', LiquidityShifts: 'panels-markets',
   MacroSignals: 'panels-markets', Market: 'panels-markets',
-  MarketBreadth: 'panels-markets', MarketImplications: 'panels-markets',
+  MarketBreadth: 'panels-markets',
   NewsMarketCorrelation: 'panels-markets',
   NqCatalysts: 'panels-markets', NqPulse: 'panels-markets',
   Positioning: 'panels-markets', Stablecoin: 'panels-markets',
-  StockAnalysis: 'panels-markets', StockBacktest: 'panels-markets',
-  WsbTickerScanner: 'panels-markets', YieldCurve: 'panels-markets',
+  YieldCurve: 'panels-markets',
   // Energy / commodities / supply infra
   ChokepointStrip: 'panels-energy', EnergyComplex: 'panels-energy',
   EnergyCrisis: 'panels-energy', EnergyDisruptions: 'panels-energy',
@@ -107,36 +106,33 @@ const PANEL_CLUSTER: Record<string, PanelChunkName> = {
   UcdpEvents: 'panels-defense',
   // News / feeds / briefs
   BreakthroughsTicker: 'panels-news', ClimateNews: 'panels-news',
-  DailyMarketBrief: 'panels-news', GdeltIntel: 'panels-news',
-  GoodThingsDigest: 'panels-news', LatestBrief: 'panels-news',
+  GdeltIntel: 'panels-news',
+  GoodThingsDigest: 'panels-news',
   LiveNews: 'panels-news', News: 'panels-news',
   PositiveNewsFeed: 'panels-news', TelegramIntel: 'panels-news', XIntel: 'panels-news',
   // Macro / prices / trade
   BigMac: 'panels-economy', ConsumerPrices: 'panels-economy',
-  Economic: 'panels-economy', GlobalProcurement: 'panels-economy',
+  Economic: 'panels-economy',
   FaoFoodPriceIndex: 'panels-economy', FSI: 'panels-economy',
   GroceryBasket: 'panels-economy', GulfEconomies: 'panels-economy',
   Investments: 'panels-economy', MacroTiles: 'panels-economy',
-  NationalDebt: 'panels-economy', SanctionsPressure: 'panels-economy',
   ChinaActivityNowcast: 'panels-economy', ChinaCorridor: 'panels-economy',
   SupplyChain: 'panels-economy',
-  TradePolicy: 'panels-economy',
   // Country briefs / signals / monitors / agent surfaces.
   // CorrelationPanel base lives here, so all *Correlation consumers MUST stay
   // in this cluster — splitting them across clusters caused TDZ on init.
-  ChatAnalyst: 'panels-intel', CII: 'panels-intel',
+  CII: 'panels-intel',
   Cascade: 'panels-intel', Correlation: 'panels-intel',
   CountryBrief: 'panels-intel', CountryBriefPage: 'panels-intel',
   CountryDeepDive: 'panels-intel',
   CrossSourceSignals: 'panels-intel', CustomWidget: 'panels-intel',
-  Deduction: 'panels-intel',
   DisasterCorrelation: 'panels-intel',
   EconomicCorrelation: 'panels-intel',
   EscalationCorrelation: 'panels-intel',
   MilitaryCorrelation: 'panels-intel',
   Forecast: 'panels-intel',
   HeroSpotlight: 'panels-intel', Insights: 'panels-intel',
-  LiveWebcams: 'panels-intel', McpData: 'panels-intel',
+  LiveWebcams: 'panels-intel',
   Monitor: 'panels-intel', PinnedWebcams: 'panels-intel',
   Prediction: 'panels-intel', ProgressCharts: 'panels-intel',
   RegionalIntelligenceBoard: 'panels-intel',

@@ -24,11 +24,12 @@ function shouldSkipDashboard() {
 // WM_EXPECT_BUILT_OUTPUT=1 is set, which makes it fail instead so CI cannot
 // silently skip). CI exports WM_EXPECT_BUILT_OUTPUT=1 before `npm run test:data`
 // and builds the dashboard first (the step added in #4393).
-const DEFERRED_TABLE_CHUNKS = ['tech-geo-data', 'airports-data', 'ai-datacenters-data', 'geo-map-data', 'military-bases-data'];
-const DEFERRED_SENTRY_CHUNKS = ['sentry-init', 'sentry'];
+const DEFERRED_TABLE_CHUNKS = ['tech-geo-data', 'ai-datacenters-data', 'geo-map-data', 'military-bases-data'];
+const RETIRED_CHUNKS = ['airports-data', 'sentry-init', 'sentry', 'products', 'checkout', 'daily-market-brief',
+  'rpc-client-resilience-v1', 'rpc-client-sanctions-v1', 'rpc-client-scenario-v1'];
 // agent-bus-applier + shared/agent-bus-actions pull in zod (~69KB raw). They are
-// only reachable through the lazy chat-analyst panel's action handler, so they
-// must ship in the chat-analyst graph (agent-bus-actions chunk), NOT eager main.
+// retained for lazy public widget actions, so they must stay in their deferred
+// graph (agent-bus-actions chunk), NOT eager main.
 // Re-adding a static `import { applyAgentBusAction }` to panel-layout would inline
 // the subtree (and zod) into main — collapsing this chunk and failing the guard.
 const DEFERRED_AGENT_BUS_CHUNKS = ['agent-bus-actions'];
@@ -37,10 +38,10 @@ const DEFERRED_AGENT_BUS_CHUNKS = ['agent-bus-actions'];
 //   confetti.module — canvas-confetti, loaded on the first milestone celebration
 // Re-adding a static `import` of either would re-eagerise it into main and fail this.
 const DEFERRED_NPM_LIB_CHUNKS = ['satellite.es', 'confetti.module'];
-// Checkout catalog and widget HTML sanitization are needed only after an
-// upgrade/custom-widget action. Keep them out of the dashboard's static graph;
+// Public widget HTML sanitization is needed only after a custom-widget action.
+// Keep it out of the dashboard's static graph;
 // otherwise their shared dependencies rejoin the post-hydration long-task wave.
-const DEFERRED_CHECKOUT_CHUNKS = ['products', 'widget-sanitizer'];
+const DEFERRED_WIDGET_CHUNKS = ['widget-sanitizer'];
 // Enrichment SERVICE tail deferred off the eager boot graph (#4486 — service-graph
 // split, Phase A). Each runs only AFTER first paint — correlation-engine.run() is
 // post-loadAllData fire-and-forget; story-renderer fires on story-modal open — so its
@@ -54,7 +55,6 @@ const DEFERRED_SERVICE_CHUNKS = [
   'story-renderer',
   'rss',
   'trending-keywords',
-  'daily-market-brief',
   'signal-aggregator',
   'military-vessels',
   'cross-module-integration',
@@ -81,9 +81,6 @@ const DEFERRED_RPC_CLIENT_CHUNKS = [
   'rpc-client-prediction-v1',
   'rpc-client-radiation-v1',
   'rpc-client-research-v1',
-  'rpc-client-resilience-v1',
-  'rpc-client-sanctions-v1',
-  'rpc-client-scenario-v1',
   'rpc-client-seismology-v1',
   'rpc-client-supply-chain-v1',
   'rpc-client-thermal-v1',
@@ -249,37 +246,19 @@ describe('eager chunk budget: military base data stays behind its lazy loader', 
   });
 });
 
-describe('eager chunk budget: Sentry stays behind the deferred scheduler', { skip: shouldSkipDashboard() }, () => {
+describe('public chunk graph excludes retired runtime producers', { skip: shouldSkipDashboard() }, () => {
   guardDashboardBuild();
-  const html = readFileSync(dashboardHtml, 'utf-8');
   const assetsDir = resolve(distDir, 'assets');
-  const assets = existsSync(assetsDir) ? readdirSync(assetsDir) : [];
-  const mainFile = assets.find((f) => /^main-[A-Za-z0-9_-]+\.js$/.test(f));
-  const mainJs = mainFile ? readFileSync(resolve(assetsDir, mainFile), 'utf-8') : '';
-
-  for (const chunk of DEFERRED_SENTRY_CHUNKS) {
-    it(`${chunk}: built as its own isolated chunk`, () => {
-      assert.ok(
-        assets.some((f) => f.startsWith(`${chunk}-`) && f.endsWith('.js')),
-        `${chunk}-*.js chunk should exist (manualChunks rule present)`,
-      );
-    });
-
-    it(`${chunk}: absent from dashboard.html modulepreload`, () => {
-      const modulepreloadRe = new RegExp(`<link\\b[^>]+rel=["']modulepreload["'][^>]+href=["']/assets/${chunk}-[A-Za-z0-9_-]+\\.js["']`);
-      assert.ok(
-        !modulepreloadRe.test(html),
-        `${chunk} must not be eagerly modulepreloaded in dashboard.html — Sentry must load through the deferred scheduler`,
-      );
-    });
-
-    it(`${chunk}: not statically imported by the main entry chunk`, () => {
-      assert.ok(mainFile, 'main-*.js entry chunk should exist in dist/assets');
-      const staticImportRe = new RegExp(`(?:from|import)"\\./${chunk}-[A-Za-z0-9_-]+\\.js"`);
-      assert.ok(
-        !staticImportRe.test(mainJs),
-        `${chunk} must not be statically imported by ${mainFile} (dynamic preload-manifest references are fine)`,
-      );
+  const assets = readdirSync(assetsDir).filter((file) => file.endsWith('.js'));
+  assert.ok(assets.some((file) => /^main-/.test(file)), 'public entry must be emitted');
+  for (const chunk of RETIRED_CHUNKS) {
+    it(`${chunk}: absent from emitted public chunks and their references`, () => {
+      const pattern = new RegExp(`${escapeRegExp(chunk)}-[A-Za-z0-9_-]+\\.js`);
+      assert.equal(assets.some((file) => pattern.test(file)), false, `${chunk} must not be built`);
+      assert.equal(pattern.test(readFileSync(dashboardHtml, 'utf8')), false);
+      for (const file of assets) {
+        assert.equal(pattern.test(readFileSync(resolve(assetsDir, file), 'utf8')), false, `${file} references ${chunk}`);
+      }
     });
   }
 });
@@ -292,11 +271,11 @@ describe('eager chunk budget: opt-in npm libs stay off the entry', { skip: shoul
   });
 });
 
-describe('eager chunk budget: checkout-only code stays off the dashboard entry', { skip: shouldSkipDashboard() }, () => {
+describe('eager chunk budget: public widget sanitizer stays off the dashboard entry', { skip: shouldSkipDashboard() }, () => {
   guardDashboardBuild();
-  registerDeferredChunkAssertions(DEFERRED_CHECKOUT_CHUNKS, {
-    missingMessage: (chunk) => `${chunk}-*.js chunk should exist — checkout/widget work must remain code-split`,
-    preloadMessage: (chunk) => `${chunk} must not be eagerly modulepreloaded — it loads only after checkout or widget interaction`,
+  registerDeferredChunkAssertions(DEFERRED_WIDGET_CHUNKS, {
+    missingMessage: (chunk) => `${chunk}-*.js chunk should exist — public widget work must remain code-split`,
+    preloadMessage: (chunk) => `${chunk} must not be eagerly modulepreloaded — it loads only after widget interaction`,
   });
 });
 

@@ -1,5 +1,5 @@
 {
-  "comment": "dist-root embed.js bundle-size budget (#7119). Gated on raw bytes: per chunk ±max(128 B, 2%), total ±max(128 B, 0.25%). Tolerance fields here are informational — the gate enforces its own constants and rejects a snapshot that disagrees. Regenerate after \"npm run build:pro && VITE_VARIANT=full ./node_modules/.bin/vite build\" with: npm run bundle:budgets:embed",
+  "comment": "dist-root embed.js bundle-size budget (#7119). Gated on raw bytes: per chunk ±max(128 B, 2%), total ±max(128 B, 0.25%). Tolerance fields here are informational — the gate enforces its own constants and rejects a snapshot that disagrees. Regenerate after \"VITE_VARIANT=full ./node_modules/.bin/vite build\" with: npm run bundle:budgets:embed",
   "surface": "embed",
   "variant": "embed",
   "tolerancePct": 2,
@@ -7,11 +7,11 @@
   "totalTolerancePct": 0.25,
   "totalToleranceBytes": 128,
   "total": {
-    "raw": 2916
+    "raw": 2974
   },
   "chunks": {
     "embed.js": {
-      "raw": 2916,
+      "raw": 2974,
       "files": 1
     }
   }
